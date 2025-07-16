@@ -16,7 +16,7 @@
       WELCOME TO
     </h1>
     <h1 class="text-3xl md:text-6xl font-bold tracking-wide text-info">
-      GLOBAL LANGUAGE CEBU
+      GLOBAL LANGUAGE CEBUS
     </h1>
   </div>
 </div>
