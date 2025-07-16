@@ -94,6 +94,7 @@
             <option value="female" class="option">Female</option>
         </select>
 
+      <!-- svelte-ignore a11y_label_has_associated_control -->
       <label class="label">Blood Type(血液型)</label>
         <select name="blood_type" class="select w-full" bind:value={GroupStudentData.blood_type} required>
             <option disabled selected>Select blood type</option>
@@ -116,6 +117,7 @@
       <label class="label">Weight (kg)</label>
       <input type="text" name="weight" class="input w-full" placeholder="体重 50 kg" bind:value={GroupStudentData.weight} required/>
 
+      <!-- svelte-ignore a11y_label_has_associated_control -->
       <label class="label">Civil Status <br> 婚姻有無（未婚ならSingleを選択</label>
       <select name="civil_status" class="select w-full" bind:value={GroupStudentData.civil_status} required>
         <option disabled selected>Select your Civil Status</option>
@@ -132,6 +134,7 @@
       <label class="label">Email</label>
       <input type="email" name="email" class="input w-full" placeholder="e.g sam@gmail.com" bind:value={GroupStudentData.email} required/>
 
+       <!-- svelte-ignore a11y_label_has_associated_control -->
        <label class="label">Allergy</label>
         <select name="allergy" class="select w-full" bind:value={GroupStudentData.allergy} required>
             <option disabled selected>Select one</option>
@@ -142,6 +145,7 @@
       <label class="label">Allergy2 <br> アレルギー症状と対処法（例：かゆい→安静）</label>
      <textarea name="allergy2" class="textarea textarea-bordered w-full" placeholder="例：のどの腫れ → 病院に行く" bind:value={GroupStudentData.allergy2} required></textarea>
 
+      <!-- svelte-ignore a11y_label_has_associated_control -->
       <label class="label">Allow posting your photos/videos on IDEA CEBU SNS? <br> IDEA CEBUのSNSに写真や動画を載せてもいいですか？ </label>
       <select name="sns_permission" class="select w-full" bind:value={GroupStudentData.sns_permission} required>
         <option disabled selected>Select one</option>
