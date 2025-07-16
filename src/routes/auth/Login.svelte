@@ -10,6 +10,7 @@
     toast.promise(pb.collection('users').authWithPassword(username, password), {
       loading: 'Loggin in ...',
       success: (data) => {
+        window.location.href = '/'
         return `Welcome, ${username}`
       },
       error: (error) => {
