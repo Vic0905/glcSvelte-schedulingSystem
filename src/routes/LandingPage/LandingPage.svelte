@@ -7,24 +7,21 @@
   })
 </script>
 
-<div class="relative h-[50vh] flex items-center justify-center overflow-hidden">
-  <!-- Background Layer -->
-  <div class="absolute inset-0 bg-cover bg-center opacity-40"
-       style="background-image: url('/glc2-bg.webp');">
-  </div>
+<div class="flex items-center justify-center overflow-hidden">
+
 
   <!-- Content Layer -->
-  <div class="relative z-10 p-8 rounded-lg text-center text-white font-serif">
+  <div class="p-8 rounded-lg text-center mt-10">
     <h1 class="text-xl md:text-5xl font-bold tracking-wide">
       WELCOME TO
     </h1>
-    <h1 class="text-3xl md:text-6xl font-bold tracking-wide text-cyan-400 font-serif">
+    <h1 class="text-3xl md:text-6xl font-bold tracking-wide text-info">
       GLOBAL LANGUAGE CEBU
     </h1>
   </div>
 </div>
 
-<div class="flex flex-row flex-wrap items-center justify-evenly gap-4 max-w-[850px] mx-auto">
+<div class="flex flex-row flex-wrap items-center justify-evenly gap-4 max-w-[850px] mx-auto mt-10">
   <!-- Registration -->
   <a href="/#/registration/">
     <img src={'/register.png'}
