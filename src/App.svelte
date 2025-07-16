@@ -18,6 +18,6 @@
   <Router routes={guestRoutes} />
 {/if}
 
-<div class="font=[TikTok Sans]">
+<div class="font=[Inter]">
   <Toaster position="bottom-right" richColors expand={true} />
 </div>
