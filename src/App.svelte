@@ -12,7 +12,6 @@
     <Router routes={adminRoutes} />
   {/if}
   {#if current.user.role === 'student'}
-    <!-- //asd -->
     <Router routes={studentRoutes} />
   {/if}
 {:else}
