@@ -7,10 +7,23 @@
   <li><a href="/#/registration">Registration</a></li>
   <li>
     <details>
-      <summary>Parent</summary>
-      <ul class="p-2">
-        <li><a>Submenu 1</a></li>
-        <li><a>Submenu 2</a></li>
+      <summary>Lesson Forms</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a>Teacher Request Form</a></li>
+        <li><a>Special Classes Form</a></li>
+        <li><a>Additional Classes Form</a></li>
+        <li><a>Class Cancellation Form</a></li>
+        <li><a>Course Request Form</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Consent Forms</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a>Legal Consent Form</a></li>
+        <li><a>Minor Form</a></li>
+        <li><a>Travel Request Form</a></li>
       </ul>
     </details>
   </li>
@@ -28,10 +41,23 @@
   </li>
   <li>
     <details>
-      <summary>Parent</summary>
-      <ul class="p-2">
-        <li><a>Submenu 1</a></li>
-        <li><a>Submenu 2</a></li>
+      <summary>Lesson Forms</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a>Teacher Request Form</a></li>
+        <li><a>Special Classes Form</a></li>
+        <li><a>Additional Classes Form</a></li>
+        <li><a>Class Cancellation Form</a></li>
+        <li><a>Course Request Form</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Consent Forms</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a>Legal Consent Form</a></li>
+        <li><a>Minor Form</a></li>
+        <li><a>Travel Request Form</a></li>
       </ul>
     </details>
   </li>
