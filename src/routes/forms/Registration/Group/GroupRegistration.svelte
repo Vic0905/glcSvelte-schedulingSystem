@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
-  import { pb } from '../../../lib/Pocketbase.svelte'
+  import { pb } from '../../../../lib/Pocketbase.svelte'
 
   let GroupStudentData = $state({
     school_name: '',
