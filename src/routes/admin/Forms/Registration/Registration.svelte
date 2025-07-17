@@ -119,7 +119,8 @@
       },
       search: {
         server: {
-          url: (prev, keyword) => `${prev}filter=(name ~ '${keyword}' || role ~ '${keyword}')&`,
+          url: (prev, keyword) =>
+            `${prev}filter=(firstName ~ '${keyword}' || lastName ~ '${keyword}' || nationality ~ '${keyword}')&`,
         },
       },
       server: {
@@ -170,7 +171,7 @@
 </div>
 
 <dialog id="studentModal" class="modal">
-  <div class="modal-box w-11/12 max-w-5xl">
+  <div class="modal-box max-w-2xl">
     <form method="dialog">
       <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
     </form>
