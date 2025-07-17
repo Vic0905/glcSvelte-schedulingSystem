@@ -1,10 +1,6 @@
 <script>
   import { onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
-
-  onMount(() => {
-    toast.success('Welcome to the Dasboard')
-  })
 </script>
 
 <div class="flex items-center justify-center overflow-hidden">

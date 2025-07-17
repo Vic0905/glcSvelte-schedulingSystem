@@ -34,6 +34,19 @@ export const guestRoutes = {
   '/registration/single': wrap({
     asyncComponent: () => import('../routes/Registration/Single/SingleRegistration.svelte'),
   }),
+
+  '/rules': wrap({
+    asyncComponent: () => import('../routes/Rules/Rules.svelte'),
+  }),
+
+  '/rules/welcome': wrap({
+    asyncComponent: () => import('../routes/Rules/Welcome/Welcome.svelte'),
+  }),
+
+  '/rules/regulation': wrap({
+    asyncComponent: () => import('../routes/Rules/Regulation/Regulation.svelte'),
+  }),
+
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),
