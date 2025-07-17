@@ -1,7 +1,8 @@
 <script>
-  import { Grid } from 'gridjs'
+  import { Grid, h } from 'gridjs'
   import { domain, pb } from '../../../../lib/Pocketbase.svelte'
   import { onDestroy } from 'svelte'
+  import { toast } from 'svelte-sonner'
 
   let registrationTable
 
@@ -12,13 +13,73 @@
       hidden: true,
     },
     {
-      name: 'Name',
-      id: 'name',
+      name: 'First Name',
+      id: 'firstName',
+    },
+    {
+      name: 'Last Name',
+      id: 'lastName',
     },
     {
       name: 'Created',
       id: 'created',
-      formatter: (cell) => new Date(cell).toLocaleString(),
+      formatter: (cell) => new Date(cell).toLocaleDateString(),
+    },
+    {
+      name: 'Actions',
+      columns: [
+        {
+          name: 'View',
+          formatter: (cell, row) => {
+            return h(
+              'button',
+              {
+                className: 'btn btn-xs btn-warning',
+                onClick: async () => {
+                  toast.promise(pb.collection('users').getOne(row.cells[0].data), {
+                    loading: 'Fetching User Data ...',
+                    success: (userData) => {
+                      console.log(userData)
+
+                      return 'Fetch success!'
+                    },
+                    error: (error) => {
+                      return `Error: ${error.message}`
+                    },
+                  })
+                },
+              },
+              'View'
+            )
+          },
+        },
+        {
+          name: 'Delete',
+          formatter: (cell, row) => {
+            return h(
+              'button',
+              {
+                className: 'btn btn-xs btn-error',
+                onClick: () => {
+                  if (window.confirm('Are you sure you want to delete?')) {
+                    toast.promise(pb.collection('users').delete(row.cells[0].data), {
+                      loading: 'Deleting...',
+                      success: () => {
+                        registrationTable.updateConfig({}).forceRender()
+                        return 'Deletion Success!'
+                      },
+                      error: (error) => {
+                        return `Error: ${error.message}`
+                      },
+                    })
+                  }
+                },
+              },
+              'Delete'
+            )
+          },
+        },
+      ],
     },
   ]
 
@@ -63,8 +124,9 @@
       className: {
         table: 'text-xs',
         pagination: 'text-xs',
+        tr: 'text-center',
       },
-      autoWidth: false,
+      autoWidth: true,
     }).render(node)
   }
 
