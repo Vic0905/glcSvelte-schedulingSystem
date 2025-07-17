@@ -1,6 +1,7 @@
 <script>
   import { Grid } from 'gridjs'
   import { domain, pb } from '../../../../lib/Pocketbase.svelte'
+  import { onDestroy } from 'svelte'
 
   let registrationTable
 
@@ -66,6 +67,10 @@
       autoWidth: false,
     }).render(node)
   }
+
+  onDestroy(() => {
+    registrationTable.destroy()
+  })
 </script>
 
 <div class="m-5">
