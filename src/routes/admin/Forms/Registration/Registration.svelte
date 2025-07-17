@@ -61,7 +61,7 @@
               {
                 className: 'btn btn-xs btn-error',
                 onClick: () => {
-                  if (window.confirm('Are you sure you want to delete?')) {
+                  if (window.confirm(`Are you sure you want to delete ${row.cells[1].data} ${row.cells[1].data}?`)) {
                     toast.promise(pb.collection('users').delete(row.cells[0].data), {
                       loading: 'Deleting...',
                       success: () => {
