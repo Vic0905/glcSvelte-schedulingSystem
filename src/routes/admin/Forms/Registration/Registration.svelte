@@ -1,30 +1,84 @@
 <script>
+  import { Grid } from 'gridjs'
+  import { domain, pb } from '../../../../lib/Pocketbase.svelte'
   import { onDestroy } from 'svelte'
-  import { createTable } from '../../../../lib/Grid.svelte'
 
-  let table
+  let registrationTable
 
-  let data = [
-    ['John', 'john@example.com', 30],
-    ['Jane', 'jane@example.com', 28],
-    ['Alice', 'alice@example.com', 35],
+  let gridColumns = [
+    {
+      name: 'ID',
+      id: 'id',
+      hidden: true,
+    },
+    {
+      name: 'Name',
+      id: 'name',
+    },
+    {
+      name: 'Created',
+      id: 'created',
+      formatter: (cell) => new Date(cell).toLocaleString(),
+    },
   ]
 
-  let columns = ['Name', 'Email', 'Age']
+  const createTable = async (node) => {
+    registrationTable = new Grid({
+      sort: {
+        multiColumn: false,
+        server: {
+          url: (prev, columns) => {
+            if (!columns.length) return prev
 
-  let options = {
-    pagination: true,
-    search: true,
-    sort: true,
-  }
+            const col = columns[0]
+            const colName = gridColumns[col.index]?.id || gridColumns[col.index]?.name
+            const dir = col.direction === 1 ? '-' : ''
 
-  const registration = async (node) => {
-    table = await createTable(columns, data, options, node)
+            return `${prev}sort=${dir}${colName}&`
+          },
+        },
+      },
+      columns: gridColumns,
+      pagination: {
+        limit: 10,
+        server: {
+          url: (prev, page, limit) => `${prev}page=${page + 1}&perPage=${limit}`,
+        },
+      },
+      search: {
+        server: {
+          url: (prev, keyword) => `${prev}filter=(name ~ '${keyword}' || role ~ '${keyword}')&`,
+        },
+      },
+      server: {
+        url: `${domain}/api/collections/users/records?`,
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${pb.authStore.token}`,
+          'Content-Type': 'application/json',
+        },
+        then: (data) => data.items,
+        total: (data) => data.totalItems,
+      },
+      className: {
+        table: 'text-xs',
+        pagination: 'text-xs',
+      },
+      autoWidth: false,
+    }).render(node)
   }
 
   onDestroy(() => {
-    table.destroy()
+    registrationTable.destroy()
   })
 </script>
 
-<div id="registration" use:registration></div>
+<div class="m-5">
+  <p class="text-3xl">Registration</p>
+  <br />
+  <div use:createTable></div>
+</div>
+
+<style global>
+  @import 'https://cdn.jsdelivr.net/npm/gridjs/dist/theme/mermaid.min.css';
+</style>
