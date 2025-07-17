@@ -13,12 +13,21 @@
       hidden: true,
     },
     {
-      name: 'First Name',
-      id: 'firstName',
+      name: 'Student',
+      columns: [
+        {
+          name: 'First Name',
+          id: 'firstName',
+        },
+        {
+          name: 'Last Name',
+          id: 'lastName',
+        },
+      ],
     },
     {
-      name: 'Last Name',
-      id: 'lastName',
+      name: 'Nationality',
+      id: 'nationality',
     },
     {
       name: 'Created',
