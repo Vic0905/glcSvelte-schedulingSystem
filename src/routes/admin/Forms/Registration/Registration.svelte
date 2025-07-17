@@ -15,7 +15,7 @@
       hidden: true,
     },
     {
-      name: 'Student',
+      name: 'First Name',
       id: 'firstName',
     },
     {
