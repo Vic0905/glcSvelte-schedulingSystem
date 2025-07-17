@@ -3,52 +3,58 @@
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../../lib/Pocketbase.svelte'
 
-  let GroupStudentData = $state({
-    school_name: '',
+  const data = $state({
     email: '',
-    first_name: '',
-    last_name: '',
-    nickname: '',
+    emailVisibility: true,
+    role: 'student',
+    username: '',
+    firstName: '',
+    lastName: '',
+    nickName: '',
+    middleName: '',
     gender: '',
-    blood_type: '',
+    age: '',
     dob: '',
     nationality: '',
     height: '',
     weight: '',
-    civil_status: '',
-    home_address: '',
+    civilStatus: '',
+    homeAddress: '',
+    zipCode: '',
     country: '',
+    city: '',
+    phone: '',
+    passportNumber: '',
+    emergency1: '',
+    emergency2: '',
+    occupation: '',
+    schoolOrCompany: '',
     allergy: '',
-    allergy2: '',
-    sns_permission: '',
+    medicalHistory: '',
+    snsPermission: '',
+    bloodType: '',
+    password: '',
+    passwordConfirm: '',
   })
 
-  const groupregister = async (e) => {
-    e.preventDefault()
+  $effect(() => {
+    data.username = data.firstName + data.dob.split('-').pop()
+    data.password = data.username
+    data.passwordConfirm = data.username
 
-    toast.promise(pb.collection('GroupRegistration').create(GroupStudentData), {
+    if (data.username) {
+      console.log(data)
+    }
+  })
+
+  const register = async (e) => {
+    e.preventDefault()
+    // console.log(data)
+
+    toast.promise(pb.collection('users').create(data), {
       loading: 'Loading...',
       success: (record) => {
-        GroupStudentData = {
-          school_name: '',
-          email: '',
-          first_name: '',
-          last_name: '',
-          nickname: '',
-          gender: '',
-          blood_type: '',
-          dob: '',
-          nationality: '',
-          height: '',
-          weight: '',
-          civil_status: '',
-          home_address: '',
-          country: '',
-          allergy: '',
-          allergy2: '',
-          sns_permission: '',
-        }
-        return record?.first_name + ' has been successfully registered! 🎉'
+        return record?.firstName + ' has been successfully registered! 🎉'
       },
       error: (error) => {
         console.error(error.message)
@@ -58,188 +64,180 @@
   }
 </script>
 
-<div class="breadcrumbs text-sm font-mono">
+<div class="breadcrumbs text-sm m-5">
   <ul>
     <li><a href="/#/dashboard/" class="badge badge-primary">Dashboard</a></li>
     <li><a href="/#/registration/" class="badge badge-secondary">Registration</a></li>
-    <li><span class="badge badge-neutral">Group Registration</span></li>
+    <li><span>Group Registration</span></li>
   </ul>
 </div>
 
-<div class="font-[inter] flex flex-col items-center justify-center">
-  <form onsubmit={groupregister} class="max-w-md font-mono">
-    <fieldset class="fieldset bg-base-200 border-base-300 rounded-box border p-4">
-      <legend class="fieldset-legend text-xl text-accent">Group Student Registration Form</legend>
+<form class="font-[inter] m-2 max-w-xl mx-auto" onsubmit={register}>
+  <fieldset class="fieldset bg-base-200 border-base-300 rounded-box border p-4">
+    <legend class="fieldset-legend">Group Registration</legend>
 
-      <label class="label">学校名 * 学校名をローマ字で書いてください。</label>
-      <input
-        type="text"
-        name="school_name"
-        class="input w-full"
-        placeholder="e.g Tokyo Daigaku, Osaka Koukou"
-        bind:value={GroupStudentData.school_name}
-        required
-      />
+    <div class="flex flex-wrap justify-evenly gap-2">
+      <div class="col-1">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">学校名（ローマ字）</legend>
+          <input type="text" class="input" bind:value={data.schoolOrCompany} required />
+          <p class="label">e.g Tokyo University</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">下の名前（ローマ字）First Name</legend>
+          <input type="text" class="input" bind:value={data.firstName} required />
+          <p class="label">e.g John</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">（ニックネーム）</legend>
+          <input type="text" class="input" bind:value={data.nickName} required />
+          <p class="label">e.g Doedoe</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">(性別)</legend>
+          <select class="select" bind:value={data.gender} required>
+            <option value="male" class="option">Male</option>
+            <option value="female" class="option">Female</option>
+          </select>
+          <p class="label">e.g Male or Female</p>
+        </fieldset>
 
-      <label class="label">メールアドレス</label>
-      <input
-        type="email"
-        name="email"
-        class="input w-full"
-        placeholder="e.g email@gmail.com"
-        bind:value={GroupStudentData.email}
-        required
-      />
-
-      <label class="label">名前（下の名前）ローマ字で</label>
-      <input
-        type="text"
-        name="first_name"
-        class="input w-full"
-        placeholder="名前（例）Hanako、Taro"
-        bind:value={GroupStudentData.first_name}
-        required
-      />
-
-      <label class="label">名前（名字）ローマ字で</label>
-      <input
-        type="text"
-        name="last_name"
-        class="input w-full"
-        placeholder="名字（例）Tanaka、 Smithなど"
-        bind:value={GroupStudentData.last_name}
-        required
-      />
-
-      <label class="label">Nick Name（ニックネーム）</label>
-      <input
-        type="text"
-        name="nickname"
-        class="input w-full"
-        placeholder="フィリピンの講師が呼びやすいニックネームを書いてください"
-        bind:value={GroupStudentData.nickname}
-        required
-      />
-
-      <label class="label">Gender(性別)</label>
-      <select name="gender" class="select w-full" bind:value={GroupStudentData.gender} required>
-        <option disabled selected>Select your Gender</option>
-        <option value="male" class="option">Male</option>
-        <option value="female" class="option">Female</option>
-      </select>
-
-      <!-- svelte-ignore a11y_label_has_associated_control -->
-      <label class="label">Blood Type(血液型)</label>
-      <select name="blood_type" class="select w-full" bind:value={GroupStudentData.blood_type} required>
-        <option disabled selected>Select blood type</option>
-        <option value="A" class="option">A</option>
-        <option value="B" class="option">B</option>
-        <option value="O" class="option">O</option>
-        <option value="AB" class="option">AB</option>
-        <option value="不明" class="option">不明</option>
-      </select>
-
-      <label class="label">Date of Birth 生年月日</label>
-      <input type="date" name="dob" class="input w-full" bind:value={GroupStudentData.dob} required />
-
-      <label class="label">Nationality</label>
-      <input
-        type="text"
-        name="nationality"
-        class="input w-full"
-        placeholder="国籍　例: Filipino, Chinese, Japanese"
-        bind:value={GroupStudentData.nationality}
-        required
-      />
-
-      <label class="label">Height (cm)</label>
-      <input
-        type="text"
-        name="height"
-        class="input w-full"
-        placeholder="身長 175 cm"
-        bind:value={GroupStudentData.height}
-        required
-      />
-
-      <label class="label">Weight (kg)</label>
-      <input
-        type="text"
-        name="weight"
-        class="input w-full"
-        placeholder="体重 50 kg"
-        bind:value={GroupStudentData.weight}
-        required
-      />
-
-      <!-- svelte-ignore a11y_label_has_associated_control -->
-      <label class="label">Civil Status <br /> 婚姻有無（未婚ならSingleを選択</label>
-      <select name="civil_status" class="select w-full" bind:value={GroupStudentData.civil_status} required>
-        <option disabled selected>Select your Civil Status</option>
-        <option value="single" class="option">Single</option>
-        <option value="married" class="option">Married</option>
-      </select>
-
-      <label class="label">Address in your Home-country <br /> 日本の住所を書いてください</label>
-      <input
-        type="text"
-        name="home_address"
-        class="input w-full"
-        placeholder="e.g No. 111, ABC street, ABC ward"
-        bind:value={GroupStudentData.home_address}
-        required
-      />
-
-      <label class="label">Your Home Country <br /> 住んでいる国名を書いてください（例：Japan）</label>
-      <input
-        type="text"
-        name="country"
-        class="input w-full"
-        placeholder="e.g Japan"
-        bind:value={GroupStudentData.country}
-        required
-      />
-
-      <label class="label">Email</label>
-      <input
-        type="email"
-        name="email"
-        class="input w-full"
-        placeholder="e.g sam@gmail.com"
-        bind:value={GroupStudentData.email}
-        required
-      />
-
-      <!-- svelte-ignore a11y_label_has_associated_control -->
-      <label class="label">Allergy</label>
-      <select name="allergy" class="select w-full" bind:value={GroupStudentData.allergy} required>
-        <option disabled selected>Select one</option>
-        <option value="yes" class="option">Yes</option>
-        <option value="no" class="option">No</option>
-      </select>
-
-      <label class="label">Allergy2 <br /> アレルギー症状と対処法（例：かゆい→安静）</label>
-      <textarea
-        name="allergy2"
-        class="textarea textarea-bordered w-full"
-        placeholder="例：のどの腫れ → 病院に行く"
-        bind:value={GroupStudentData.allergy2}
-        required
-      ></textarea>
-
-      <!-- svelte-ignore a11y_label_has_associated_control -->
-      <label class="label"
-        >Allow posting your photos/videos on IDEA CEBU SNS? <br /> IDEA CEBUのSNSに写真や動画を載せてもいいですか？
-      </label>
-      <select name="sns_permission" class="select w-full" bind:value={GroupStudentData.sns_permission} required>
-        <option disabled selected>Select one</option>
-        <option value="yes" class="option">Yes</option>
-        <option value="no" class="option">No</option>
-      </select>
-
-      <div class="mt-4 text-center">
-        <button type="submit" class="btn btn-success">Submit</button>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Nationality</legend>
+          <select class="select" bind:value={data.nationality}>
+            <option value="JP" class="option">JP</option>
+            <option value="CH" class="option">CH</option>
+            <option value="TH" class="option">TH</option>
+            <option value="KR" class="option">KR</option>
+            <option value="RU" class="option">RU</option>
+            <option value="VN" class="option">VN</option>
+            <option value="ARB" class="option">ARB</option>
+            <option value="MNG" class="option">MNG</option>
+            <option value="TW" class="option">TW</option>
+          </select>
+          <p class="label">国籍　例: JP, CH, TH</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Height</legend>
+          <input type="text" class="input" bind:value={data.height} required />
+          <p class="label">height (cm)</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Home Address</legend>
+          <input type="text" class="input" bind:value={data.homeAddress} required />
+          <p class="label">e.g No. 111, ABC street, ABC ward</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Country</legend>
+          <input type="text" class="input" bind:value={data.country} required />
+          <p class="label">国名を記入してください（例：Japan）</p>
+        </fieldset>
+        <!-- <fieldset class="fieldset">
+          <legend class="fieldset-legend">Passport Number</legend>
+          <input type="text" class="input" bind:value={data.passportNumber} required />
+          <p class="label">e.g A*******</p>
+        </fieldset> -->
+        <!-- <fieldset class="fieldset">
+          <legend class="fieldset-legend">Emergency 1</legend>
+          <input type="text" class="input" bind:value={data.emergency1} required />
+          <p class="label">e.g john Doe +09******</p>
+        </fieldset> -->
       </div>
-    </fieldset>
-  </form>
-</div>
+
+      <div class="col-2">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Email</legend>
+          <input type="text" class="input" bind:value={data.email} required />
+          <p class="label">e.g example@gmail.com</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Last Name</legend>
+          <input type="text" class="input" bind:value={data.lastName} required />
+          <p class="label">e.g Doe</p>
+        </fieldset>
+        <!-- <fieldset class="fieldset">
+          <legend class="fieldset-legend">Middle Name</legend>
+          <input type="text" class="input" bind:value={data.middleName} required />
+          <p class="label">e.g Doe</p>
+        </fieldset> -->
+        <!-- <fieldset class="fieldset">
+          <legend class="fieldset-legend">Age</legend>
+          <input type="text" class="input" bind:value={data.age} required />
+          <p class="label">e.g 12, 20, 25</p>
+        </fieldset> -->
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Date of Birth</legend>
+          <input type="date" class="input" bind:value={data.dob} required />
+          <p class="label">input your birth date</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Weight</legend>
+          <input type="text" class="input" bind:value={data.weight} required />
+          <p class="label">weight (kg)</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Civil Status</legend>
+          <select class="select" bind:value={data.civilStatus}>
+            <option value="single" class="option">Single</option>
+            <option value="married" class="option">Married</option>
+          </select>
+          <p class="label">婚姻状況（Single = 未婚）</p>
+        </fieldset>
+        <!-- <fieldset class="fieldset">
+          <legend class="fieldset-legend">Zip Code</legend>
+          <input type="text" class="input" bind:value={data.zipCode} required />
+          <p class="label">e.g 123-4567</p>
+        </fieldset> -->
+        <!-- <fieldset class="fieldset">
+          <legend class="fieldset-legend">City</legend>
+          <input type="text" class="input" bind:value={data.city} required />
+          <p class="label">e.g Tokyo</p>
+        </fieldset> -->
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Allergy</legend>
+          <input type="text" class="input" bind:value={data.allergy} required />
+          <p class="label">e.g Tokyo</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Blood Type</legend>
+          <select name="blood_type" class="select" bind:value={data.bloodType}>
+            <option disabled selected>Select blood type</option>
+            <option value="A" class="option">A</option>
+            <option value="B" class="option">B</option>
+            <option value="O" class="option">O</option>
+            <option value="AB" class="option">AB</option>
+            <option value="不明" class="option">不明</option>
+          </select>
+          <p class="label">e.g A, B, O, AB, 不明</p>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">SNS Permission</legend>
+          <input type="checkbox" bind:checked={data.snsPermission} class="checkbox" />
+          <p class="text-wrap max-w-[200px]">
+            Do you permit GLC to post photos/videos that you are appeared on our social media accounts? * If it is
+            "No",we will put mosaic or sticker on your face.
+          </p>
+        </fieldset>
+        <!-- <fieldset class="fieldset">
+          <legend class="fieldset-legend">Mobile Number in Philippines</legend>
+          <input type="text" class="input" bind:value={data.phone} required />
+          <p class="label">e.g 09*********</p>
+        </fieldset> -->
+        <!-- <fieldset class="fieldset">
+          <legend class="fieldset-legend">Emergency 2</legend>
+          <input type="text" class="input" bind:value={data.emergency2} required />
+          <p class="label">e.g Sam Smith +09******</p>
+        </fieldset> -->
+        <!-- <fieldset class="fieldset">
+          <legend class="fieldset-legend">Occupation/Profession</legend>
+          <input type="text" class="input" bind:value={data.occupation} required />
+          <p class="text-wrap max-w-[200px]">e.g. student, office worker, etc</p>
+        </fieldset> -->
+      </div>
+    </div>
+
+    <div class="flex justify-end m-2">
+      <button type="submit" class="btn btn-primary">Submit</button>
+    </div>
+  </fieldset>
+</form>
