@@ -1,6 +1,4 @@
 <script>
-  import { pb } from '../../../lib/Pocketbase.svelte'
-
   let selectedLanguage = $state()
 
   // Map language options to Google Drive preview links

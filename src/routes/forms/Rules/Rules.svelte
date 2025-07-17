@@ -1,8 +1,3 @@
-<script>
-  import { onMount } from 'svelte'
-  import { toast } from 'svelte-sonner'
-</script>
-
 <div class="relative h-[50vh] flex items-center justify-center overflow-hidden">
   <!-- Background Layer -->
   <div class="absolute inset-0 bg-cover bg-center" style="background-image: url('/bg-register.jpg');"></div>

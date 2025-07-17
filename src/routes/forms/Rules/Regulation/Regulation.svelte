@@ -1,6 +1,4 @@
 <script>
-  import { pb } from '../../../lib/Pocketbase.svelte'
-
   let selectedLanguage = 'english'
 
   // Map language options to Google Drive preview links
@@ -29,7 +27,7 @@
 <!-- Language Select -->
 <div class="w-full max-w-4xl mx-auto mt-6 text-right">
   <!-- svelte-ignore a11y_label_has_associated_control -->
-  <label class="mr-2 font-semibold text-gray-100">Select Language:</label>
+  <label class="mr-2 font-semibold">Select Language:</label>
   <select bind:value={selectedLanguage} class="select w-xs select-primary">
     <option value="english">English</option>
     <option value="japanese">Japanese</option>
