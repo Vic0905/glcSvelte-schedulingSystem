@@ -9,11 +9,11 @@
     <details>
       <summary>Lesson Forms</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a>Teacher Request Form</a></li>
-        <li><a>Special Classes Form</a></li>
-        <li><a>Additional Classes Form</a></li>
-        <li><a>Class Cancellation Form</a></li>
-        <li><a>Course Request Form</a></li>
+        <li><a>Teacher Request</a></li>
+        <li><a>Special Classes</a></li>
+        <li><a>Additional Classes</a></li>
+        <li><a>Class Cancellation</a></li>
+        <li><a>Course Request</a></li>
       </ul>
     </details>
   </li>
@@ -21,9 +21,9 @@
     <details>
       <summary>Consent Forms</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a>Legal Consent Form</a></li>
-        <li><a>Minor Form</a></li>
-        <li><a>Travel Request Form</a></li>
+        <li><a>Legal Consent</a></li>
+        <li><a>Minor</a></li>
+        <li><a>Travel Request</a></li>
       </ul>
     </details>
   </li>
