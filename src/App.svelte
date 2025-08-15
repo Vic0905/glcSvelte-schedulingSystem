@@ -2,7 +2,7 @@
   import Router from 'svelte-spa-router'
   import { current, pb } from './lib/Pocketbase.svelte'
   import { Toaster } from 'svelte-sonner'
-  import { adminRoutes, guestRoutes, studentRoutes } from './lib/Routes.svelte'
+  import { adminRoutes, guestRoutes, studentRoutes, teacherRoutes } from './lib/Routes.svelte'
   import Navbar from './components/Navbar.svelte'
 </script>
 
@@ -13,6 +13,9 @@
   {/if}
   {#if current.user.role === 'student'}
     <Router routes={studentRoutes} />
+  {/if}
+  {#if current.user.role === 'teacher'}
+    <Router routes={teacherRoutes} />
   {/if}
 {:else}
   <Router routes={guestRoutes} />

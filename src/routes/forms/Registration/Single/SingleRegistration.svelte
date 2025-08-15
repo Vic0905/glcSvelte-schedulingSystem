@@ -96,7 +96,6 @@
           </select>
           <p class="label">e.g Male or Female</p>
         </fieldset>
-
         <fieldset class="fieldset">
           <legend class="fieldset-legend">Nationality</legend>
           <select class="select" bind:value={data.nationality}>

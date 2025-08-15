@@ -25,7 +25,7 @@
 </div>
 
 <!-- Language Select -->
-<div class="w-full max-w-4xl mx-auto mt-6 text-right">
+<div class="w-full max-w-4xl mx-auto text-right">
   <!-- svelte-ignore a11y_label_has_associated_control -->
   <label class="mr-2 font-semibold">Select Language:</label>
   <select bind:value={selectedLanguage} class="select w-xs select-primary">
@@ -45,5 +45,5 @@
 <!-- iFrame Preview -->
 <div class="w-full max-w-4xl mx-auto mt-6">
   <!-- svelte-ignore a11y_missing_attribute -->
-  <iframe src={driveLinks[selectedLanguage]} width="100%" height="800" class="w-full rounded shadow"></iframe>
+  <iframe src={driveLinks[selectedLanguage]} width="100%" height="750" class="w-full rounded shadow"></iframe>
 </div>
