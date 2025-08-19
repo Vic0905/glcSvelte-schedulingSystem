@@ -40,7 +40,9 @@ export const guestRoutes = {
   '/rules/regulation': wrap({
     asyncComponent: () => import('../routes/forms/Rules/Regulation/Regulation.svelte'),
   }),
-
+  '/schedule/advanceschedule': wrap({
+    asyncComponent: () => import('../routes/Schedule/advanceSchedule.svelte'),
+  }),
   '/schedule/scheduleinput': wrap({
     asyncComponent: () => import('../routes/Schedule/scheduleInput.svelte'),
   }),

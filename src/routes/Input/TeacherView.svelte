@@ -23,12 +23,12 @@
     return h(
       'div',
       {
-        class: 'w-full max-w-full rounded p-2 flex flex-col gap-1 text-xs justify-center items-left whitespace-nowrap',
+        class: 'w-full max-w-full rounded p-2 flex flex-col gap-1 text-xs justify-left items-left whitespace-nowrap',
       },
       cell.map((item) =>
         h('div', { class: 'flex flex-col gap-1' }, [
           createBadge(item.subject.name, 'badge-primary'),
-          createBadge(item.teacher.name, 'badge-success'),
+          // createBadge(item.teacher.name, 'badge-success'),
           createBadge(item.student.name, 'badge-accent'),
           createBadge(item.room.name, 'badge-error'),
         ])

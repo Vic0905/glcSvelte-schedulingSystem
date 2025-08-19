@@ -56,6 +56,7 @@
     <details>
       <summary>Scheduling</summary>
       <ul class="relative z-50 text-xs p-2">
+        <li><a href="#/schedule/advanceschedule">Advance Input Table</a></li>
         <li><a href="/#/schedule/scheduleinput">Input Table</a></li>
         <li><a href="/#/input/teacherview">Teacher View Table</a></li>
         <li><a href="/#/schedule/schedulestudent">Student View Table</a></li>
@@ -112,6 +113,7 @@
     <details>
       <summary>Scheduling</summary>
       <ul class="relative z-50 text-xs p-2">
+        <li><a href="#/schedule/advanceschedule">Advance Input Table</a></li>
         <li><a href="/#/schedule/scheduleinput">Input Table</a></li>
         <li><a href="/#/input/teacherview">Teacher View Table</a></li>
         <li><a href="/#/schedule/schedulestudent">Student View Table</a></li>

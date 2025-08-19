@@ -17,7 +17,7 @@
   // Get existing schedules for conflict checking
   const loadExistingSchedules = async () => {
     try {
-      const currentDate = booking.data.mode === 'edit' ? booking.data.date : booking.data.startDate
+      const currentDate = booking.data.date
       if (!currentDate || !booking.data.timeslot.id) {
         existingSchedules = []
         return
@@ -69,7 +69,7 @@
 
   // Reactive statement to reload schedules when date or timeslot changes
   $effect(() => {
-    const currentDate = booking.data.mode === 'edit' ? booking.data.date : booking.data.startDate
+    const currentDate = booking.data.date
     const timeslotId = booking.data.timeslot.id
 
     if (currentDate && timeslotId) {
@@ -77,9 +77,11 @@
     }
   })
 
-  const checkConflict = async (collection, filter) => {
+  const checkConflict = async (filter) => {
     try {
-      await pb.collection('lessonSchedule').getFirstListItem(filter)
+      await pb.collection('lessonSchedule').getFirstListItem(filter, {
+        expand: 'teacher,student', // Added for better conflict info
+      })
       return true
     } catch {
       return false
@@ -90,7 +92,10 @@
     const { data } = booking
 
     if (!data.id) {
-      toast.error('No schedule selected to delete')
+      toast.error('No schedule selected to delete', {
+        position: 'bottom-right',
+        duration: 3000,
+      })
       return
     }
 
@@ -110,16 +115,21 @@
 
     try {
       isDeleting = true
-
       await pb.collection('lessonSchedule').delete(data.id)
 
-      toast.success('Schedule deleted successfully!')
+      toast.success('Schedule deleted successfully!', {
+        position: 'bottom-right',
+        duration: 3000,
+      })
 
       dispatch('refresh')
       document.getElementById('editModal').close()
     } catch (error) {
       console.error('Error deleting schedule:', error)
-      toast.error(`Failed to delete schedule: ${error.message}`)
+      toast.error(`Failed to delete schedule: ${error.message}`, {
+        position: 'bottom-right',
+        duration: 5000,
+      })
     } finally {
       isDeleting = false
     }
@@ -128,34 +138,114 @@
   const saveData = async () => {
     const { data } = booking
 
+    // Validation - using toast instead of alert
+    const required = [
+      { field: data.teacher.id, msg: 'Please select Teacher' },
+      { field: data.student.id, msg: 'Please select Student' },
+      { field: data.subject.id, msg: 'Please select Subject' },
+      { field: data.timeslot.id, msg: 'Please select Timeslot' },
+      { field: data.date, msg: 'Please select Date' },
+    ]
+
+    for (const { field, msg } of required) {
+      if (!field) {
+        toast.error(msg, {
+          position: 'bottom-right',
+          duration: 3000,
+        })
+        return
+      }
+    }
+
     // Edit mode
     if (data.mode === 'edit' && data.id) {
       const excludeId = `&& id != "${data.id}"`
+      const dateFilter = `date = "${data.date}" && timeslot = "${data.timeslot.id}"`
 
-      if (
-        await checkConflict(
-          'lessonSchedule',
-          `teacher = "${data.teacher.id}" && date = "${data.date}" && timeslot = "${data.timeslot.id}" ${excludeId}`
-        )
-      ) {
-        alert(
-          '⚠ Teacher is already booked at this timeslot on this date. Please select a different timeslot or teacher.'
-        )
+      // Teacher conflict check
+      if (await checkConflict(`teacher = "${data.teacher.id}" && ${dateFilter} ${excludeId}`)) {
+        toast.error('Teacher conflict', {
+          position: 'bottom-right',
+          duration: 5000,
+          description: `${data.teacher.name} is already booked at this timeslot`,
+        })
         return
       }
 
-      if (
-        await checkConflict(
-          'lessonSchedule',
-          `room = "${data.room.id}" && date = "${data.date}" && timeslot = "${data.timeslot.id}" ${excludeId}`
-        )
-      ) {
-        alert('⚠ Room is already occupied at this timeslot on this date. Please select a different room or timeslot.')
+      // Room conflict check
+      if (await checkConflict(`room = "${data.room.id}" && ${dateFilter} ${excludeId}`)) {
+        toast.error('Room conflict', {
+          position: 'bottom-right',
+          duration: 5000,
+          description: `${data.room.name} is already occupied at this timeslot`,
+        })
         return
       }
 
-      await pb.collection('lessonSchedule').update(data.id, {
-        date: data.date,
+      try {
+        await pb.collection('lessonSchedule').update(data.id, {
+          date: data.date,
+          timeslot: data.timeslot.id,
+          teacher: data.teacher.id,
+          student: data.student.id,
+          subject: data.subject.id,
+          room: data.room.id,
+        })
+
+        toast.success('Schedule updated!', {
+          position: 'bottom-right',
+          duration: 3000,
+          description: `Changes saved for ${data.teacher.name} and ${data.student.name}`,
+        })
+
+        dispatch('refresh')
+        document.getElementById('editModal').close()
+      } catch (error) {
+        toast.error('Update failed', {
+          position: 'bottom-right',
+          duration: 5000,
+          description: error.message,
+        })
+      }
+      return
+    }
+
+    // Create mode
+    const dateStr = data.date
+    const baseFilter = `date = "${dateStr}" && timeslot = "${data.timeslot.id}"`
+
+    // Conflict checks
+    if (await checkConflict(`teacher = "${data.teacher.id}" && ${baseFilter}`)) {
+      toast.error('Teacher conflict', {
+        position: 'bottom-right',
+        duration: 5000,
+        description: `${data.teacher.name} is already booked at this time`,
+      })
+      return
+    }
+
+    if (await checkConflict(`student = "${data.student.id}" && ${baseFilter}`)) {
+      toast.error('Student conflict', {
+        position: 'bottom-right',
+        duration: 5000,
+        description: `${data.student.name} has another lesson scheduled`,
+      })
+      return
+    }
+
+    if (await checkConflict(`room = "${data.room.id}" && ${baseFilter}`)) {
+      toast.error('Room conflict', {
+        position: 'bottom-right',
+        duration: 5000,
+        description: `${data.room.name} is already occupied`,
+      })
+      return
+    }
+
+    try {
+      // Create the schedule
+      await pb.collection('lessonSchedule').create({
+        date: dateStr,
         timeslot: data.timeslot.id,
         teacher: data.teacher.id,
         student: data.student.id,
@@ -163,145 +253,29 @@
         room: data.room.id,
       })
 
+      // Success message with details
+      toast.success('Schedule created!', {
+        position: 'bottom-right',
+        duration: 5000,
+        description: `
+          teacher: ${data.teacher.name ?? 'N/A'} 
+          student: ${data.student.name ?? 'N/A'} 
+          subjcet: ${data.subject.name ?? 'N/A'}
+          room: ${data.room.name ?? 'N/A'}
+          timeslot: ${data.timeslot.start} - ${data.timeslot.end}
+          date: ${new Date(dateStr).toLocaleDateString()}
+        `,
+      })
+
       dispatch('refresh')
       document.getElementById('editModal').close()
-      return
+    } catch (error) {
+      toast.error('Creation failed', {
+        position: 'bottom-right',
+        duration: 5000,
+        description: error.message,
+      })
     }
-
-    // Validation
-    const required = [
-      { field: data.teacher.id, msg: 'Please select Teacher' },
-      { field: data.student.id, msg: 'Please select Student' },
-      { field: data.subject.id, msg: 'Please select Subject' },
-      { field: data.timeslot.id, msg: 'Please select Timeslot' },
-    ]
-
-    for (const { field, msg } of required) {
-      if (!field) {
-        alert(msg)
-        return
-      }
-    }
-
-    // Create mode (bulk create)
-    if (!data.startDate || !data.endDate) {
-      alert('⚠ Please select both start and end dates.')
-      return
-    }
-
-    const start = new Date(data.startDate)
-    const end = new Date(data.endDate)
-
-    if (end < start) {
-      alert('⚠ End date cannot be before start date.')
-      return
-    }
-
-    // Generate weekdays
-    const days = []
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dayOfWeek = d.getDay()
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-        days.push(new Date(d))
-      }
-    }
-
-    const bulkData = []
-    const conflicts = []
-
-    for (const day of days) {
-      const dateStr = day.toISOString().split('T')[0]
-
-      // Check conflicts
-      const conflictChecks = [
-        {
-          filter: `student = "${data.student.id}" && date = "${dateStr}" && timeslot = "${data.timeslot.id}"`,
-          type: 'Student',
-        },
-        {
-          filter: `teacher = "${data.teacher.id}" && date = "${dateStr}" && timeslot = "${data.timeslot.id}"`,
-          type: 'Teacher',
-        },
-        { filter: `room = "${data.room.id}" && date = "${dateStr}" && timeslot = "${data.timeslot.id}"`, type: 'Room' },
-      ]
-
-      let hasConflict = false
-      for (const { filter, type } of conflictChecks) {
-        if (await checkConflict('lessonSchedule', filter)) {
-          console.log(`⏩ Skipping ${dateStr} (${type.toLowerCase()} conflict)`)
-          conflicts.push(`${dateStr} - ${type} conflict`)
-          hasConflict = true
-          break
-        }
-      }
-
-      if (!hasConflict) {
-        bulkData.push({
-          date: dateStr,
-          timeslot: data.timeslot.id,
-          teacher: data.teacher.id,
-          student: data.student.id,
-          subject: data.subject.id,
-          room: data.room.id,
-        })
-      }
-    }
-
-    if (bulkData.length === 0) {
-      if (conflicts.length > 0) {
-        alert(`🚫 No schedules created due to conflicts:\n${conflicts.join('\n')}`)
-      } else {
-        alert('🚫 No schedules created.')
-      }
-      return
-    }
-
-    // Show summary of conflicts
-    if (conflicts.length > 0) {
-      const proceed = confirm(
-        `✅ ${bulkData.length} schedule(s) will be created.\n⚠ ${conflicts.length} conflict(s) were skipped:\n${conflicts.slice(0, 5).join('\n')}${conflicts.length > 5 ? '\n...and more' : ''}\n\nProceed with creating the valid schedules?`
-      )
-      if (!proceed) return
-    }
-
-    await Promise.all(bulkData.map((item) => pb.collection('lessonSchedule').create(item)))
-
-    // Get names for toast
-    const getName = async (collection, id, fallback) => {
-      try {
-        const record = await pb.collection(collection).getOne(id)
-        return record.name || record.englishName || record.roomName || fallback
-      } catch {
-        return fallback
-      }
-    }
-
-    const [teacherName, studentName, roomName] = await Promise.all([
-      getName('teacher', data.teacher.id, 'Unknown Teacher'),
-      getName('student', data.student.id, 'Unknown Student'),
-      getName('room', data.room.id, 'Unknown Room'),
-    ])
-
-    const startDateStr = new Date(data.startDate).toLocaleDateString()
-    const endDateStr = new Date(data.endDate).toLocaleDateString()
-
-    const toastMessage = [
-      `✅ ${bulkData.length} schedule(s) created successfully!`,
-      `👨‍🏫 Teacher: ${teacherName}`,
-      `👨‍🎓 Student: ${studentName}`,
-      `🏠 Room: ${roomName}`,
-      `📅 Period: ${startDateStr} - ${endDateStr}`,
-      ...(conflicts.length > 0 ? [`⚠ ${conflicts.length} conflict(s) were skipped`] : []),
-    ].join('\n')
-
-    if (typeof toast !== 'undefined') {
-      toast.success(toastMessage)
-    } else {
-      alert(toastMessage)
-    }
-
-    dispatch('refresh')
-    document.getElementById('editModal').close()
   }
 </script>
 
@@ -353,27 +327,8 @@
         </fieldset>
 
         <fieldset class="fieldset">
-          <legend class="fieldset-legend font-semibold text-gray-700">
-            {booking.data.mode === 'edit' ? 'Date' : 'Start Date'}
-          </legend>
-          {#if booking.data.mode === 'edit'}
-            <input type="date" bind:value={booking.data.date} class="input input-bordered w-full" required />
-          {:else}
-            <input type="date" bind:value={booking.data.startDate} class="input input-bordered w-full" required />
-          {/if}
-        </fieldset>
-
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
-          <select class="select select-bordered w-full" bind:value={booking.data.timeslot.id} required>
-            {#await getTimeslot()}
-              <option disabled selected>Fetching...</option>
-            {:then data}
-              {#each data as slot}
-                <option value={slot.id}>{slot.start} - {slot.end}</option>
-              {/each}
-            {/await}
-          </select>
+          <legend class="fieldset-legend font-semibold text-gray-700">Date</legend>
+          <input type="date" bind:value={booking.data.date} class="input input-bordered w-full" required />
         </fieldset>
       </div>
 
@@ -429,12 +384,18 @@
           {/if}
         </fieldset>
 
-        {#if booking.data.mode !== 'edit'}
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend font-semibold text-gray-700">End Date</legend>
-            <input type="date" bind:value={booking.data.endDate} class="input input-bordered w-full" required />
-          </fieldset>
-        {/if}
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
+          <select class="select select-bordered w-full" bind:value={booking.data.timeslot.id} required>
+            {#await getTimeslot()}
+              <option disabled selected>Fetching...</option>
+            {:then data}
+              {#each data as slot}
+                <option value={slot.id}>{slot.start} - {slot.end}</option>
+              {/each}
+            {/await}
+          </select>
+        </fieldset>
       </div>
     </div>
 
