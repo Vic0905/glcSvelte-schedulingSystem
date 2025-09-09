@@ -17,11 +17,11 @@
 
     const data = records.map((t) => [
       t.name,
-      h('div', { className: 'flex gap-2' }, [
+      h('div', { className: 'flex gap-2 justify-center' }, [
         h(
           'button',
           {
-            className: 'btn btn-sm btn-accent',
+            className: 'btn btn-outline btn-sm btn-accent',
             onClick: () => openEdit(t),
           },
           'Edit'
@@ -29,7 +29,7 @@
         h(
           'button',
           {
-            className: 'btn btn-sm btn-error',
+            className: 'btn btn-outline btn-sm btn-error',
             onClick: () => deleteTeacher(t.id),
           },
           'Delete'
@@ -45,12 +45,12 @@
         data,
         className: {
           table: 'w-full text-sm',
-          th: 'bg-slate-100 p-2 border',
-          td: 'p-2 border align-top',
+          th: 'bg-slate-100 p-2 border text-center',
+          td: 'p-2 border align-middle text-center',
         },
         pagination: {
           enabled: true,
-          limit: 5,
+          limit: 10,
         },
         search: true,
         sort: true,
@@ -114,10 +114,12 @@
 <div class="p-6 max-w-3xl mx-auto bg-base-100 shadow-lg rounded-xl">
   <div class="flex justify-between items-center mb-4">
     <h2 class="text-2xl font-bold text-primary">Teacher Management</h2>
-    <button class="btn btn-primary" on:click={openAddModal}>Add Teacher</button>
+    <button class="btn btn-outline btn-primary" onclick={openAddModal}>Add Teacher</button>
   </div>
 
-  <div id="teacherGrid" class="overflow-x-auto"></div>
+  <div id="table-wrapper" class="overflow-y-auto max-500px">
+    <div id="teacherGrid"></div>
+  </div>
 </div>
 
 <!-- Modal -->
@@ -127,10 +129,10 @@
       <h3 class="font-bold text-lg mb-4">{editingId ? 'Edit' : 'Add'} Teacher</h3>
       <input type="text" bind:value={name} placeholder="Teacher Name" class="input input-bordered w-full mb-4" />
       <div class="modal-action">
-        <button class="btn btn-primary" on:click={saveTeacher}>
+        <button class="btn btn-outline btn-primary" onclick={saveTeacher}>
           {editingId ? 'Update' : 'Save'}
         </button>
-        <button class="btn" on:click={() => (showModal = false)}>Cancel</button>
+        <button class="btn btn-outline btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
       </div>
     </div>
   </dialog>

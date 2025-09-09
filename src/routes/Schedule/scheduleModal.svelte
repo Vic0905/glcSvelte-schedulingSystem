@@ -4,9 +4,18 @@
   import { createEventDispatcher } from 'svelte'
   import { toast } from 'svelte-sonner'
 
-  const getTeacher = async () => await pb.collection('teacher').getFullList()
-  const getStudent = async () => await pb.collection('student').getFullList()
-  const getSubject = async () => await pb.collection('subject').getFullList()
+  const getTeacher = async () => {
+    const data = await pb.collection('teacher').getFullList()
+    return data.sort((a, b) => a.name.localeCompare(b.name))
+  }
+  const getStudent = async () => {
+    const data = await pb.collection('student').getFullList()
+    return data.sort((a, b) => a.name.localeCompare(b.name))
+  }
+  const getSubject = async () => {
+    const data = await pb.collection('subject').getFullList()
+    return data.sort((a, b) => a.name.localeCompare(b.name))
+  }
   const getRoom = async () => await pb.collection('room').getFullList()
   const getTimeslot = async () => await pb.collection('timeSlot').getFullList()
   const dispatch = createEventDispatcher()
@@ -14,7 +23,7 @@
   let isDeleting = $state(false)
   let existingSchedules = $state([])
 
-  // Get existing schedules for conflict checking
+  //  Load existing schedules from BOTH collections
   const loadExistingSchedules = async () => {
     try {
       const currentDate = booking.data.date
@@ -23,71 +32,178 @@
         return
       }
 
-      const records = await pb.collection('lessonSchedule').getFullList({
+      // lessonSchedule
+      const lessonRecords = await pb.collection('lessonSchedule').getFullList({
         filter: `date = "${currentDate}" && timeslot = "${booking.data.timeslot.id}"${booking.data.mode === 'edit' && booking.data.id ? ` && id != "${booking.data.id}"` : ''}`,
         expand: 'teacher,student,room',
       })
 
-      existingSchedules = records
+      // groupLessonSchedule - using correct field names
+      const groupRecords = await pb.collection('groupLessonSchedule').getFullList({
+        filter: `date = "${currentDate}" && timeslot = "${booking.data.timeslot.id}"`,
+        expand: 'teacher,student,grouproom,subject', // student is array, grouproom instead of room
+      })
+
+      // Merge both
+      existingSchedules = [...lessonRecords, ...groupRecords]
     } catch (error) {
-      console.error('Error loading existing schedules:', error)
+      console.error('Error loading schedules:', error)
       existingSchedules = []
     }
   }
 
-  // Check if teacher is already booked
+  // Conflict helpers
   const isTeacherBooked = (teacherId) => {
-    return existingSchedules.some((schedule) => schedule.teacher === teacherId)
+    return existingSchedules.some((s) => s.teacher === teacherId)
   }
 
-  // Check if student is already booked
   const isStudentBooked = (studentId) => {
-    return existingSchedules.some((schedule) => schedule.student === studentId)
+    return existingSchedules.some(
+      (s) => s.student === studentId || (Array.isArray(s.student) && s.student.includes(studentId))
+    )
   }
 
-  // Check if room is already booked
   const isRoomBooked = (roomId) => {
-    return existingSchedules.some((schedule) => schedule.room === roomId)
+    return existingSchedules.some((s) => s.room === roomId || s.grouproom === roomId)
   }
 
-  // Get the name of who is using the resource
   const getConflictInfo = (resourceId, type) => {
-    const schedule = existingSchedules.find((s) => s[type] === resourceId)
+    const schedule = existingSchedules.find((s) => {
+      if (type === 'student') {
+        return s.student === resourceId || (Array.isArray(s.student) && s.student.includes(resourceId))
+      } else if (type === 'room') {
+        return s.room === resourceId || s.grouproom === resourceId
+      }
+      return s[type] === resourceId
+    })
+
     if (!schedule) return ''
 
     switch (type) {
       case 'teacher':
+        // If group lesson (students array), just show "Booked for Group Class"
+        if (Array.isArray(schedule.expand?.student)) {
+          return 'Group Class'
+        }
+        // Otherwise, show the individual student name
         return schedule.expand?.student?.name || 'Unknown Student'
+
       case 'student':
         return schedule.expand?.teacher?.name || 'Unknown Teacher'
+
       case 'room':
-        return `${schedule.expand?.teacher?.name || 'Unknown Teacher'} & ${schedule.expand?.student?.name || 'Unknown Student'}`
+        const teacherName = schedule.expand?.teacher?.name || 'Unknown Teacher'
+        let studentNames = ''
+
+        if (schedule.expand?.student?.name) {
+          studentNames = schedule.expand.student.name
+        } else if (Array.isArray(schedule.expand?.student)) {
+          studentNames = schedule.expand.student.map((st) => st.name).join(', ')
+        } else {
+          studentNames = 'Group Students'
+        }
+
+        return `${teacherName} & ${studentNames}`
+
       default:
         return ''
     }
   }
 
-  // Reactive statement to reload schedules when date or timeslot changes
+  //  Reload schedules when date/timeslot changes
   $effect(() => {
     const currentDate = booking.data.date
     const timeslotId = booking.data.timeslot.id
-
     if (currentDate && timeslotId) {
       loadExistingSchedules()
     }
   })
 
-  const checkConflict = async (filter) => {
+  //  Check conflict across both collections with proper field mapping
+  const checkConflictInCollection = async (collection, baseFilter, resourceType, resourceId) => {
     try {
-      await pb.collection('lessonSchedule').getFirstListItem(filter, {
-        expand: 'teacher,student', // Added for better conflict info
-      })
+      let filter = baseFilter
+
+      // Handle different field names between collections
+      if (collection === 'groupLessonSchedule') {
+        if (resourceType === 'student') {
+          // Check if student is in the student array (note: field is "student", not "students")
+          filter += ` && student ~ "${resourceId}"`
+        } else if (resourceType === 'teacher') {
+          filter += ` && teacher = "${resourceId}"`
+        } else if (resourceType === 'room') {
+          // Use "grouproom" field instead of "room"
+          filter += ` && grouproom = "${resourceId}"`
+        }
+
+        console.log(`Checking groupLessonSchedule with filter: ${filter}`)
+
+        await pb.collection(collection).getFirstListItem(filter, {
+          expand: 'teacher,student,grouproom,subject',
+        })
+      } else {
+        // lessonSchedule collection
+        if (resourceType === 'student') {
+          filter += ` && student = "${resourceId}"`
+        } else if (resourceType === 'teacher') {
+          filter += ` && teacher = "${resourceId}"`
+        } else if (resourceType === 'room') {
+          filter += ` && room = "${resourceId}"`
+        }
+
+        console.log(`Checking lessonSchedule with filter: ${filter}`)
+
+        await pb.collection(collection).getFirstListItem(filter, {
+          expand: 'teacher,student,room',
+        })
+      }
+
       return true
-    } catch {
+    } catch (error) {
+      console.log(`No conflict found in ${collection}: ${error.status || error.message || 'not found'}`)
+      // If it's a 400 error on groupLessonSchedule, the collection might not exist or have different schema
+      if (error.status === 400 && collection === 'groupLessonSchedule') {
+        console.warn('groupLessonSchedule collection may not exist or have different field names')
+      }
       return false
     }
   }
 
+  const checkConflict = async (resourceType, resourceId, excludeCurrentRecord = false) => {
+    const currentDate = booking.data.date
+    const timeslotId = booking.data.timeslot.id
+
+    if (!currentDate || !timeslotId) return false
+
+    // Check individual lessons (lessonSchedule)
+    let lessonBaseFilter = `date = "${currentDate}" && timeslot = "${timeslotId}"`
+
+    // Add exclusion for edit mode (only for the same collection type)
+    if (excludeCurrentRecord && booking.data.mode === 'edit' && booking.data.id) {
+      lessonBaseFilter += ` && id != "${booking.data.id}"`
+    }
+
+    const lessonConflict = await checkConflictInCollection('lessonSchedule', lessonBaseFilter, resourceType, resourceId)
+    if (lessonConflict) return true
+
+    // Try to check group lessons, but skip if collection has issues
+    try {
+      const groupBaseFilter = `date = "${currentDate}" && timeslot = "${timeslotId}"`
+      const groupConflict = await checkConflictInCollection(
+        'groupLessonSchedule',
+        groupBaseFilter,
+        resourceType,
+        resourceId
+      )
+      if (groupConflict) return true
+    } catch (error) {
+      console.warn('Skipping groupLessonSchedule check due to collection issues:', error)
+    }
+
+    return false
+  }
+
+  //  Delete schedule
   const deleteSchedule = async () => {
     const { data } = booking
 
@@ -99,7 +215,6 @@
       return
     }
 
-    // Confirmation dialog
     const confirmDelete = confirm(
       `Are you sure you want to delete this schedule?\n\n` +
         `Date: ${new Date(data.date).toLocaleDateString()}\n` +
@@ -135,10 +250,10 @@
     }
   }
 
+  //  Save schedule with proper conflict checking
   const saveData = async () => {
     const { data } = booking
 
-    // Validation - using toast instead of alert
     const required = [
       { field: data.teacher.id, msg: 'Please select Teacher' },
       { field: data.student.id, msg: 'Please select Student' },
@@ -149,39 +264,43 @@
 
     for (const { field, msg } of required) {
       if (!field) {
-        toast.error(msg, {
-          position: 'bottom-right',
-          duration: 3000,
-        })
+        toast.error(msg, { position: 'bottom-right', duration: 3000 })
         return
       }
     }
 
+    // Check conflicts using the new function
+    const isEditMode = data.mode === 'edit' && data.id
+
+    if (await checkConflict('teacher', data.teacher.id, isEditMode)) {
+      toast.error('Teacher conflict', {
+        position: 'bottom-right',
+        duration: 5000,
+        description: `${data.teacher.name} is already booked at this timeslot`,
+      })
+      return
+    }
+
+    if (await checkConflict('student', data.student.id, isEditMode)) {
+      toast.error('Student conflict', {
+        position: 'bottom-right',
+        duration: 5000,
+        description: `${data.student.name} has another lesson scheduled`,
+      })
+      return
+    }
+
+    if (await checkConflict('room', data.room.id, isEditMode)) {
+      toast.error('Room conflict', {
+        position: 'bottom-right',
+        duration: 5000,
+        description: `${data.room.name} is already occupied`,
+      })
+      return
+    }
+
     // Edit mode
-    if (data.mode === 'edit' && data.id) {
-      const excludeId = `&& id != "${data.id}"`
-      const dateFilter = `date = "${data.date}" && timeslot = "${data.timeslot.id}"`
-
-      // Teacher conflict check
-      if (await checkConflict(`teacher = "${data.teacher.id}" && ${dateFilter} ${excludeId}`)) {
-        toast.error('Teacher conflict', {
-          position: 'bottom-right',
-          duration: 5000,
-          description: `${data.teacher.name} is already booked at this timeslot`,
-        })
-        return
-      }
-
-      // Room conflict check
-      if (await checkConflict(`room = "${data.room.id}" && ${dateFilter} ${excludeId}`)) {
-        toast.error('Room conflict', {
-          position: 'bottom-right',
-          duration: 5000,
-          description: `${data.room.name} is already occupied at this timeslot`,
-        })
-        return
-      }
-
+    if (isEditMode) {
       try {
         await pb.collection('lessonSchedule').update(data.id, {
           date: data.date,
@@ -211,41 +330,9 @@
     }
 
     // Create mode
-    const dateStr = data.date
-    const baseFilter = `date = "${dateStr}" && timeslot = "${data.timeslot.id}"`
-
-    // Conflict checks
-    if (await checkConflict(`teacher = "${data.teacher.id}" && ${baseFilter}`)) {
-      toast.error('Teacher conflict', {
-        position: 'bottom-right',
-        duration: 5000,
-        description: `${data.teacher.name} is already booked at this time`,
-      })
-      return
-    }
-
-    if (await checkConflict(`student = "${data.student.id}" && ${baseFilter}`)) {
-      toast.error('Student conflict', {
-        position: 'bottom-right',
-        duration: 5000,
-        description: `${data.student.name} has another lesson scheduled`,
-      })
-      return
-    }
-
-    if (await checkConflict(`room = "${data.room.id}" && ${baseFilter}`)) {
-      toast.error('Room conflict', {
-        position: 'bottom-right',
-        duration: 5000,
-        description: `${data.room.name} is already occupied`,
-      })
-      return
-    }
-
     try {
-      // Create the schedule
       await pb.collection('lessonSchedule').create({
-        date: dateStr,
+        date: data.date,
         timeslot: data.timeslot.id,
         teacher: data.teacher.id,
         student: data.student.id,
@@ -253,17 +340,16 @@
         room: data.room.id,
       })
 
-      // Success message with details
       toast.success('Schedule created!', {
         position: 'bottom-right',
         duration: 5000,
         description: `
           teacher: ${data.teacher.name ?? 'N/A'} 
           student: ${data.student.name ?? 'N/A'} 
-          subjcet: ${data.subject.name ?? 'N/A'}
+          subject: ${data.subject.name ?? 'N/A'}
           room: ${data.room.name ?? 'N/A'}
           timeslot: ${data.timeslot.start} - ${data.timeslot.end}
-          date: ${new Date(dateStr).toLocaleDateString()}
+          date: ${new Date(data.date).toLocaleDateString()}
         `,
       })
 
@@ -407,20 +493,6 @@
             <span class="loading loading-spinner loading-sm"></span>
             Deleting...
           {:else}
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
             Delete
           {/if}
         </button>

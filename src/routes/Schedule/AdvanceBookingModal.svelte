@@ -6,9 +6,18 @@
 
   let existingBookings = $state([])
 
-  const getTeacher = async () => await pb.collection('teacher').getFullList()
-  const getStudent = async () => await pb.collection('student').getFullList()
-  const getSubject = async () => await pb.collection('subject').getFullList()
+  const getTeacher = async () => {
+    const data = await pb.collection('teacher').getFullList()
+    return data.sort((a, b) => a.name.localeCompare(b.name))
+  }
+  const getStudent = async () => {
+    const data = await pb.collection('student').getFullList()
+    return data.sort((a, b) => a.name.localeCompare(b.name))
+  }
+  const getSubject = async () => {
+    const data = await pb.collection('subject').getFullList()
+    return data.sort((a, b) => a.name.localeCompare(b.name))
+  }
 
   const loadExistingBookings = async () => {
     try {

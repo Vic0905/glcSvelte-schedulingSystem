@@ -1,16 +1,18 @@
 <script>
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
   import { pb } from '../../lib/Pocketbase.svelte'
-  import { toast } from 'svelte-sonner'
   import AdvanceBookingModal from './AdvanceBookingModal.svelte'
   import GoLiveModal from './GoLiveModal.svelte'
 
+  // --- State ---
   let currentWeekStart = $state('')
   let timeslots = []
   let allRooms = []
   let advanceGrid = null
+  let columns = null
+
   let showAdvanceModal = $state(false)
   let showGoLiveModal = $state(false)
 
@@ -24,23 +26,22 @@
     mode: 'create',
   })
 
+  // --- Helpers ---
   const initializeWeek = () => {
     const today = new Date()
-    const dayOfWeek = today.getDay()
+    const dow = today.getDay()
     const monday = new Date(today)
-    monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1) + 7)
+    monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1))
     currentWeekStart = monday.toISOString().split('T')[0]
   }
 
   const getWeekDates = (startDate) => {
-    const dates = []
     const monday = new Date(startDate)
-    for (let i = 0; i < 5; i++) {
-      const day = new Date(monday)
-      day.setDate(monday.getDate() + i)
-      dates.push(day.toISOString().split('T')[0])
-    }
-    return dates
+    return Array.from({ length: 5 }, (_, i) => {
+      const d = new Date(monday)
+      d.setDate(monday.getDate() + i)
+      return d.toISOString().split('T')[0]
+    })
   }
 
   const getWeekRange = (startDate) => {
@@ -60,22 +61,17 @@
     loadAdvanceBookings()
   }
 
-  const createBadge = (text, colorClass) => h('div', { class: `badge ${colorClass} badge-xs` }, text)
+  // --- Cell Helpers ---
+  const createBadge = (text, color) => h('div', { class: `badge ${color} badge-xs` }, text)
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
-    return h(
-      'div',
-      {
-        class: 'w-full max-w-full rounded p-2 flex flex-col gap-1 text-xs justify-center items-left whitespace-nowrap',
-      },
-      [
-        createBadge(cell.subject.name, 'badge-primary'),
-        createBadge(cell.teacher.name, 'badge-success'),
-        createBadge(cell.student.name, 'badge-accent'),
-        createBadge(cell.room.name, 'badge-error'),
-      ]
-    )
+    return h('div', { class: 'w-full p-2 flex flex-col gap-1 text-xs whitespace-nowrap' }, [
+      createBadge(cell.subject.name, 'badge-primary'),
+      createBadge(cell.teacher.name, 'badge-success'),
+      createBadge(cell.student.name, 'badge-accent'),
+      createBadge(cell.room.name, 'badge-error'),
+    ])
   }
 
   const createSlotData = (item, room, roomId, t, assignedTeacher) => ({
@@ -86,38 +82,40 @@
     student: { name: item?.expand?.student?.name || '', id: item?.expand?.student?.id || '' },
     room: { name: room, id: roomId },
     timeslot: { id: t.id, start: t.start, end: t.end },
-    assignedTeacher: assignedTeacher,
+    assignedTeacher,
   })
 
+  // --- Load Data ---
   async function loadAdvanceBookings() {
+    // cache timeslots + rooms
     if (!timeslots.length) {
       timeslots = await pb.collection('timeSlot').getFullList({ sort: 'start' })
     }
     if (!allRooms.length) {
-      allRooms = await pb.collection('room').getFullList({
-        sort: 'name',
-        expand: 'teacher',
-      })
+      allRooms = await pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' })
     }
-    const records = await pb.collection('advanceBooking').getFullList({
+
+    // use getList (paginated)
+    const { items: records } = await pb.collection('advanceBooking').getList(1, 500, {
       expand: 'teacher,student,subject,room,timeslot',
     })
+
     const scheduledRooms = {}
-    records.forEach((r) => {
+    for (const r of records) {
       const roomId = r.expand?.room?.id || r.room
-      if (!scheduledRooms[roomId]) {
-        scheduledRooms[roomId] = {}
-      }
-      const key = r.expand?.timeslot?.id || r.timeslot
-      scheduledRooms[roomId][key] = r
-    })
+      const slotId = r.expand?.timeslot?.id || r.timeslot
+      if (!scheduledRooms[roomId]) scheduledRooms[roomId] = {}
+      scheduledRooms[roomId][slotId] = r
+    }
+
+    // transform into grid rows
     const data = allRooms.map((room) => {
       const slotMap = scheduledRooms[room.id] || {}
       const assignedTeacher = room.expand?.teacher
       const teacherName = assignedTeacher?.name || '-'
       const row = [
-        { label: 'Teacher', value: teacherName, disabled: true },
-        { label: 'Room', value: room.name, disabled: true },
+        { value: teacherName, disabled: true },
+        { value: room.name, disabled: true },
       ]
       timeslots.forEach((t) => {
         const item = slotMap[t.id]
@@ -125,139 +123,118 @@
       })
       return row
     })
-    if (!advanceGrid || !advanceGrid.columns) {
-      const columns = [
+
+    // build columns only once
+    if (!columns) {
+      columns = [
         {
           name: 'Teacher',
-          formatter: (cell) => {
-            if (cell.disabled) {
-              return h(
-                'span',
-                {
-                  class: 'cursor-not-allowed',
-                  style: 'pointer-events: none;',
-                },
-                cell.value
-              )
-            }
-            return cell.value
-          },
-          hidden: false,
+          formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
         },
         {
           name: 'Room',
-          formatter: (cell) => {
-            if (cell.disabled) {
-              return h(
-                'span',
-                {
-                  class: 'cursor-not-allowed',
-                  style: 'pointer-events: none;',
-                },
-                cell.value
-              )
-            }
-            return cell.value
-          },
+          formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
         },
         ...timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
           id: t.id,
-          width: 'auto',
           formatter: formatCell,
         })),
       ]
-      if (advanceGrid) {
-        requestAnimationFrame(() => {
-          advanceGrid.updateConfig({ data }).forceRender()
-        })
-      } else {
-        advanceGrid = new Grid({
-          columns: columns,
-          data,
-          search: {
-            enabled: true,
-            selector: (cell) => {
-              if (typeof cell === 'string') return cell
-              return cell?.value || ''
-            },
-          },
-          sort: false,
-          pagination: false,
-          autoWidth: true,
-          className: {
-            table: 'w-full border text-sm relative',
-            th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
-            td: 'border p-2 whitespace-pre-line align-middle text-left font-semibold',
-          },
-        }).render(document.getElementById('advance-grid'))
+    }
 
-        advanceGrid.on('cellClick', (...args) => {
-          const cellData = args[1].data
-          if (cellData.disabled === true) {
-            return
-          }
-          Object.assign(advanceBooking, cellData)
-          advanceBooking.timeslot.id = cellData.timeslot?.id || ''
-          advanceBooking.room.id = cellData.room?.id || ''
-          advanceBooking.mode = cellData.label === 'Empty' ? 'create' : 'edit'
-          if (cellData.label === 'Empty' && cellData.assignedTeacher) {
-            advanceBooking.teacher.id = cellData.assignedTeacher.id
-            advanceBooking.teacher.name = cellData.assignedTeacher.name
-          }
-          showAdvanceModal = true
-        })
-      }
-    } else {
+    // update or create grid
+    if (advanceGrid) {
       requestAnimationFrame(() => {
         advanceGrid.updateConfig({ data }).forceRender()
+      })
+    } else {
+      advanceGrid = new Grid({
+        columns,
+        data,
+        search: { enabled: true },
+        sort: false,
+        pagination: false,
+        autoWidth: true,
+        className: {
+          table: 'w-full border text-sm',
+          th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
+          td: 'border p-2 whitespace-pre-line align-middle text-left font-semibold',
+        },
+      }).render(document.getElementById('advance-grid'))
+
+      // click handler (set once)
+      advanceGrid.on('cellClick', (_, cell) => {
+        const cellData = cell.data
+        if (cellData.disabled) return
+        Object.assign(advanceBooking, cellData)
+        advanceBooking.mode = cellData.label === 'Empty' ? 'create' : 'edit'
+        if (cellData.label === 'Empty' && cellData.assignedTeacher) {
+          advanceBooking.teacher = { ...cellData.assignedTeacher }
+        }
+        showAdvanceModal = true
       })
     }
   }
 
   onMount(() => {
+    // if (advanceGrid) advanceGrid.destroy()
+    initializeWeek()
+    loadAdvanceBookings()
+  })
+
+  onDestroy(() => {
     if (advanceGrid) {
       advanceGrid.destroy()
       advanceGrid = null
     }
-    initializeWeek()
-    loadAdvanceBookings()
   })
 </script>
 
 <div class="p-6 max-w-auto mx-auto bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="">Room</h2>
+    <h2>Room</h2>
     <h2 class="text-center flex-1">Advance Schedule Table (Weekly Template)</h2>
   </div>
-  <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
-      <!-- svelte-ignore a11y_label_has_associated_control -->
-      <label class="text-sm font-semibold">Target Week:</label>
-    </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center ml-15">
+  <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
+    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
       {getWeekRange(currentWeekStart)}
     </h3>
 
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 ml-auto">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
-      <button class="btn btn-primary btn-sm" onclick={() => (showGoLiveModal = true)}> 🚀 Go Live </button>
+      <button class="btn btn-primary btn-sm" onclick={() => (showGoLiveModal = true)}>🚀 Go Live</button>
     </div>
   </div>
 
-  <div class="alert alert-info mb-4">
-    <span
-      >ℹ️ Create weekly templates here. When you "Go Live", schedules will be created for Monday-Friday of the selected
-      week.</span
-    >
+  <!-- Legend -->
+  <div class="p-3 bg-base-200 rounded-lg">
+    <div class="flex flex-wrap gap-4 text-xs">
+      <div class="flex items-center gap-1">
+        <div class="badge badge-primary badge-xs"></div>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-success badge-xs"></div>
+        <span>Teacher</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-accent badge-xs"></div>
+        <span>Student </span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-error badge-xs"></div>
+        <span>Room</span>
+      </div>
+    </div>
   </div>
-  <div id="advance-grid" class="overflow-auto max-h-[700px]"></div>
+
+  <div id="advance-grid" class="overflow-auto max-h-[650px]"></div>
 </div>
 
 <AdvanceBookingModal bind:show={showAdvanceModal} bind:advanceBooking onSave={loadAdvanceBookings} />
-
 <GoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} {getWeekDates} />
 
 <style>

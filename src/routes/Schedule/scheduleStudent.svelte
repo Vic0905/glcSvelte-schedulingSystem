@@ -6,103 +6,142 @@
 
   let date = new Date().toISOString().split('T')[0]
   let currentDate = new Date()
-
   let studentGrid
   let columns
   let timeslots = []
 
-  const prevDate = () => {
-    currentDate.setDate(currentDate.getDate() - 1)
-    date = currentDate.toISOString().split('T')[0]
-    loadStudentSchedule()
+  // simple debounce to prevent too many reloads when fast-clicking
+  let debounceTimer
+  const reloadWithDebounce = () => {
+    clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(() => loadStudentSchedule(), 150)
   }
 
-  const nextDate = () => {
-    currentDate.setDate(currentDate.getDate() + 1)
+  const changeDate = (days) => {
+    currentDate.setDate(currentDate.getDate() + days)
     date = currentDate.toISOString().split('T')[0]
-    loadStudentSchedule()
+    reloadWithDebounce()
+  }
+
+  const createBadge = (text, colorClass) => h('span', { class: `badge ${colorClass} badge-xs` }, text)
+
+  const formatCell = (cell) => {
+    if (!cell || cell.length === 0) return h('span', {}, '—')
+    return h(
+      'div',
+      {
+        class: 'text-xs',
+      },
+      cell.map((item) =>
+        h(
+          'div',
+          { class: 'flex flex-col gap-1 items-center' },
+          [
+            createBadge(item.subject?.name || '', 'badge-primary'),
+            createBadge(item.teacher?.name || '', 'badge-success'),
+            item.isGroup ? createBadge('Group Class', 'badge-secondary') : null,
+            createBadge(item.room?.name || '', 'badge-error'),
+          ].filter(Boolean)
+        )
+      )
+    )
   }
 
   async function loadStudentSchedule() {
+    // cache timeslots
     if (timeslots.length === 0) {
       timeslots = await pb.collection('timeSlot').getFullList({ sort: 'start' })
     }
 
-    const schedules = await pb.collection('lessonSchedule').getFullList({
+    const students = await pb.collection('student').getFullList({ sort: 'name' })
+
+    // fetch individual lessons for this day
+    const individualSchedules = await pb.collection('lessonSchedule').getList(1, 200, {
       filter: `date = "${date}"`,
       expand: 'teacher,student,subject,room,timeslot',
     })
 
-    // Group by student (no deduplication)
-    const grouped = {}
-    for (const s of schedules) {
-      const student = s.expand.student
-      const studentId = student?.id
-      const studentName = student?.name
-      const englishName = student?.englishName || ''
-      const course = student?.course || ''
-      const level = student?.level || ''
+    // fetch group lessons for this day
+    const groupSchedules = await pb.collection('groupLessonSchedule').getList(1, 200, {
+      filter: `date = "${date}"`,
+      expand: 'teacher,student,subject,grouproom,timeslot',
+    })
 
-      if (!grouped[studentId]) {
-        grouped[studentId] = {
-          student: studentName,
-          englishName,
-          course,
-          level,
-          slots: {},
-        }
+    // group by student (pre-fill all students first)
+    const grouped = {}
+    for (const stu of students) {
+      grouped[stu.id] = {
+        student: stu.name,
+        englishName: stu.englishName || '',
+        course: stu.course || '',
+        level: stu.level || '',
+        slots: {}, // empty for now
       }
+    }
+
+    // process individual schedules
+    for (const s of individualSchedules.items) {
+      const student = s.expand.student
+      if (!student) continue
+      const studentId = student.id
 
       const timeslotId = s.expand.timeslot?.id
       if (!grouped[studentId].slots[timeslotId]) {
         grouped[studentId].slots[timeslotId] = []
       }
-
-      grouped[studentId].slots[timeslotId].push(s)
+      grouped[studentId].slots[timeslotId].push({
+        ...s,
+        isGroup: false,
+        expand: {
+          ...s.expand,
+          room: s.expand.room, // use regular room for individual lessons
+        },
+      })
     }
 
+    // process group schedules
+    for (const s of groupSchedules.items) {
+      const students = Array.isArray(s.expand.student) ? s.expand.student : []
+
+      // add this group lesson to each student in the group
+      for (const student of students) {
+        const studentId = student.id
+
+        // make sure the student exists in our grouped object
+        if (!grouped[studentId]) continue
+
+        const timeslotId = s.expand.timeslot?.id
+        if (!grouped[studentId].slots[timeslotId]) {
+          grouped[studentId].slots[timeslotId] = []
+        }
+
+        grouped[studentId].slots[timeslotId].push({
+          ...s,
+          isGroup: true,
+          expand: {
+            ...s.expand,
+            student: student, // set the specific student for this entry
+            room: s.expand.grouproom, // use grouproom for group lessons
+          },
+        })
+      }
+    }
+
+    // build columns once
     if (!columns) {
       columns = [
-        {
-          name: 'Student',
-          formatter: (cell) => h('div', { className: 'text-xs font-semibold' }, cell.value),
-        },
-        {
-          name: 'English Name',
-          formatter: (cell) => h('div', { className: 'text-xs' }, cell.value),
-        },
-        {
-          name: 'Course',
-          formatter: (cell) => h('div', { className: 'text-xs' }, cell.value),
-        },
-        {
-          name: 'Level',
-          formatter: (cell) => h('div', { className: 'text-xs' }, cell.value),
-        },
-
+        { name: 'Student', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'English Name', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Course', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Level', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
         ...timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
-          formatter: (cell) => {
-            if (!cell || cell.length === 0) return h('span', {}, '—')
-            return h(
-              'div',
-              {
-                class:
-                  'w-full max-w-full rounded p-2 flex flex-col gap-1 text-xs justify-center items-left whitespace-nowrap',
-              },
-              cell.map((item) =>
-                h('div', { class: 'flex flex-col gap-1' }, [
-                  h('div', { class: 'badge badge-primary badge-xs' }, `${item.subject.name}`),
-                  h('div', { class: 'badge badge-success badge-xs' }, `${item.teacher.name}`),
-                  h('div', { class: 'badge badge-error badge-xs' }, `${item.room.name}`),
-                ])
-              )
-            )
-          },
+          formatter: formatCell,
         })),
       ]
     }
 
+    // build rows fields that are present in the database
     const data = Object.values(grouped)
       .sort((a, b) => a.student.localeCompare(b.student, undefined, { numeric: true }))
       .map((entry) => {
@@ -112,7 +151,6 @@
           { label: 'Course', value: entry.course },
           { label: 'Level', value: entry.level },
         ]
-
         timeslots.forEach((t) => {
           const slotData = entry.slots[t.id] || []
           row.push(
@@ -121,14 +159,14 @@
               teacher: item.expand.teacher,
               student: item.expand.student,
               room: item.expand.room,
+              isGroup: item.isGroup,
             }))
           )
         })
-
         return row
       })
 
-    // Grid reuse
+    // grid reuse
     if (studentGrid) {
       requestAnimationFrame(() => {
         studentGrid.updateConfig({ data }).forceRender()
@@ -141,14 +179,12 @@
           enabled: true,
           selector: (cell) => {
             if (typeof cell === 'string') return cell
-            if (cell?.value) return cell.value
-            return ''
+            return cell?.value || ''
           },
         },
         sort: false,
-        pagination: false,
         className: {
-          table: 'w-full border text-sm',
+          table: 'w-full border text-sm max-w-[800px]',
           th: 'bg-base-200 p-2 border text-center',
           td: 'border p-2 whitespace-nowrap align-middle text-center',
         },
@@ -158,7 +194,9 @@
 
   onMount(() => {
     loadStudentSchedule()
+    // subscribe to both collections
     pb.collection('lessonSchedule').subscribe('*', loadStudentSchedule)
+    pb.collection('groupLessonSchedule').subscribe('*', loadStudentSchedule)
   })
 
   onDestroy(() => {
@@ -166,7 +204,9 @@
       studentGrid.destroy()
       studentGrid = null
     }
+    // unsubscribe from both collections
     pb.collection('lessonSchedule').unsubscribe()
+    pb.collection('groupLessonSchedule').unsubscribe()
   })
 </script>
 
@@ -199,13 +239,32 @@
     </h3>
 
     <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={prevDate}>&larr; </button>
-      <button class="btn btn-outline btn-sm" onclick={nextDate}> &rarr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeDate(-1)}>&larr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeDate(1)}>&rarr;</button>
     </div>
   </div>
 
-  <div id="studentGrid" class="overflow-x-auto"></div>
-</div>
+  <!-- Legend -->
+  <div class="p-3 bg-base-200 rounded-lg">
+    <div class="flex flex-wrap gap-4 text-xs">
+      <div class="flex items-center gap-1">
+        <div class="badge badge-primary badge-xs"></div>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-success badge-xs"></div>
+        <span>Teacher</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-secondary badge-xs"></div>
+        <span>Group Class</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-error badge-xs"></div>
+        <span>Room</span>
+      </div>
+    </div>
+  </div>
 
-<style>
-</style>
+  <div id="studentGrid"></div>
+</div>

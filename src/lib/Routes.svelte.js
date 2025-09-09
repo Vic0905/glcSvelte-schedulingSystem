@@ -46,6 +46,12 @@ export const guestRoutes = {
   '/schedule/scheduleinput': wrap({
     asyncComponent: () => import('../routes/Schedule/scheduleInput.svelte'),
   }),
+  '/schedule/advancegroupschedule': wrap({
+    asyncComponent: () => import('../routes/Schedule/advanceGroupSchedule.svelte'),
+  }),
+  '/schedule/grouptable': wrap({
+    asyncComponent: () => import('../routes/Schedule/GroupTable.svelte'),
+  }),
   '/schedule/schedulestudent': wrap({
     asyncComponent: () => import('../routes/Schedule/scheduleStudent.svelte'),
   }),
@@ -57,6 +63,9 @@ export const guestRoutes = {
   }),
   '/input/room': wrap({
     asyncComponent: () => import('../routes/Input/Room.svelte'),
+  }),
+  '/input/group': wrap({
+    asyncComponent: () => import('../routes/Input/Group.svelte'),
   }),
   '/input/student': wrap({
     asyncComponent: () => import('../routes/Input/Student.svelte'),

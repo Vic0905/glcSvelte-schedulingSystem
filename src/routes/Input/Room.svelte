@@ -12,6 +12,7 @@
   let grid
   let teachers = []
   let rooms = [] // Store all rooms to check teacher assignments
+  let grouprooms = [] // Store all grouprooms
 
   async function loadTeachers() {
     try {
@@ -22,6 +23,20 @@
     } catch (err) {
       console.error('Error loading teachers:', err)
       toast.error('Failed to load teachers')
+    }
+  }
+
+  // Load grouprooms for teacher assignment checking
+  async function loadGrouprooms() {
+    try {
+      const records = await pb.collection('grouproom').getFullList({
+        sort: 'name',
+        expand: 'teacher',
+      })
+      grouprooms = records
+    } catch (err) {
+      console.error('Error loading grouprooms:', err)
+      toast.error('Failed to load grouprooms')
     }
   }
 
@@ -48,11 +63,11 @@
       const data = records.map((t) => [
         t.name,
         t.expand?.teacher?.name || 'No teacher assigned',
-        h('div', { className: 'flex gap-2' }, [
+        h('div', { className: 'flex gap-2 justify-center' }, [
           h(
             'button',
             {
-              className: 'btn btn-sm btn-accent',
+              className: 'btn btn-outline btn-sm btn-accent',
               onClick: () => openEdit(t),
             },
             'Edit'
@@ -60,7 +75,7 @@
           h(
             'button',
             {
-              className: 'btn btn-sm btn-error',
+              className: 'btn btn-outline btn-sm btn-error',
               onClick: () => deleteRoom(t.id),
             },
             'Delete'
@@ -76,8 +91,8 @@
           data,
           className: {
             table: 'w-full text-sm',
-            th: 'bg-slate-100 p-2 border',
-            td: 'p-2 border align-top',
+            th: 'bg-slate-100 p-2 border text-center',
+            td: 'p-2 border align-middle text-center',
           },
           pagination: {
             enabled: true,
@@ -153,6 +168,7 @@
 
   onMount(async () => {
     await loadTeachers()
+    await loadGrouprooms()
     await loadRoom()
   })
 </script>
@@ -160,13 +176,13 @@
 <div class="p-6 max-w-4xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
   <div class="flex justify-between items-center mb-4">
     <h2 class="text-2xl font-bold text-primary">Room Management</h2>
-    <button class="btn btn-primary" onclick={openAddModal}>Add Room</button>
+    <button class="btn btn-outline btn-primary" onclick={openAddModal}>Add Room</button>
   </div>
 
   <div id="roomGrid" class="overflow-x-auto"></div>
 </div>
 
-<!-- Modal -->
+<!-- Add/Edit Room Modal -->
 {#if showModal}
   <div class="modal modal-open">
     <div class="modal-box">
@@ -188,28 +204,46 @@
         <select bind:value={selectedTeacherId} class="select select-bordered w-full">
           <option value="">-- No teacher assigned --</option>
           {#each teachers as teacher}
-            {@const isAssigned = isTeacherAssigned(teacher.id)}
-            {@const assignedRoom = rooms.find((room) => room.teacher === teacher.id && room.id !== editingId)}
-            <option value={teacher.id} disabled={isAssigned} class={isAssigned ? 'text-gray-400' : ''}>
+            {@const assignedToOtherRoom = rooms.find((room) => room.teacher === teacher.id && room.id !== editingId)}
+            {@const assignedToGrouproom = grouprooms.find((grouproom) => grouproom.teacher === teacher.id)}
+            {@const isAssigned = assignedToOtherRoom || assignedToGrouproom}
+            <option
+              value={teacher.id}
+              disabled={isAssigned}
+              class={isAssigned ? 'text-gray-400 cursor-not-allowed' : ''}
+            >
               {teacher.name}
-              {#if isAssigned}
-                (Already assigned to {assignedRoom?.name || 'another room'})
+              {#if assignedToOtherRoom}
+                (Already assigned to room: {assignedToOtherRoom.name})
+              {:else if assignedToGrouproom}
+                (Already assigned to grouproom: {assignedToGrouproom.name})
               {/if}
             </option>
           {/each}
         </select>
         {#if selectedTeacherId && isTeacherAssigned(selectedTeacherId)}
+          {@const assignedRoom = rooms.find((room) => room.teacher === selectedTeacherId && room.id !== editingId)}
+          {@const assignedGrouproom = grouprooms.find((grouproom) => grouproom.teacher === selectedTeacherId)}
           <div class="label">
-            <span class="label-text-alt text-warning"> ⚠️ This teacher is already assigned to another room </span>
+            <span class="label-text-alt text-warning">
+              ⚠️ This teacher is already assigned to
+              {#if assignedRoom}
+                room: {assignedRoom.name}
+              {:else if assignedGrouproom}
+                grouproom: {assignedGrouproom.name}
+              {:else}
+                another room/grouproom
+              {/if}
+            </span>
           </div>
         {/if}
       </div>
 
       <div class="modal-action">
-        <button class="btn btn-primary" onclick={saveRoom}>
+        <button class="btn btn-outline btn-primary" onclick={saveRoom}>
           {editingId ? 'Update' : 'Save'}
         </button>
-        <button class="btn" onclick={() => (showModal = false)}>Cancel</button>
+        <button class="btn btn-outline btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
       </div>
     </div>
   </div>

@@ -16,7 +16,7 @@
         <li><a>Course Request</a></li>
       </ul>
     </details>
-  </li> -->
+  </li> 
   <!-- <li>
     <details>
       <summary>Consent Forms</summary>
@@ -54,14 +54,38 @@
   </li>
   <li>
     <details>
-      <summary>Scheduling</summary>
+      <summary>Advance Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="#/schedule/advanceschedule">Advance Input Table</a></li>
+        <li><a href="#/schedule/advancegroupschedule">Advance Group Table</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Scheduling Table</summary>
+      <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/schedule/scheduleinput">Input Table</a></li>
+        <li><a href="/#/schedule/grouptable">Group Table</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>View Table</summary>
+      <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/input/teacherview">Teacher View Table</a></li>
         <li><a href="/#/schedule/schedulestudent">Student View Table</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Management</summary>
+      <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/input/subject">Subject</a></li>
         <li><a href="/#/input/room">Room</a></li>
+        <li><a href="/#/input/group">Group</a></li>
         <li><a href="/#/input/student">Student</a></li>
         <li><a href="/#/input/teacher">Teacher</a></li>
       </ul>
@@ -99,26 +123,50 @@
       </ul>
     </details>
   </li>
-  <!-- <li>
+  <!-- <li> 
     <details>
       <summary>Consent Forms</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a>Legal Consent Form</a></li>
         <li><a>Minor Form</a></li>
         <li><a>Travel Request Form</a></li>
-      </ul>
+      </ul> 
     </details>
   </li> -->
   <li>
     <details>
-      <summary>Scheduling</summary>
+      <summary>Advance Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="#/schedule/advanceschedule">Advance Input Table</a></li>
+        <li><a href="#/schedule/advancegroupschedule">Advance Group Table</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Scheduling Table</summary>
+      <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/schedule/scheduleinput">Input Table</a></li>
+        <li><a href="/#/schedule/grouptable">Group Table</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>View Table</summary>
+      <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/input/teacherview">Teacher View Table</a></li>
         <li><a href="/#/schedule/schedulestudent">Student View Table</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Management</summary>
+      <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/input/subject">Subject</a></li>
         <li><a href="/#/input/room">Room</a></li>
+        <li><a href="/#/input/group">Group</a></li>
         <li><a href="/#/input/student">Student</a></li>
         <li><a href="/#/input/teacher">Teacher</a></li>
       </ul>

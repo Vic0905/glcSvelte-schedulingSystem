@@ -6,30 +6,44 @@
 
   let date = new Date().toISOString().split('T')[0]
   let currentDate = new Date()
-  let teacherGrid,
-    columns,
-    timeslots = []
+  let teacherGrid = null
+  let columns = null
+  let timeslots = []
+
+  // cache teachers so we don't refetch them every time
+  let cachedTeachers = []
+
+  // debounce utility
+  let debounceTimer
+  const debounce = (fn, delay = 250) => {
+    return (...args) => {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => fn(...args), delay)
+    }
+  }
 
   const changeDate = (days) => {
     currentDate.setDate(currentDate.getDate() + days)
     date = currentDate.toISOString().split('T')[0]
-    loadTeacherSchedule()
+    debouncedLoad()
   }
 
-  const createBadge = (text, colorClass) => h('div', { class: `badge ${colorClass} badge-xs` }, text)
+  const createBadge = (text, colorClass) => h('span', { class: `badge ${colorClass} badge-xs` }, text)
 
   const formatCell = (cell) => {
     if (!cell || cell.length === 0) return h('span', {}, '—')
     return h(
       'div',
-      {
-        class: 'w-full max-w-full rounded p-2 flex flex-col gap-1 text-xs justify-left items-left whitespace-nowrap',
-      },
+      { class: 'text-xs' },
       cell.map((item) =>
-        h('div', { class: 'flex flex-col gap-1' }, [
-          createBadge(item.subject.name, 'badge-primary'),
-          // createBadge(item.teacher.name, 'badge-success'),
-          createBadge(item.student.name, 'badge-accent'),
+        h('div', { class: 'flex flex-col gap-1 items-center' }, [
+          createBadge(item.subject.name, 'badge-primary whitespace-nowrap'),
+          item.isGroup
+            ? h('div', { class: 'flex flex-col gap-0.5 items-center' }, [
+                createBadge('Group Class', 'badge-secondary'),
+                ...item.students.map((student) => createBadge(student.name, 'badge-neutral')),
+              ])
+            : createBadge(item.student.name, 'badge-neutral'),
           createBadge(item.room.name, 'badge-error'),
         ])
       )
@@ -37,45 +51,75 @@
   }
 
   async function loadTeacherSchedule() {
+    // fetch timeslots once
     if (!timeslots.length) {
       timeslots = await pb.collection('timeSlot').getFullList({ sort: 'start' })
     }
 
-    const schedules = await pb.collection('lessonSchedule').getFullList({
+    // fetch teachers once
+    if (!cachedTeachers.length) {
+      cachedTeachers = await pb.collection('teacher').getFullList({ sort: 'name' })
+    }
+
+    // fetch individual lessons for this day
+    const individualSchedulesPage = await pb.collection('lessonSchedule').getList(1, 200, {
       filter: `date = "${date}"`,
       expand: 'teacher,student,subject,room,timeslot',
     })
 
-    // Deduplicate and group by teacher
-    const studentAssignments = new Map()
-    const grouped = {}
+    // fetch group lessons for this day
+    const groupSchedulesPage = await pb.collection('groupLessonSchedule').getList(1, 200, {
+      filter: `date = "${date}"`,
+      expand: 'teacher,student,subject,grouproom,timeslot',
+    })
 
-    for (const s of schedules) {
-      const studentKey = `${s.expand.student?.name}_${s.expand.subject?.name}_${s.expand.timeslot?.id}`
-      studentAssignments.set(studentKey, s)
+    const individualSchedules = individualSchedulesPage.items
+    const groupSchedules = groupSchedulesPage.items
+
+    // process individual schedules
+    const studentAssignments = new Map()
+    for (const s of individualSchedules) {
+      const studentKey = `${s.expand.student?.id}_${s.expand.subject?.id}_${s.expand.timeslot?.id}`
+      studentAssignments.set(studentKey, {
+        ...s,
+        isGroup: false,
+        room: s.expand.room,
+        student: s.expand.student,
+        students: null,
+      })
     }
 
-    for (const s of studentAssignments.values()) {
-      const { teacher, room, timeslot } = s.expand
-      const teacherId = teacher?.id
+    // process group schedules
+    for (const s of groupSchedules) {
+      const groupKey = `group_${s.id}_${s.expand.subject?.id}_${s.expand.timeslot?.id}`
+      studentAssignments.set(groupKey, {
+        ...s,
+        isGroup: true,
+        room: s.expand.grouproom, // use grouproom instead of room
+        student: null,
+        students: Array.isArray(s.expand.student) ? s.expand.student : [],
+      })
+    }
 
+    // group by teacher group them by teacher
+    const grouped = {}
+    for (const s of studentAssignments.values()) {
+      const { teacher, timeslot } = s.expand
+      const teacherId = teacher?.id
       if (!grouped[teacherId]) {
         grouped[teacherId] = {
           teacher: teacher?.name,
-          room: room?.name || '—',
           slots: {},
         }
       }
-
       const timeslotId = timeslot?.id
       if (!grouped[teacherId].slots[timeslotId]) {
         grouped[teacherId].slots[timeslotId] = []
       }
-
       grouped[teacherId].slots[timeslotId].push(s)
     }
 
-    // Build columns once
+    // build columns once
     if (!columns) {
       columns = [
         { name: 'Teacher', formatter: (cell) => cell.value },
@@ -86,26 +130,26 @@
       ]
     }
 
-    // Build data rows
-    const data = Object.values(grouped)
-      .sort((a, b) => a.teacher.localeCompare(b.teacher, undefined, { numeric: true }))
-      .map((entry) => {
-        const row = [{ label: 'Teacher', value: entry.teacher }]
-        timeslots.forEach((t) => {
-          const slotData = entry.slots[t.id] || []
-          row.push(
-            slotData.map((item) => ({
-              subject: item.expand.subject,
-              teacher: item.expand.teacher,
-              student: item.expand.student,
-              room: item.expand.room,
-            }))
-          )
-        })
-        return row
+    // build rows (sorted by teacher name)
+    const data = cachedTeachers.map((teacher) => {
+      const entry = grouped[teacher.id] || { teacher: teacher.name, slots: {} }
+      const row = [{ label: 'Teacher', value: entry.teacher }]
+      timeslots.forEach((t) => {
+        const slotData = entry.slots?.[t.id] || []
+        row.push(
+          slotData.map((item) => ({
+            subject: item.expand.subject,
+            student: item.student,
+            students: item.students,
+            room: item.room,
+            isGroup: item.isGroup,
+          }))
+        )
       })
+      return row
+    })
 
-    // Grid reuse
+    // reuse grid instance
     if (teacherGrid) {
       requestAnimationFrame(() => {
         teacherGrid.updateConfig({ data }).forceRender()
@@ -116,33 +160,36 @@
         data,
         search: {
           enabled: true,
-          selector: (cell) => {
-            if (typeof cell === 'string') return cell
-            return cell?.value || ''
-          },
+          selector: (cell) => (typeof cell === 'string' ? cell : cell?.value || ''),
         },
         sort: false,
-        pagination: false,
         className: {
-          table: 'w-full border text-sm max-w-[750px]',
-          th: 'bg-base-200 p-2 border text-center',
-          td: 'border p-2 whitespace-pre-line align-top text-center font-semibold',
+          table: 'w-full border text-sm relative',
+          th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
+          td: 'border p-2 whitespace-pre-line align-middle text-center font-semibold',
         },
       }).render(document.getElementById('teacherGrid'))
     }
   }
 
+  const debouncedLoad = debounce(loadTeacherSchedule, 250)
+
   onMount(() => {
     loadTeacherSchedule()
-    pb.collection('lessonSchedule').subscribe('*', loadTeacherSchedule)
+    // react to PocketBase changes for both collections
+    pb.collection('lessonSchedule').subscribe('*', debouncedLoad)
+    pb.collection('groupLessonSchedule').subscribe('*', debouncedLoad)
   })
 
   onDestroy(() => {
+    console.log('TeacherView Table destroyed')
     if (teacherGrid) {
       teacherGrid.destroy()
       teacherGrid = null
     }
-    pb.collection('lessonSchedule').unsubscribe()
+    // properly unsubscribe
+    pb.collection('lessonSchedule').unsubscribe('*', debouncedLoad)
+    pb.collection('groupLessonSchedule').unsubscribe('*', debouncedLoad)
   })
 </script>
 
@@ -153,7 +200,7 @@
   </div>
 
   <!-- Filter row -->
-  <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+  <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-4">
       <label for="filterDate" class="text-sm font-semibold">Filter Date:</label>
       <input
@@ -162,7 +209,7 @@
         name="filterDate"
         bind:value={date}
         class="input input-bordered input-sm w-40"
-        onchange={loadTeacherSchedule}
+        onchange={debouncedLoad}
       />
     </div>
 
@@ -180,5 +227,34 @@
     </div>
   </div>
 
-  <div id="teacherGrid" class="overflow-x-auto"></div>
+  <!-- Legend -->
+  <div class="p-3 bg-base-200 rounded-lg">
+    <div class="flex flex-wrap gap-4 text-xs">
+      <div class="flex items-center gap-1">
+        <div class="badge badge-primary badge-xs"></div>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-neutral badge-xs"></div>
+        <span>Student</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-secondary badge-xs"></div>
+        <span>Group Lesson</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-error badge-xs"></div>
+        <span>Room</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="teacherGrid"></div>
 </div>
+
+<style>
+  .gridjs-table {
+    max-height: 500px;
+    overflow: auto;
+  }
+</style>

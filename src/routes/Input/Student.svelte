@@ -23,11 +23,11 @@
       t.englishName,
       t.course,
       t.level,
-      h('div', { className: 'flex gap-2' }, [
+      h('div', { className: 'flex gap-2 justify-center' }, [
         h(
           'button',
           {
-            className: 'btn btn-sm btn-accent',
+            className: 'btn btn-outline btn-sm btn-accent',
             onClick: () => openEdit(t),
           },
           'Edit'
@@ -35,7 +35,7 @@
         h(
           'button',
           {
-            className: 'btn btn-sm btn-error',
+            className: 'btn btn-outline btn-sm btn-error',
             onClick: () => deleteStudent(t.id),
           },
           'Delete'
@@ -52,7 +52,7 @@
         className: {
           table: 'w-full text-sm',
           th: 'bg-slate-100 p-2 border text-center',
-          td: 'p-2 border align-top text-center',
+          td: 'p-2 border align-middle text-center',
         },
         pagination: {
           enabled: true,
@@ -132,7 +132,7 @@
 <div class="p-6 max-w-5xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
   <div class="flex justify-between items-center mb-4">
     <h2 class="text-2xl font-bold text-primary">Student Management</h2>
-    <button class="btn btn-primary" onclick={openAddModal}>Add Student</button>
+    <button class="btn btn-outline btn-primary" onclick={openAddModal}>Add Student</button>
   </div>
 
   <div id="studentGrid" class="overflow-x-auto"></div>
@@ -173,10 +173,10 @@
       </div>
 
       <div class="modal-action">
-        <button class="btn btn-primary" onclick={saveStudent}>
+        <button class="btn btn-outline btn-primary" onclick={saveStudent}>
           {editingId ? 'Update' : 'Save'}
         </button>
-        <button class="btn" onclick={() => (showModal = false)}>Cancel</button>
+        <button class="btn btn-outline btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
       </div>
     </div>
   </div>
