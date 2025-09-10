@@ -1,206 +1,158 @@
 <script>
-  import { onMount, onDestroy } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
-  import { pb } from '../../lib/Pocketbase.svelte'
+  import { current, pb } from '../../lib/Pocketbase.svelte'
+  import { onDestroy, onMount } from 'svelte'
 
-  let date = new Date().toISOString().split('T')[0]
   let currentDate = new Date()
+  let date = new Date().toISOString().split('T')[0]
   let teacherGrid = null
-  let columns = null
   let timeslots = []
-
-  // cache teachers so we don't refetch them every time
-  let cachedTeachers = []
-
-  // debounce utility
-  let debounceTimer
-  const debounce = (fn, delay = 250) => {
-    return (...args) => {
-      clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => fn(...args), delay)
-    }
-  }
-
-  const changeDate = (days) => {
-    currentDate.setDate(currentDate.getDate() + days)
-    date = currentDate.toISOString().split('T')[0]
-    debouncedLoad()
-  }
+  let teachers = []
 
   const createBadge = (text, colorClass) => h('span', { class: `badge ${colorClass} badge-xs` }, text)
 
   const formatCell = (cell) => {
     if (!cell || cell.length === 0) return h('span', {}, '—')
+
     return h(
       'div',
-      { class: 'text-xs' },
+      { class: 'text-xs flex flex-col gap-1 items-center' },
       cell.map((item) =>
         h('div', { class: 'flex flex-col gap-1 items-center' }, [
-          createBadge(item.subject.name, 'badge-primary whitespace-nowrap'),
+          createBadge(item.subject?.name ?? 'No Subject', 'badge-primary whitespace-nowrap'),
           item.isGroup
             ? h('div', { class: 'flex flex-col gap-0.5 items-center' }, [
                 createBadge('Group Class', 'badge-secondary'),
-                ...item.students.map((student) => createBadge(student.name, 'badge-neutral')),
+                ...item.students.map((s) => createBadge(s.name, 'badge-neutral')),
               ])
-            : createBadge(item.student.name, 'badge-neutral'),
-          createBadge(item.room.name, 'badge-error'),
+            : createBadge(item.student?.name ?? 'No Student', 'badge-neutral'),
+          createBadge(item.room?.name ?? 'No Room', 'badge-error'),
         ])
       )
     )
   }
 
-  async function loadTeacherSchedule() {
-    // fetch timeslots once
-    if (!timeslots.length) {
-      timeslots = await pb.collection('timeSlot').getFullList({ sort: 'start' })
-    }
+  async function getSchedules(date) {
+    const [individual, groups] = await Promise.all([
+      pb.collection('lessonSchedule').getList(1, 200, {
+        filter: `date = "${date}"`,
+        expand: 'teacher,student,subject,room,timeslot',
+      }),
+      pb.collection('groupLessonSchedule').getList(1, 200, {
+        filter: `date = "${date}"`,
+        expand: 'teacher,student,subject,grouproom,timeslot',
+      }),
+    ])
 
-    // fetch teachers once
-    if (!cachedTeachers.length) {
-      cachedTeachers = await pb.collection('teacher').getFullList({ sort: 'name' })
-    }
+    const map = new Map()
 
-    // fetch individual lessons for this day
-    const individualSchedulesPage = await pb.collection('lessonSchedule').getList(1, 200, {
-      filter: `date = "${date}"`,
-      expand: 'teacher,student,subject,room,timeslot',
-    })
-
-    // fetch group lessons for this day
-    const groupSchedulesPage = await pb.collection('groupLessonSchedule').getList(1, 200, {
-      filter: `date = "${date}"`,
-      expand: 'teacher,student,subject,grouproom,timeslot',
-    })
-
-    const individualSchedules = individualSchedulesPage.items
-    const groupSchedules = groupSchedulesPage.items
-
-    // process individual schedules
-    const studentAssignments = new Map()
-    for (const s of individualSchedules) {
-      const studentKey = `${s.expand.student?.id}_${s.expand.subject?.id}_${s.expand.timeslot?.id}`
-      studentAssignments.set(studentKey, {
+    // normalize individual lessons
+    for (const s of individual.items) {
+      const key = `${s.expand.student?.id}_${s.expand.subject?.id}_${s.expand.timeslot?.id}`
+      map.set(key, {
         ...s,
-        isGroup: false,
-        room: s.expand.room,
+        subject: s.expand.subject,
         student: s.expand.student,
-        students: null,
+        students: [],
+        room: s.expand.room,
+        isGroup: false,
+        teacher: s.expand.teacher,
+        timeslot: s.expand.timeslot,
       })
     }
 
-    // process group schedules
-    for (const s of groupSchedules) {
-      const groupKey = `group_${s.id}_${s.expand.subject?.id}_${s.expand.timeslot?.id}`
-      studentAssignments.set(groupKey, {
+    // normalize group lessons
+    for (const s of groups.items) {
+      const key = `group_${s.id}_${s.expand.subject?.id}_${s.expand.timeslot?.id}`
+      map.set(key, {
         ...s,
-        isGroup: true,
-        room: s.expand.grouproom, // use grouproom instead of room
+        subject: s.expand.subject,
         student: null,
         students: Array.isArray(s.expand.student) ? s.expand.student : [],
+        room: s.expand.grouproom,
+        isGroup: true,
+        teacher: s.expand.teacher,
+        timeslot: s.expand.timeslot,
       })
     }
 
-    // group by teacher group them by teacher
+    return [...map.values()]
+  }
+
+  async function loadTeacherSchedule() {
+    // fetch reference data ONCE
+    if (!timeslots.length) timeslots = await pb.collection('timeSlot').getFullList({ sort: 'start' })
+    if (!teachers.length) teachers = await pb.collection('teacher').getFullList({ sort: 'name' })
+
+    const schedules = await getSchedules(date)
+
+    // group: teacherId -> { teacher: name, slots: { timeslotId: [lessons...] } }
     const grouped = {}
-    for (const s of studentAssignments.values()) {
-      const { teacher, timeslot } = s.expand
-      const teacherId = teacher?.id
-      if (!grouped[teacherId]) {
-        grouped[teacherId] = {
-          teacher: teacher?.name,
-          slots: {},
-        }
-      }
-      const timeslotId = timeslot?.id
-      if (!grouped[teacherId].slots[timeslotId]) {
-        grouped[teacherId].slots[timeslotId] = []
-      }
-      grouped[teacherId].slots[timeslotId].push(s)
+    for (const s of schedules) {
+      const tId = s.teacher?.id
+      const slotId = s.timeslot?.id
+      if (!grouped[tId]) grouped[tId] = { teacher: s.teacher?.name, slots: {} }
+      if (!grouped[tId].slots[slotId]) grouped[tId].slots[slotId] = []
+      grouped[tId].slots[slotId].push(s)
     }
 
-    // build columns once
-    if (!columns) {
-      columns = [
-        { name: 'Teacher', formatter: (cell) => cell.value },
-        ...timeslots.map((t) => ({
-          name: `${t.start} - ${t.end}`,
-          formatter: formatCell,
-        })),
-      ]
-    }
-
-    // build rows (sorted by teacher name)
-    const data = cachedTeachers.map((teacher) => {
-      const entry = grouped[teacher.id] || { teacher: teacher.name, slots: {} }
-      const row = [{ label: 'Teacher', value: entry.teacher }]
-      timeslots.forEach((t) => {
-        const slotData = entry.slots?.[t.id] || []
-        row.push(
-          slotData.map((item) => ({
-            subject: item.expand.subject,
-            student: item.student,
-            students: item.students,
-            room: item.room,
-            isGroup: item.isGroup,
-          }))
-        )
-      })
-      return row
+    // build rows in the same order as `teachers`
+    const data = teachers.map((t) => {
+      const entry = grouped[t.id] || { teacher: t.name, slots: {} }
+      // Grid row = array: first cell teacher, then one cell per timeslot (each is array of lessons)
+      return [{ value: entry.teacher }, ...timeslots.map((slot) => entry.slots[slot.id] || [])]
     })
 
-    // reuse grid instance
+    // create or update Grid
     if (teacherGrid) {
-      requestAnimationFrame(() => {
-        teacherGrid.updateConfig({ data }).forceRender()
-      })
+      // update only the data (keeps columns & DOM structure) => better perf
+      teacherGrid.updateConfig({ data }).forceRender()
     } else {
       teacherGrid = new Grid({
-        columns,
+        columns: [
+          { name: 'Teacher', formatter: (c) => c.value },
+          ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, formatter: formatCell })),
+        ],
         data,
-        search: {
-          enabled: true,
-          selector: (cell) => (typeof cell === 'string' ? cell : cell?.value || ''),
-        },
+        search: false,
         sort: false,
         className: {
-          table: 'w-full border text-sm relative',
+          table: 'w-full border text-sm',
           th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
-          td: 'border p-2 whitespace-pre-line align-middle text-center font-semibold',
+          td: 'border p-2 text-center align-middle',
         },
       }).render(document.getElementById('teacherGrid'))
     }
   }
 
-  const debouncedLoad = debounce(loadTeacherSchedule, 250)
+  function changeDate(days) {
+    currentDate.setDate(currentDate.getDate() + days)
+    date = currentDate.toISOString().split('T')[0]
+    loadTeacherSchedule()
+  }
 
   onMount(() => {
     loadTeacherSchedule()
-    // react to PocketBase changes for both collections
-    pb.collection('lessonSchedule').subscribe('*', debouncedLoad)
-    pb.collection('groupLessonSchedule').subscribe('*', debouncedLoad)
+    pb.collection('lessonSchedule').subscribe('*', loadTeacherSchedule)
+    pb.collection('groupLessonSchedule').subscribe('*', loadTeacherSchedule)
   })
 
   onDestroy(() => {
-    console.log('TeacherView Table destroyed')
-    if (teacherGrid) {
-      teacherGrid.destroy()
-      teacherGrid = null
-    }
-    // properly unsubscribe
-    pb.collection('lessonSchedule').unsubscribe('*', debouncedLoad)
-    pb.collection('groupLessonSchedule').unsubscribe('*', debouncedLoad)
+    pb.collection('lessonSchedule').unsubscribe('*', loadTeacherSchedule)
+    pb.collection('groupLessonSchedule').unsubscribe('*', loadTeacherSchedule)
+    if (teacherGrid) teacherGrid.destroy()
   })
 </script>
 
-<div class="p-6 max-w-auto mx-auto bg-base-100">
-  <div class="flex item-center justify-between mb-4">
-    <h2 class="text-2xl font-bold text-primary">Teacher</h2>
-    <h2 class="text-2xl font-bold text-primary text-center flex-1">Schedule Table</h2>
+<div class="p-6 bg-base-100">
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+    <h2>Teacher</h2>
+    <h2 class="text-center flex-1">Schedule Table</h2>
   </div>
 
   <!-- Filter row -->
-  <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
+  <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-4">
       <label for="filterDate" class="text-sm font-semibold">Filter Date:</label>
       <input
@@ -209,7 +161,7 @@
         name="filterDate"
         bind:value={date}
         class="input input-bordered input-sm w-40"
-        onchange={debouncedLoad}
+        onchange={loadStudentSchedule}
       />
     </div>
 
@@ -251,10 +203,3 @@
 
   <div id="teacherGrid"></div>
 </div>
-
-<style>
-  .gridjs-table {
-    max-height: 500px;
-    overflow: auto;
-  }
-</style>
