@@ -7,28 +7,22 @@
   import { booking, grid } from './schedule.svelte'
   import ScheduleModal from './scheduleModal.svelte'
 
-  // --- State ---
   let date = $state(new Date().toISOString().split('T')[0])
   let timeslots = []
-  let cachedRooms = null
-  let cachedTimeslots = null
-  let loadTimeout = null
+  let rooms = []
 
-  // --- Utilities ---
   const changeDate = (days) => {
     const currentDate = new Date(date)
     currentDate.setDate(currentDate.getDate() + days)
     date = currentDate.toISOString().split('T')[0]
-
-    // Debounce fetches to avoid spamming PB when user clicks fast
-    clearTimeout(loadTimeout)
-    loadTimeout = setTimeout(loadSchedules, 100)
+    loadSchedules()
   }
 
   const createBadge = (text, colorClass) => h('span', { class: `badge ${colorClass} badge-xs mr-1` }, text)
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
+
     return h(
       'div',
       {
@@ -36,14 +30,68 @@
       },
       [
         createBadge(cell.subject.name, 'badge-primary'),
-        createBadge(cell.teacher.name, 'badge-success'),
+        createBadge(cell.teacher.name, 'badge-info'),
         createBadge(cell.student.name, 'badge-neutral'),
         createBadge(cell.room.name, 'badge-error'),
       ]
     )
   }
 
-  const createSlotData = (item, room, roomId, t, assignedTeacher) => ({
+  const buildColumns = () => [
+    {
+      name: 'Teacher',
+      formatter: (cell) =>
+        cell.disabled
+          ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
+          : cell.value,
+    },
+    {
+      name: 'Room',
+      formatter: (cell) =>
+        cell.disabled
+          ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
+          : cell.value,
+    },
+    ...timeslots.map((t) => ({
+      name: `${t.start} - ${t.end}`,
+      id: t.id,
+      width: 'auto',
+      formatter: formatCell,
+    })),
+  ]
+
+  const fetchScheduleData = async () => {
+    const [timeslotsData, roomsData, schedules] = await Promise.all([
+      pb.collection('timeSlot').getFullList({ sort: 'start' }),
+      pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
+      pb.collection('lessonSchedule').getList(1, 200, {
+        filter: `date = "${date}"`,
+        expand: 'teacher,student,subject,room,timeslot',
+      }),
+    ])
+
+    return {
+      timeslotsData,
+      roomsData,
+      schedules: schedules.items,
+    }
+  }
+
+  const processScheduleData = (schedules) => {
+    const scheduledRooms = {}
+
+    schedules.forEach((schedule) => {
+      const roomId = schedule.expand.room.id
+      if (!scheduledRooms[roomId]) {
+        scheduledRooms[roomId] = {}
+      }
+      scheduledRooms[roomId][schedule.expand.timeslot.id] = schedule
+    })
+
+    return scheduledRooms
+  }
+
+  const createSlotData = (item, room, timeslot, assignedTeacher) => ({
     label: item ? 'Schedule' : 'Empty',
     id: item?.id || '',
     date,
@@ -59,44 +107,13 @@
       name: item?.expand?.student?.name || '',
       id: item?.expand?.student?.id || '',
     },
-    room: { name: room, id: roomId },
-    timeslot: { id: t.id, start: t.start, end: t.end },
+    room: { name: room.name, id: room.id },
+    timeslot: { id: timeslot.id, start: timeslot.start, end: timeslot.end },
     assignedTeacher: assignedTeacher,
   })
 
-  // --- Main Fetch ---
-  async function loadSchedules() {
-    // Cache static data
-    if (!cachedTimeslots) {
-      cachedTimeslots = await pb.collection('timeSlot').getFullList({ sort: 'start' })
-    }
-    if (!cachedRooms) {
-      cachedRooms = await pb.collection('room').getFullList({
-        sort: 'name',
-        expand: 'teacher',
-      })
-    }
-
-    timeslots = cachedTimeslots
-
-    // Only schedules for this date
-    const records = await pb.collection('lessonSchedule').getList(1, 200, {
-      filter: `date = "${date}"`,
-      expand: 'teacher,student,subject,room,timeslot',
-    })
-
-    // Group schedules by room
-    const scheduledRooms = {}
-    records.items.forEach((r) => {
-      const roomId = r.expand.room.id
-      if (!scheduledRooms[roomId]) {
-        scheduledRooms[roomId] = {}
-      }
-      scheduledRooms[roomId][r.expand.timeslot.id] = r
-    })
-
-    // Create grid rows
-    const data = cachedRooms.map((room) => {
+  const buildTableData = (scheduledRooms) => {
+    return rooms.map((room) => {
       const slotMap = scheduledRooms[room.id] || {}
       const assignedTeacher = room.expand?.teacher
       const teacherName = assignedTeacher?.name || '-'
@@ -106,81 +123,74 @@
         { label: 'Room', value: room.name, disabled: true },
       ]
 
-      timeslots.forEach((t) => {
-        const item = slotMap[t.id]
-        row.push(createSlotData(item, room.name, room.id, t, assignedTeacher))
+      timeslots.forEach((timeslot) => {
+        const item = slotMap[timeslot.id]
+        row.push(createSlotData(item, room, timeslot, assignedTeacher))
       })
 
       return row
     })
+  }
 
-    // Build columns once (reuse)
-    if (!grid.columns) {
-      grid.columns = [
-        {
-          name: 'Teacher',
-          formatter: (cell) =>
-            cell.disabled
-              ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-              : cell.value,
-        },
-        {
-          name: 'Room',
-          formatter: (cell) =>
-            cell.disabled
-              ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-              : cell.value,
-        },
-        ...timeslots.map((t) => ({
-          name: `${t.start} - ${t.end}`,
-          id: t.id,
-          width: 'auto',
-          formatter: formatCell,
-        })),
-      ]
+  const handleCellClick = (...args) => {
+    const cellData = args[1].data
+    if (cellData.disabled) return
+
+    Object.assign(booking.data, cellData)
+    booking.data.startDate = cellData.date
+    booking.data.endDate = cellData.date
+    booking.data.timeslot.id = cellData.timeslot?.id || ''
+    booking.data.room.id = cellData.room?.id || ''
+    booking.data.mode = cellData.label === 'Empty' ? 'create' : 'edit'
+
+    if (cellData.label === 'Empty' && cellData.assignedTeacher) {
+      booking.data.teacher.id = cellData.assignedTeacher.id
+      booking.data.teacher.name = cellData.assignedTeacher.name
     }
 
-    // Update or create grid
+    editModal.showModal()
+  }
+
+  const initializeGrid = (data) => {
+    const config = {
+      columns: buildColumns(),
+      data,
+      search: false,
+      sort: false,
+      pagination: { enabled: true, limit: 50 },
+      autoWidth: true,
+      className: {
+        table: 'w-full border text-sm',
+        th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
+        td: 'border p-2 whitespace-nowrap align-middle text-center',
+      },
+    }
+
     if (grid.schedule) {
       requestAnimationFrame(() => {
         grid.schedule.updateConfig({ data }).forceRender()
       })
     } else {
-      grid.schedule = new Grid({
-        columns: grid.columns,
-        data,
-        search: {
-          enabled: true,
-          selector: (cell) => (typeof cell === 'string' ? cell : cell?.value || ''),
-        },
-        sort: false,
-        pagination: { enabled: true, limit: 50 },
-        autoWidth: true,
-        className: {
-          table: 'w-full border text-sm relative',
-          th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
-          td: 'border p-2 whitespace-pre-line align-middle text-center font-semibold',
-        },
-      }).render(document.getElementById('grid'))
+      grid.schedule = new Grid(config).render(document.getElementById('grid'))
+      grid.schedule.on('cellClick', handleCellClick)
+    }
+  }
 
-      grid.schedule.on('cellClick', (...args) => {
-        const cellData = args[1].data
-        if (cellData.disabled) return
+  async function loadSchedules() {
+    try {
+      const { timeslotsData, roomsData, schedules } = await fetchScheduleData()
 
-        Object.assign(booking.data, cellData)
-        booking.data.startDate = cellData.date
-        booking.data.endDate = cellData.date
-        booking.data.timeslot.id = cellData.timeslot?.id || ''
-        booking.data.room.id = cellData.room?.id || ''
-        booking.data.mode = cellData.label === 'Empty' ? 'create' : 'edit'
+      // Update cached data
+      timeslots = timeslotsData
+      rooms = roomsData
 
-        if (cellData.label === 'Empty' && cellData.assignedTeacher) {
-          booking.data.teacher.id = cellData.assignedTeacher.id
-          booking.data.teacher.name = cellData.assignedTeacher.name
-        }
+      const scheduledRooms = processScheduleData(schedules)
+      const data = buildTableData(scheduledRooms)
 
-        editModal.showModal()
-      })
+      initializeGrid(data)
+    } catch (error) {
+      console.error('Error loading schedules:', error)
+      toast.error('Failed to load schedules')
     }
   }
 
@@ -202,7 +212,7 @@
   })
 </script>
 
-<div class="p-6 max-w-auto mx-auto bg-base-100">
+<div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
     <h2>Room</h2>
     <h2 class="text-center flex-1">Schedule Table (Daily)</h2>
@@ -243,7 +253,7 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-success badge-xs"></div>
+        <div class="badge badge-info badge-xs"></div>
         <span>Teacher</span>
       </div>
       <div class="flex items-center gap-1">
@@ -257,19 +267,7 @@
     </div>
   </div>
 
-  <div id="grid"></div>
+  <div id="grid" class="max-h-[700px] overflow-auto border rounded-lg"></div>
 </div>
 
 <ScheduleModal on:refresh={loadSchedules} />
-
-<style>
-  .gridjs-td {
-    min-height: 120px;
-  }
-  :global(.gridjs-wrapper) {
-    max-height: 580px;
-  }
-  :global(.gridjs-table-container) {
-    overflow: auto;
-  }
-</style>

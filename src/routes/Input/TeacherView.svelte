@@ -1,19 +1,25 @@
 <script>
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
-  import { current, pb } from '../../lib/Pocketbase.svelte'
+  import { pb } from '../../lib/Pocketbase.svelte'
   import { onDestroy, onMount } from 'svelte'
 
-  let currentDate = new Date()
   let date = new Date().toISOString().split('T')[0]
+  let currentDate = new Date()
   let teacherGrid = null
   let timeslots = []
   let teachers = []
 
+  const changeDate = (days) => {
+    currentDate.setDate(currentDate.getDate() + days)
+    date = currentDate.toISOString().split('T')[0]
+    loadTeacherSchedule()
+  }
+
   const createBadge = (text, colorClass) => h('span', { class: `badge ${colorClass} badge-xs` }, text)
 
   const formatCell = (cell) => {
-    if (!cell || cell.length === 0) return h('span', {}, '—')
+    if (!cell?.length) return h('span', {}, '—')
 
     return h(
       'div',
@@ -22,10 +28,7 @@
         h('div', { class: 'flex flex-col gap-1 items-center' }, [
           createBadge(item.subject?.name ?? 'No Subject', 'badge-primary whitespace-nowrap'),
           item.isGroup
-            ? h('div', { class: 'flex flex-col gap-0.5 items-center' }, [
-                createBadge('Group Class', 'badge-secondary'),
-                ...item.students.map((s) => createBadge(s.name, 'badge-neutral')),
-              ])
+            ? createBadge('Group Class', 'badge-secondary')
             : createBadge(item.student?.name ?? 'No Student', 'badge-neutral'),
           createBadge(item.room?.name ?? 'No Room', 'badge-error'),
         ])
@@ -33,8 +36,16 @@
     )
   }
 
-  async function getSchedules(date) {
-    const [individual, groups] = await Promise.all([
+  const buildColumns = () => [
+    { name: 'Teacher', formatter: (cell) => cell.value },
+    ...timeslots.map((t) => ({
+      name: `${t.start} - ${t.end}`,
+      formatter: formatCell,
+    })),
+  ]
+
+  const fetchScheduleData = async () => {
+    const [individualSchedules, groupSchedules] = await Promise.all([
       pb.collection('lessonSchedule').getList(1, 200, {
         filter: `date = "${date}"`,
         expand: 'teacher,student,subject,room,timeslot',
@@ -45,91 +56,116 @@
       }),
     ])
 
-    const map = new Map()
+    return {
+      individualSchedules: individualSchedules.items,
+      groupSchedules: groupSchedules.items,
+    }
+  }
 
-    // normalize individual lessons
-    for (const s of individual.items) {
-      const key = `${s.expand.student?.id}_${s.expand.subject?.id}_${s.expand.timeslot?.id}`
-      map.set(key, {
-        ...s,
-        subject: s.expand.subject,
-        student: s.expand.student,
+  const normalizeSchedules = (individualSchedules, groupSchedules) => {
+    const schedules = []
+
+    // Process individual lessons
+    individualSchedules.forEach((schedule) => {
+      schedules.push({
+        ...schedule,
+        subject: schedule.expand.subject,
+        student: schedule.expand.student,
         students: [],
-        room: s.expand.room,
+        room: schedule.expand.room,
         isGroup: false,
-        teacher: s.expand.teacher,
-        timeslot: s.expand.timeslot,
+        teacher: schedule.expand.teacher,
+        timeslot: schedule.expand.timeslot,
       })
-    }
+    })
 
-    // normalize group lessons
-    for (const s of groups.items) {
-      const key = `group_${s.id}_${s.expand.subject?.id}_${s.expand.timeslot?.id}`
-      map.set(key, {
-        ...s,
-        subject: s.expand.subject,
+    // Process group lessons
+    groupSchedules.forEach((schedule) => {
+      schedules.push({
+        ...schedule,
+        subject: schedule.expand.subject,
         student: null,
-        students: Array.isArray(s.expand.student) ? s.expand.student : [],
-        room: s.expand.grouproom,
+        students: Array.isArray(schedule.expand.student) ? schedule.expand.student : [],
+        room: schedule.expand.grouproom,
         isGroup: true,
-        teacher: s.expand.teacher,
-        timeslot: s.expand.timeslot,
+        teacher: schedule.expand.teacher,
+        timeslot: schedule.expand.timeslot,
       })
+    })
+
+    return schedules
+  }
+
+  const processScheduleData = (schedules) => {
+    const grouped = {}
+
+    schedules.forEach((schedule) => {
+      const teacherId = schedule.teacher?.id
+      const timeslotId = schedule.timeslot?.id
+
+      if (!grouped[teacherId]) {
+        grouped[teacherId] = {
+          teacher: schedule.teacher?.name,
+          slots: {},
+        }
+      }
+
+      if (!grouped[teacherId].slots[timeslotId]) {
+        grouped[teacherId].slots[timeslotId] = []
+      }
+
+      grouped[teacherId].slots[timeslotId].push(schedule)
+    })
+
+    return grouped
+  }
+
+  const buildTableData = (grouped) => {
+    return teachers.map((teacher) => {
+      const entry = grouped[teacher.id] || { teacher: teacher.name, slots: {} }
+      return [{ value: entry.teacher }, ...timeslots.map((timeslot) => entry.slots[timeslot.id] || [])]
+    })
+  }
+
+  const initializeGrid = (data) => {
+    const config = {
+      columns: buildColumns(),
+      data,
+      search: false,
+      sort: false,
+      className: {
+        table: 'w-full border text-sm',
+        th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
+        td: 'border p-2 text-center align-middle',
+      },
     }
 
-    return [...map.values()]
+    if (teacherGrid) {
+      teacherGrid.updateConfig({ data }).forceRender()
+    } else {
+      teacherGrid = new Grid(config).render(document.getElementById('teacherGrid'))
+    }
   }
 
   async function loadTeacherSchedule() {
-    // fetch reference data ONCE
-    if (!timeslots.length) timeslots = await pb.collection('timeSlot').getFullList({ sort: 'start' })
-    if (!teachers.length) teachers = await pb.collection('teacher').getFullList({ sort: 'name' })
+    try {
+      // Load reference data if not cached
+      if (!timeslots.length) {
+        timeslots = await pb.collection('timeSlot').getFullList({ sort: 'start' })
+      }
+      if (!teachers.length) {
+        teachers = await pb.collection('teacher').getFullList({ sort: 'name' })
+      }
 
-    const schedules = await getSchedules(date)
+      const { individualSchedules, groupSchedules } = await fetchScheduleData()
+      const schedules = normalizeSchedules(individualSchedules, groupSchedules)
+      const grouped = processScheduleData(schedules)
+      const data = buildTableData(grouped)
 
-    // group: teacherId -> { teacher: name, slots: { timeslotId: [lessons...] } }
-    const grouped = {}
-    for (const s of schedules) {
-      const tId = s.teacher?.id
-      const slotId = s.timeslot?.id
-      if (!grouped[tId]) grouped[tId] = { teacher: s.teacher?.name, slots: {} }
-      if (!grouped[tId].slots[slotId]) grouped[tId].slots[slotId] = []
-      grouped[tId].slots[slotId].push(s)
+      initializeGrid(data)
+    } catch (error) {
+      console.error('Error loading teacher schedule:', error)
     }
-
-    // build rows in the same order as `teachers`
-    const data = teachers.map((t) => {
-      const entry = grouped[t.id] || { teacher: t.name, slots: {} }
-      // Grid row = array: first cell teacher, then one cell per timeslot (each is array of lessons)
-      return [{ value: entry.teacher }, ...timeslots.map((slot) => entry.slots[slot.id] || [])]
-    })
-
-    // create or update Grid
-    if (teacherGrid) {
-      // update only the data (keeps columns & DOM structure) => better perf
-      teacherGrid.updateConfig({ data }).forceRender()
-    } else {
-      teacherGrid = new Grid({
-        columns: [
-          { name: 'Teacher', formatter: (c) => c.value },
-          ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, formatter: formatCell })),
-        ],
-        data,
-        search: false,
-        sort: false,
-        className: {
-          table: 'w-full border text-sm',
-          th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
-          td: 'border p-2 text-center align-middle',
-        },
-      }).render(document.getElementById('teacherGrid'))
-    }
-  }
-
-  function changeDate(days) {
-    currentDate.setDate(currentDate.getDate() + days)
-    date = currentDate.toISOString().split('T')[0]
-    loadTeacherSchedule()
   }
 
   onMount(() => {
@@ -139,9 +175,12 @@
   })
 
   onDestroy(() => {
-    pb.collection('lessonSchedule').unsubscribe('*', loadTeacherSchedule)
-    pb.collection('groupLessonSchedule').unsubscribe('*', loadTeacherSchedule)
-    if (teacherGrid) teacherGrid.destroy()
+    if (teacherGrid) {
+      teacherGrid.destroy()
+      teacherGrid = null
+    }
+    pb.collection('lessonSchedule').unsubscribe()
+    pb.collection('groupLessonSchedule').unsubscribe()
   })
 </script>
 
@@ -161,7 +200,7 @@
         name="filterDate"
         bind:value={date}
         class="input input-bordered input-sm w-40"
-        onchange={loadStudentSchedule}
+        onchange={loadTeacherSchedule}
       />
     </div>
 
@@ -180,7 +219,7 @@
   </div>
 
   <!-- Legend -->
-  <div class="p-3 bg-base-200 rounded-lg">
+  <div class="p-3 bg-base-200 rounded-lg mb-4">
     <div class="flex flex-wrap gap-4 text-xs">
       <div class="flex items-center gap-1">
         <div class="badge badge-primary badge-xs"></div>
@@ -201,5 +240,5 @@
     </div>
   </div>
 
-  <div id="teacherGrid"></div>
+  <div id="teacherGrid" class="max-h-[680px] overflow-auto border rounded-lg"></div>
 </div>

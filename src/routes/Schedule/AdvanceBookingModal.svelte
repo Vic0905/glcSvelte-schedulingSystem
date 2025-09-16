@@ -5,20 +5,28 @@
   let { show = $bindable(false), advanceBooking = $bindable(), onSave } = $props()
 
   let existingBookings = $state([])
+  let teachers = $state([])
+  let students = $state([])
+  let subjects = $state([])
 
-  const getTeacher = async () => {
-    const data = await pb.collection('teacher').getFullList()
-    return data.sort((a, b) => a.name.localeCompare(b.name))
-  }
-  const getStudent = async () => {
-    const data = await pb.collection('student').getFullList()
-    return data.sort((a, b) => a.name.localeCompare(b.name))
-  }
-  const getSubject = async () => {
-    const data = await pb.collection('subject').getFullList()
-    return data.sort((a, b) => a.name.localeCompare(b.name))
+  // Load all reference data once
+  const loadReferenceData = async () => {
+    try {
+      const [teachersData, studentsData, subjectsData] = await Promise.all([
+        pb.collection('teacher').getFullList(),
+        pb.collection('student').getFullList(),
+        pb.collection('subject').getFullList(),
+      ])
+
+      teachers = teachersData.sort((a, b) => a.name.localeCompare(b.name))
+      students = studentsData.sort((a, b) => a.name.localeCompare(b.name))
+      subjects = subjectsData.sort((a, b) => a.name.localeCompare(b.name))
+    } catch (error) {
+      console.error('Error loading reference data:', error)
+    }
   }
 
+  // Load existing bookings for conflict detection
   const loadExistingBookings = async () => {
     try {
       const timeslotId = advanceBooking.timeslot.id
@@ -26,10 +34,14 @@
         existingBookings = []
         return
       }
+
       const records = await pb.collection('advanceBooking').getFullList({
-        filter: `timeslot = "${timeslotId}"${advanceBooking.mode === 'edit' && advanceBooking.id ? ` && id != "${advanceBooking.id}"` : ''}`,
+        filter: `timeslot = "${timeslotId}"${
+          advanceBooking.mode === 'edit' && advanceBooking.id ? ` && id != "${advanceBooking.id}"` : ''
+        }`,
         expand: 'teacher,student,room',
       })
+
       existingBookings = records
     } catch (error) {
       console.error('Error loading existing bookings:', error)
@@ -37,105 +49,96 @@
     }
   }
 
-  const isTeacherBooked = (teacherId) => {
-    return existingBookings.some((booking) => booking.teacher === teacherId)
-  }
-
-  const isStudentBooked = (studentId) => {
-    return existingBookings.some((booking) => booking.student === studentId)
-  }
-
-  const isRoomBooked = (roomId) => {
-    return existingBookings.some((booking) => booking.room === roomId)
+  // Conflict detection helpers
+  const isResourceBooked = (resourceId, type) => {
+    return existingBookings.some((booking) => booking[type] === resourceId)
   }
 
   const getConflictInfo = (resourceId, type) => {
-    const booking = existingBookings.find((s) => s[type] === resourceId)
-    if (!booking) return ''
+    const booking = existingBookings.find((b) => b[type] === resourceId)
+    if (!booking?.expand) return ''
+
     switch (type) {
       case 'teacher':
-        return booking.expand?.student?.name || 'Unknown Student'
+        return booking.expand.student?.name || 'Unknown Student'
       case 'student':
-        return booking.expand?.teacher?.name || 'Unknown Teacher'
+        return booking.expand.teacher?.name || 'Unknown Teacher'
       case 'room':
-        return `${booking.expand?.teacher?.name || 'Unknown Teacher'} & ${booking.expand?.student?.name || 'Unknown Student'}`
+        return `${booking.expand.teacher?.name || 'Unknown Teacher'} & ${booking.expand.student?.name || 'Unknown Student'}`
       default:
         return ''
     }
   }
 
-  const checkConflict = async (collection, filter) => {
-    try {
-      await pb.collection(collection).getFirstListItem(filter)
-      return true
-    } catch {
-      return false
+  // Validation and conflict checking
+  const validateAndCheckConflicts = async () => {
+    const data = advanceBooking
+
+    // Required field validation
+    const requiredFields = [
+      { field: data.teacher.id, message: 'Please select Teacher' },
+      { field: data.student.id, message: 'Please select Student' },
+      { field: data.subject.id, message: 'Please select Subject' },
+    ]
+
+    for (const { field, message } of requiredFields) {
+      if (!field) {
+        toast.error(message)
+        return false
+      }
     }
+
+    // Conflict checking with database queries
+    const timeslotId = data.timeslot.id
+    const excludeFilter = data.mode === 'edit' && data.id ? ` && id != "${data.id}"` : ''
+
+    try {
+      // Check teacher conflict
+      await pb
+        .collection('advanceBooking')
+        .getFirstListItem(`teacher = "${data.teacher.id}" && timeslot = "${timeslotId}"${excludeFilter}`)
+      toast.error('Teacher is already booked at this timeslot')
+      return false
+    } catch {
+      // No conflict - this is expected
+    }
+
+    try {
+      // Check room conflict
+      await pb
+        .collection('advanceBooking')
+        .getFirstListItem(`room = "${data.room.id}" && timeslot = "${timeslotId}"${excludeFilter}`)
+      toast.error('Room is already occupied at this timeslot')
+      return false
+    } catch {
+      // No conflict - this is expected
+    }
+
+    return true
   }
 
+  // Save advance booking
   const saveAdvanceBooking = async () => {
+    if (!(await validateAndCheckConflicts())) return
+
+    const data = advanceBooking
+    const bookingData = {
+      timeslot: data.timeslot.id,
+      teacher: data.teacher.id,
+      student: data.student.id,
+      subject: data.subject.id,
+      room: data.room.id,
+    }
+
     try {
-      const { data } = { data: advanceBooking }
-      const required = [
-        { field: data.teacher.id, msg: 'Please select Teacher' },
-        { field: data.student.id, msg: 'Please select Student' },
-        { field: data.subject.id, msg: 'Please select Subject' },
-      ]
-      for (const { field, msg } of required) {
-        if (!field) {
-          toast.error(msg)
-          return
-        }
-      }
       if (data.mode === 'edit' && data.id) {
-        const excludeId = `&& id != "${data.id}"`
-        if (
-          await checkConflict(
-            'advanceBooking',
-            `teacher = "${data.teacher.id}" && timeslot = "${data.timeslot.id}" ${excludeId}`
-          )
-        ) {
-          toast.error('Teacher is already booked at this timeslot')
-          return
-        }
-        if (
-          await checkConflict(
-            'advanceBooking',
-            `room = "${data.room.id}" && timeslot = "${data.timeslot.id}" ${excludeId}`
-          )
-        ) {
-          toast.error('Room is already occupied at this timeslot')
-          return
-        }
-        await pb.collection('advanceBooking').update(data.id, {
-          timeslot: data.timeslot.id,
-          teacher: data.teacher.id,
-          student: data.student.id,
-          subject: data.subject.id,
-          room: data.room.id,
-        })
+        await pb.collection('advanceBooking').update(data.id, bookingData)
         toast.success('Advance booking updated successfully')
       } else {
-        if (
-          await checkConflict('advanceBooking', `teacher = "${data.teacher.id}" && timeslot = "${data.timeslot.id}"`)
-        ) {
-          toast.error('Teacher is already booked at this timeslot')
-          return
-        }
-        if (await checkConflict('advanceBooking', `room = "${data.room.id}" && timeslot = "${data.timeslot.id}"`)) {
-          toast.error('Room is already occupied at this timeslot')
-          return
-        }
-        const bookingData = {
-          room: data.room.id,
-          timeslot: data.timeslot.id,
-          teacher: data.teacher.id,
-          student: data.student.id,
-          subject: data.subject.id,
-        }
         await pb.collection('advanceBooking').create(bookingData)
         toast.success('Advance booking created successfully')
       }
+
       closeModal()
       onSave()
     } catch (error) {
@@ -144,18 +147,21 @@
     }
   }
 
+  // Delete advance booking
   const deleteAdvanceBooking = async () => {
     if (!advanceBooking.id) return
-    const confirmDelete = confirm(
+
+    const confirmMessage =
       `Are you sure you want to delete this advance booking?\n\n` +
-        `Subject: ${advanceBooking.subject.name}\n` +
-        `Teacher: ${advanceBooking.teacher.name}\n` +
-        `Student: ${advanceBooking.student.name}\n` +
-        `Room: ${advanceBooking.room.name}\n` +
-        `Time: ${advanceBooking.timeslot.start} - ${advanceBooking.timeslot.end}\n\n` +
-        `This action cannot be undone.`
-    )
-    if (!confirmDelete) return
+      `Subject: ${advanceBooking.subject.name}\n` +
+      `Teacher: ${advanceBooking.teacher.name}\n` +
+      `Student: ${advanceBooking.student.name}\n` +
+      `Room: ${advanceBooking.room.name}\n` +
+      `Time: ${advanceBooking.timeslot.start} - ${advanceBooking.timeslot.end}\n\n` +
+      `This action cannot be undone.`
+
+    if (!confirm(confirmMessage)) return
+
     try {
       await pb.collection('advanceBooking').delete(advanceBooking.id)
       toast.success('Advance booking deleted successfully')
@@ -171,10 +177,17 @@
     show = false
   }
 
+  // Load data when timeslot changes
   $effect(() => {
-    const timeslotId = advanceBooking.timeslot.id
-    if (timeslotId) {
+    if (advanceBooking.timeslot.id) {
       loadExistingBookings()
+    }
+  })
+
+  // Load reference data once
+  $effect(() => {
+    if (!teachers.length) {
+      loadReferenceData()
     }
   })
 </script>
@@ -191,45 +204,38 @@
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Left column -->
         <div class="space-y-4">
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Subject</legend>
             <select class="select select-bordered w-full" bind:value={advanceBooking.subject.id} required>
-              <option value="" disabled selected>Select Subject</option>
-              {#await getSubject()}
-                <option disabled>Fetching...</option>
-              {:then data}
-                {#each data as subject}
-                  <option value={subject.id}>{subject.name}</option>
-                {/each}
-              {/await}
+              <option value="">Select Subject</option>
+              {#each subjects as subject}
+                <option value={subject.id}>{subject.name}</option>
+              {/each}
             </select>
           </fieldset>
+
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Student</legend>
             <select class="select select-bordered w-full" bind:value={advanceBooking.student.id} required>
-              <option value="" disabled selected>Select Student</option>
-              {#await getStudent()}
-                <option disabled>Fetching...</option>
-              {:then data}
-                {#each data as student}
-                  {@const isBooked = isStudentBooked(student.id)}
-                  {@const conflictInfo = getConflictInfo(student.id, 'student')}
-                  <option value={student.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
-                    {student.name}
-                    {#if isBooked}
-                      (Booked with {conflictInfo})
-                    {/if}
-                  </option>
-                {/each}
-              {/await}
+              <option value="">Select Student</option>
+              {#each students as student}
+                {@const isBooked = isResourceBooked(student.id, 'student')}
+                {@const conflictInfo = getConflictInfo(student.id, 'student')}
+                <option value={student.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
+                  {student.name}
+                  {#if isBooked}(Booked with {conflictInfo}){/if}
+                </option>
+              {/each}
             </select>
-            {#if advanceBooking.student.id && isStudentBooked(advanceBooking.student.id)}
+            {#if advanceBooking.student.id && isResourceBooked(advanceBooking.student.id, 'student')}
               <div class="label">
-                <span class="label-text-alt text-warning"> ⚠️ This student is already booked for this timeslot </span>
+                <span class="label-text-alt text-warning">⚠️ This student is already booked for this timeslot</span>
               </div>
             {/if}
           </fieldset>
+
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
             <input
@@ -241,44 +247,41 @@
           </fieldset>
         </div>
 
+        <!-- Right column -->
         <div class="space-y-4">
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Teacher</legend>
             <select class="select select-bordered w-full" bind:value={advanceBooking.teacher.id} required>
-              <option value="" disabled selected>Select Teacher</option>
-              {#await getTeacher()}
-                <option disabled>Fetching...</option>
-              {:then data}
-                {#each data as teacher}
-                  {@const isBooked = isTeacherBooked(teacher.id)}
-                  {@const conflictInfo = getConflictInfo(teacher.id, 'teacher')}
-                  <option value={teacher.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
-                    {teacher.name}
-                    {#if isBooked}
-                      (Booked with {conflictInfo})
-                    {/if}
-                  </option>
-                {/each}
-              {/await}
+              <option value="">Select Teacher</option>
+              {#each teachers as teacher}
+                {@const isBooked = isResourceBooked(teacher.id, 'teacher')}
+                {@const conflictInfo = getConflictInfo(teacher.id, 'teacher')}
+                <option value={teacher.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
+                  {teacher.name}
+                  {#if isBooked}(Booked with {conflictInfo}){/if}
+                </option>
+              {/each}
             </select>
-            {#if advanceBooking.teacher.id && isTeacherBooked(advanceBooking.teacher.id)}
+            {#if advanceBooking.teacher.id && isResourceBooked(advanceBooking.teacher.id, 'teacher')}
               <div class="label">
-                <span class="label-text-alt text-warning"> ⚠️ This teacher is already booked for this timeslot </span>
+                <span class="label-text-alt text-warning">⚠️ This teacher is already booked for this timeslot</span>
               </div>
             {/if}
           </fieldset>
+
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Room</legend>
             <input type="text" value={advanceBooking.room.name} class="input input-bordered w-full" readonly />
-            {#if advanceBooking.room.id && isRoomBooked(advanceBooking.room.id)}
+            {#if advanceBooking.room.id && isResourceBooked(advanceBooking.room.id, 'room')}
               <div class="label">
-                <span class="label-text-alt text-warning"> ⚠️ This room is already occupied for this timeslot </span>
+                <span class="label-text-alt text-warning">⚠️ This room is already occupied for this timeslot</span>
               </div>
             {/if}
           </fieldset>
         </div>
       </div>
 
+      <!-- Buttons -->
       <div class="modal-action">
         {#if advanceBooking.mode === 'edit' && advanceBooking.id}
           <button class="btn btn-error mr-auto" onclick={deleteAdvanceBooking}>

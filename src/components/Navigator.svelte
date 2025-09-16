@@ -74,8 +74,10 @@
     <details>
       <summary>View Table</summary>
       <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/input/groupview">Group View Table</a></li>
+        <li><a href="/#/input/studentview">Student View Table</a></li>
         <li><a href="/#/input/teacherview">Teacher View Table</a></li>
-        <li><a href="/#/schedule/schedulestudent">Student View Table</a></li>
+        <!-- <li><a href="/#/schedule/schedulestudent">Student View Table</a></li> -->
       </ul>
     </details>
   </li>
@@ -155,8 +157,10 @@
     <details>
       <summary>View Table</summary>
       <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/input/groupview">Group View Table</a></li>
+        <li><a href="/#/input/studentview">Student View Table</a></li>
         <li><a href="/#/input/teacherview">Teacher View Table</a></li>
-        <li><a href="/#/schedule/schedulestudent">Student View Table</a></li>
+        <!-- <li><a href="/#/schedule/schedulestudent">Student View Table</a></li> -->
       </ul>
     </details>
   </li>

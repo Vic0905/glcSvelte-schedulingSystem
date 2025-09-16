@@ -36,7 +36,7 @@
       },
       [
         createBadge(cell.subject.name || 'No Subject', 'badge-primary'),
-        createBadge(cell.teacher.name || 'No Teacher', 'badge-success'),
+        createBadge(cell.teacher.name || 'No Teacher', 'badge-info'),
         createBadge(cell.groupRoom.name || 'No Room', 'badge-error'),
         ...studentBadges, // Spread multiple student badges
         // Add a count badge if there are many students
@@ -167,17 +167,14 @@
       grid.groupSchedule = new Grid({
         columns: grid.groupColumns,
         data,
-        search: {
-          enabled: true,
-          selector: (cell) => (typeof cell === 'string' ? cell : cell?.value || ''),
-        },
+        search: false,
         sort: false,
         pagination: { enabled: true, limit: 50 },
         autoWidth: true,
         className: {
-          table: 'w-full border text-sm max-w-[900px]',
+          table: 'w-full border text-sm',
           th: 'bg-base-200 p-2 border text-center',
-          td: 'border p-2 whitespace-pre-line align-middle text-middle font-semibold',
+          td: 'border p-2 whitespace-nowrap align-middle text-center',
         },
       }).render(document.getElementById('group-grid'))
 
@@ -241,7 +238,7 @@
   })
 </script>
 
-<div class="p-6 max-w-auto mx-auto bg-base-100">
+<div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
     <h2 class="">Group Room</h2>
     <h2 class="text-center flex-1">Group Schedule Table (Daily)</h2>
@@ -282,7 +279,7 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-success badge-xs"></div>
+        <div class="badge badge-info badge-xs"></div>
         <span>Teacher</span>
       </div>
       <div class="flex items-center gap-1">
@@ -300,13 +297,7 @@
     </div>
   </div>
 
-  <div id="group-grid"></div>
+  <div id="group-grid" class="max-h-[700px] overflow-auto border rounded-lg"></div>
 </div>
 
 <GroupModal on:refresh={loadGroupSchedules} bind:this={groupModal} />
-
-<style>
-  .gridjs-td {
-    min-height: 120px;
-  }
-</style>

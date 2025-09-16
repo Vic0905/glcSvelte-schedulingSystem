@@ -296,6 +296,7 @@
 
           <!-- Info Display -->
           <div class="form-control">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label"><span class="label-text">Template Info</span></label>
             <div class="bg-base-200 rounded-lg p-4 space-y-2">
               <div class="text-sm">

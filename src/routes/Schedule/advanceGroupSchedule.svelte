@@ -205,7 +205,7 @@
       advanceGroupGrid = new Grid({
         columns,
         data,
-        search: { enabled: true },
+        search: false,
         sort: false,
         pagination: false,
         autoWidth: true,
@@ -243,7 +243,7 @@
   })
 </script>
 
-<div class="p-6 max-w-auto mx-auto bg-base-100">
+<div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
     <h2>Group Room</h2>
     <h2 class="text-center flex-1">Advance Group Schedule Table (Weekly Template)</h2>
@@ -287,14 +287,8 @@
     </div>
   </div>
 
-  <div id="advance-group-grid" class="overflow-auto max-h-[650px]"></div>
+  <div id="advance-group-grid" class="max-h-[700px] overflow-auto border rounded-lg"></div>
 </div>
 
 <GroupAdvanceBookingModal bind:show={showAdvanceModal} bind:advanceGroupBooking onSave={loadAdvanceGroupBookings} />
 <GroupGoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} {getWeekDates} />
-
-<style>
-  .gridjs-td {
-    min-height: 120px;
-  }
-</style>

@@ -73,6 +73,12 @@ export const guestRoutes = {
   '/input/teacherview': wrap({
     asyncComponent: () => import('../routes/Input/TeacherView.svelte'),
   }),
+  '/input/studentview': wrap({
+    asyncComponent: () => import('../routes/Input/StudentView.svelte'),
+  }),
+  '/input/groupview': wrap({
+    asyncComponent: () => import('../routes/Input/GroupView.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),
