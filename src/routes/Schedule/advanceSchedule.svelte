@@ -65,8 +65,8 @@
 
     return h('div', { class: 'w-full p-2 flex flex-col gap-1 text-xs whitespace-nowrap' }, [
       createBadge(cell.subject.name, 'badge-primary'),
-      createBadge(cell.teacher.name, 'badge-success'),
-      createBadge(cell.student.name, 'badge-accent'),
+      createBadge(cell.teacher.name, 'badge-info'),
+      createBadge(cell.student.englishName, 'badge-neutral'),
       createBadge(cell.room.name, 'badge-error'),
     ])
   }
@@ -127,7 +127,7 @@
       id: item?.expand?.teacher?.id || '',
     },
     student: {
-      name: item?.expand?.student?.name || '',
+      englishName: item?.expand?.student?.englishName || '',
       id: item?.expand?.student?.id || '',
     },
     room: { name: room.name, id: room.id },
@@ -249,11 +249,11 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-success badge-xs"></div>
+        <div class="badge badge-info badge-xs"></div>
         <span>Teacher</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-accent badge-xs"></div>
+        <div class="badge badge-neutral badge-xs"></div>
         <span>Student</span>
       </div>
       <div class="flex items-center gap-1">

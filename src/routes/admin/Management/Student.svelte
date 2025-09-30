@@ -3,7 +3,7 @@
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
   import { toast } from 'svelte-sonner'
-  import { pb } from '../../lib/Pocketbase.svelte'
+  import { pb } from '../../../lib/Pocketbase.svelte'
 
   let name = ''
   let englishName = ''

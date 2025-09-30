@@ -1,8 +1,8 @@
 <script>
-  import { pb } from '../../lib/Pocketbase.svelte.js'
   import { booking } from './schedule.svelte.js'
   import { createEventDispatcher } from 'svelte'
   import { toast } from 'svelte-sonner'
+  import { pb } from '../../../lib/Pocketbase.svelte.js'
 
   const dispatch = createEventDispatcher()
 
@@ -26,7 +26,7 @@
       ])
 
       teachers = teachersData.sort((a, b) => a.name.localeCompare(b.name))
-      students = studentsData.sort((a, b) => a.englishName.localeCompare(b.englishName))
+      students = studentsData.sort((a, b) => a.name.localeCompare(b.name))
       subjects = subjectsData.sort((a, b) => a.name.localeCompare(b.name))
       rooms = roomsData
       timeslots = timeslotsData
@@ -108,14 +108,14 @@
       case 'teacher':
         return Array.isArray(schedule.expand.student)
           ? 'Group Class'
-          : schedule.expand.student?.englishName || 'Unknown Student'
+          : schedule.expand.student?.name || 'Unknown Student'
       case 'student':
         return schedule.expand.teacher?.name || 'Unknown Teacher'
       case 'room':
         const teacher = schedule.expand.teacher?.name || 'Unknown Teacher'
         const student = Array.isArray(schedule.expand.student)
-          ? schedule.expand.student.map((s) => s.englishName).join(', ')
-          : schedule.expand.student?.englishName || 'Group Students'
+          ? schedule.expand.student.map((s) => s.name).join(', ')
+          : schedule.expand.student?.name || 'Group Students'
         return `${teacher} & ${student}`
       default:
         return ''
@@ -152,7 +152,7 @@
       {
         condition: isResourceBooked(data.student.id, 'student'),
         message: 'Student conflict',
-        description: `${data.student.englishName} has another lesson scheduled`,
+        description: `${data.student.name} has another lesson scheduled`,
       },
       {
         condition: isResourceBooked(data.room.id, 'room'),
@@ -191,14 +191,14 @@
         toast.success('Schedule updated!', {
           position: 'bottom-right',
           duration: 3000,
-          description: `Changes saved for ${data.teacher.name} and ${data.student.englishName}`,
+          description: `Changes saved for ${data.teacher.name} and ${data.student.name}`,
         })
       } else {
         await pb.collection('lessonSchedule').create(scheduleData)
         toast.success('Schedule created!', {
           position: 'bottom-right',
           duration: 3000,
-          description: `New lesson scheduled for ${data.student.englishName} with ${data.teacher.name}`,
+          description: `New lesson scheduled for ${data.student.name} with ${data.teacher.name}`,
         })
       }
 
@@ -227,7 +227,7 @@
       `Date: ${new Date(data.date).toLocaleDateString()}\n` +
       `Subject: ${data.subject.name}\n` +
       `Teacher: ${data.teacher.name}\n` +
-      `Student: ${data.student.englishName}\n` +
+      `Student: ${data.student.name}\n` +
       `Room: ${data.room.name}\n` +
       `Time: ${data.timeslot.start} - ${data.timeslot.end}\n\n` +
       `This action cannot be undone.`
@@ -294,7 +294,7 @@
               {@const isBooked = isResourceBooked(student.id, 'student')}
               {@const conflictInfo = getConflictInfo(student.id, 'student')}
               <option value={student.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
-                {student.englishName}
+                {student.name}
                 {#if isBooked}(Booked with {conflictInfo}){/if}
               </option>
             {/each}

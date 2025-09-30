@@ -70,7 +70,7 @@
     // Handle multiple students
     const studentBadges =
       cell.students && cell.students.length > 0
-        ? cell.students.map((student) => createBadge(student.name || 'Unknown Student', 'badge-accent'))
+        ? cell.students.map((student) => createBadge(student.englishName || 'Unknown Student', 'badge-accent'))
         : [createBadge('No Students', 'badge-accent')]
 
     return h(
@@ -109,13 +109,13 @@
     let studentsData = []
     if (item.expand?.student && Array.isArray(item.expand.student)) {
       studentsData = item.expand.student.map((student) => ({
-        name: student.name || '',
+        englishName: student.englishName || '',
         id: student.id || '',
       }))
     } else if (item.student && Array.isArray(item.student)) {
       // Fallback to IDs only if expand data is not available
       studentsData = item.student.map((studentId) => ({
-        name: `Student ${studentId}`,
+        englishName: `Student ${studentId}`,
         id: studentId,
       }))
     }

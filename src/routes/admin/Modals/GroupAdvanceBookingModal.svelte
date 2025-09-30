@@ -1,6 +1,6 @@
 <script>
-  import { pb } from '../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
+  import { pb } from '../../../lib/Pocketbase.svelte'
 
   export let show = false
   export let advanceGroupBooking
@@ -38,7 +38,7 @@
   async function loadDropdowns() {
     try {
       subjects = await pb.collection('subject').getFullList({ sort: 'name' })
-      students = await pb.collection('student').getFullList({ sort: 'englishName' })
+      students = await pb.collection('student').getFullList({ sort: 'name' })
       teachers = await pb.collection('teacher').getFullList({ sort: 'name' })
       groupRooms = await pb.collection('groupRoom').getFullList({ sort: 'name' })
       timeslots = await pb.collection('timeslot').getFullList({ sort: 'start' })
@@ -160,7 +160,7 @@
   }
 
   // Computed filtered students
-  $: filteredStudents = students.filter((s) => s.englishName.toLowerCase().includes(searchTerm.toLowerCase()))
+  $: filteredStudents = students.filter((s) => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
 </script>
 
 {#if show}
@@ -239,7 +239,7 @@
                       !selectedStudents.includes(student.id) &&
                       selectedStudents.length >= maxStudentsAllowed
                         ? 'opacity-50'
-                        : ''}">{student.englishName}</span
+                        : ''}">{student.name}</span
                     >
                   </label>
                 </div>

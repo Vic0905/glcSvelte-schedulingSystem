@@ -18,7 +18,7 @@
     loadSchedules()
   }
 
-  const createBadge = (text, colorClass) => h('span', { class: `badge ${colorClass} badge-xs mr-1` }, text)
+  const createBadge = (text, colorClass) => h('span', { class: `badge ${colorClass} badge-xs ` }, text)
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
@@ -26,12 +26,12 @@
     return h(
       'div',
       {
-        class: 'w-full max-w-full rounded p-1 flex flex-col gap-1 text-xs items-center truncate',
+        class: 'flex flex-col gap-1 text-xs items-center',
       },
       [
         createBadge(cell.subject.name, 'badge-primary'),
         createBadge(cell.teacher.name, 'badge-info'),
-        createBadge(cell.student.name, 'badge-neutral'),
+        createBadge(cell.student.englishName, 'badge-neutral'),
         createBadge(cell.room.name, 'badge-error'),
       ]
     )
@@ -104,7 +104,7 @@
       id: item?.expand?.teacher?.id || '',
     },
     student: {
-      name: item?.expand?.student?.name || '',
+      englishName: item?.expand?.student?.englishName || '',
       id: item?.expand?.student?.id || '',
     },
     room: { name: room.name, id: room.id },
@@ -167,11 +167,19 @@
     }
 
     if (grid.schedule) {
-      requestAnimationFrame(() => {
-        grid.schedule.updateConfig({ data }).forceRender()
-      })
+      grid.schedule.updateConfig({ data }).forceRender()
     } else {
       grid.schedule = new Grid(config).render(document.getElementById('grid'))
+
+      // //detach pagination after render
+      // grid.schedule.on('ready', () => {
+      //   const paginationEl = document.querySelector('.gridjs-pagination')
+      //   const target = document.getElementById('grid-pagination')
+      //   if (paginationEl && target) {
+      //     target.appendChild(paginationEl) //move pagination outside
+      //   }
+      // })
+
       grid.schedule.on('cellClick', handleCellClick)
     }
   }

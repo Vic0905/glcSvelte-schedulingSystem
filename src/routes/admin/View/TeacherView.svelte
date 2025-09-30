@@ -1,8 +1,8 @@
 <script>
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
-  import { pb } from '../../lib/Pocketbase.svelte'
   import { onDestroy, onMount } from 'svelte'
+  import { pb } from '../../../lib/Pocketbase.svelte'
 
   let date = new Date().toISOString().split('T')[0]
   let currentDate = new Date()
@@ -29,7 +29,7 @@
           createBadge(item.subject?.name ?? 'No Subject', 'badge-primary whitespace-nowrap'),
           item.isGroup
             ? createBadge('Group Class', 'badge-secondary')
-            : createBadge(item.student?.englishName ?? 'No Student', 'badge-neutral'),
+            : createBadge(item.student?.name ?? 'No Student', 'badge-neutral'),
           createBadge(item.room?.name ?? 'No Room', 'badge-error'),
         ])
       )

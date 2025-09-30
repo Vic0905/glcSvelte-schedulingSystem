@@ -7,6 +7,30 @@ export const adminRoutes = {
   '/registration': wrap({
     asyncComponent: () => import('../routes/admin/Forms/Registration/Registration.svelte'),
   }),
+  '/management/group': wrap({
+    asyncComponent: () => import('../routes/admin/Management/Group.svelte'),
+  }),
+  '/management/room': wrap({
+    asyncComponent: () => import('../routes/admin/Management/Room.svelte'),
+  }),
+  '/management/student': wrap({
+    asyncComponent: () => import('../routes/admin/Management/Student.svelte'),
+  }),
+  '/management/subject': wrap({
+    asyncComponent: () => import('../routes/admin/Management/Subject.svelte'),
+  }),
+  '/management/teacher': wrap({
+    asyncComponent: () => import('../routes/admin/Management/Teacher.svelte'),
+  }),
+  '/view/groupview': wrap({
+    asyncComponent: () => import('../routes/admin/View/GroupView.svelte'),
+  }),
+  '/view/studentview': wrap({
+    asyncComponent: () => import('../routes/admin/View/StudentView.svelte'),
+  }),
+  '/view/teacherview': wrap({
+    asyncComponent: () => import('../routes/admin/View/TeacherView.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),
@@ -75,6 +99,12 @@ export const guestRoutes = {
   }),
   '/input/studentview': wrap({
     asyncComponent: () => import('../routes/Input/StudentView.svelte'),
+  }),
+  '/input/studenttemplate': wrap({
+    asyncComponent: () => import('../routes/Input/StudentTemplate.svelte'),
+  }),
+  '/input/teachertemplate': wrap({
+    asyncComponent: () => import('../routes/Input/TeacherTemplate.svelte'),
   }),
   '/input/groupview': wrap({
     asyncComponent: () => import('../routes/Input/GroupView.svelte'),

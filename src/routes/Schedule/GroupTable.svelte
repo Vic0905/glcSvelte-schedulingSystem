@@ -26,7 +26,7 @@
     // Handle multiple students
     const studentBadges =
       cell.students && cell.students.length > 0
-        ? cell.students.map((student) => createBadge(student.name || 'Unknown Student', 'badge-neutral'))
+        ? cell.students.map((student) => createBadge(student.englishName || 'Unknown Student', 'badge-neutral'))
         : [createBadge('No Students', 'badge-neutral')]
 
     return h(
@@ -68,7 +68,7 @@
 
     if (item.expand?.student && Array.isArray(item.expand.student)) {
       studentsData = item.expand.student.map((student) => ({
-        name: student.name || '',
+        englishName: student.englishName || '',
         id: student.id || '',
       }))
     } else if (item.student && Array.isArray(item.student)) {

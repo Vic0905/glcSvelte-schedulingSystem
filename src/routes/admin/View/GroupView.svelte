@@ -1,8 +1,8 @@
 <script>
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
-  import { pb } from '../../lib/Pocketbase.svelte'
   import { onDestroy, onMount } from 'svelte'
+  import { pb } from '../../../lib/Pocketbase.svelte'
 
   let date = new Date().toISOString().split('T')[0]
   let currentDate = new Date()
@@ -182,7 +182,7 @@
           row[i + 2] = student
             ? {
                 schedule: schedule,
-                studentName: student.englishName,
+                studentName: student.name,
               }
             : null
         }

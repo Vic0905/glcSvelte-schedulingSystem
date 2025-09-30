@@ -1,6 +1,6 @@
 <script>
-  import { pb } from '../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
+  import { pb } from '../../../lib/Pocketbase.svelte'
 
   let { show = $bindable(false), advanceBooking = $bindable(), onSave } = $props()
 
@@ -19,7 +19,7 @@
       ])
 
       teachers = teachersData.sort((a, b) => a.name.localeCompare(b.name))
-      students = studentsData.sort((a, b) => a.englishName.localeCompare(b.englishName))
+      students = studentsData.sort((a, b) => a.name.localeCompare(b.name))
       subjects = subjectsData.sort((a, b) => a.name.localeCompare(b.name))
     } catch (error) {
       console.error('Error loading reference data:', error)
@@ -60,11 +60,11 @@
 
     switch (type) {
       case 'teacher':
-        return booking.expand.student?.englishName || 'Unknown Student'
+        return booking.expand.student?.name || 'Unknown Student'
       case 'student':
         return booking.expand.teacher?.name || 'Unknown Teacher'
       case 'room':
-        return `${booking.expand.teacher?.name || 'Unknown Teacher'} & ${booking.expand.student?.englishName || 'Unknown Student'}`
+        return `${booking.expand.teacher?.name || 'Unknown Teacher'} & ${booking.expand.student?.name || 'Unknown Student'}`
       default:
         return ''
     }
@@ -155,7 +155,7 @@
       `Are you sure you want to delete this advance booking?\n\n` +
       `Subject: ${advanceBooking.subject.name}\n` +
       `Teacher: ${advanceBooking.teacher.name}\n` +
-      `Student: ${advanceBooking.student.englishName}\n` +
+      `Student: ${advanceBooking.student.name}\n` +
       `Room: ${advanceBooking.room.name}\n` +
       `Time: ${advanceBooking.timeslot.start} - ${advanceBooking.timeslot.end}\n\n` +
       `This action cannot be undone.`
@@ -224,7 +224,7 @@
                 {@const isBooked = isResourceBooked(student.id, 'student')}
                 {@const conflictInfo = getConflictInfo(student.id, 'student')}
                 <option value={student.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
-                  {student.englishName}
+                  {student.name}
                   {#if isBooked}(Booked with {conflictInfo}){/if}
                 </option>
               {/each}

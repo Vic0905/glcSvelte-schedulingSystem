@@ -1,8 +1,8 @@
 <script>
   import { createEventDispatcher } from 'svelte'
-  import { pb } from '../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
   import { booking } from './schedule.svelte'
+  import { pb } from '../../../lib/Pocketbase.svelte'
 
   const dispatch = createEventDispatcher()
 
@@ -49,7 +49,7 @@
   async function loadDropdowns() {
     try {
       subjects = await pb.collection('subject').getFullList({ sort: 'name' })
-      students = await pb.collection('student').getFullList({ sort: 'englishName' })
+      students = await pb.collection('student').getFullList({ sort: 'name' })
       teachers = await pb.collection('teacher').getFullList({ sort: 'name' })
       groupRooms = await pb.collection('groupRoom').getFullList({ sort: 'name' })
       timeslots = await pb.collection('timeslot').getFullList({ sort: 'start' })
@@ -124,7 +124,7 @@
           return 'Group Class'
         }
         // Otherwise, show the individual student name
-        return schedule.expand?.student?.englishName || 'Unknown Student'
+        return schedule.expand?.student?.name || 'Unknown Student'
 
       case 'student':
         return schedule.expand?.teacher?.name || 'Unknown Teacher'
@@ -133,10 +133,10 @@
         const teacherName = schedule.expand?.teacher?.name || 'Unknown Teacher'
         let studentNames = ''
 
-        if (schedule.expand?.student?.englishName) {
-          studentNames = schedule.expand.student.englishName
+        if (schedule.expand?.student?.name) {
+          studentNames = schedule.expand.student.name
         } else if (Array.isArray(schedule.expand?.student)) {
-          studentNames = schedule.expand.student.map((st) => st.englishName).join(', ')
+          studentNames = schedule.expand.student.map((st) => st.name).join(', ')
         } else {
           studentNames = 'Group Students'
         }
@@ -321,7 +321,7 @@
         toast.error('Student conflict', {
           position: 'bottom-right',
           duration: 5000,
-          description: `${student?.englishName || 'Student'} is already booked with ${conflictInfo}`,
+          description: `${student?.name || 'Student'} is already booked with ${conflictInfo}`,
         })
         return
       }
@@ -384,7 +384,7 @@
   }
 
   // Computed filtered students
-  $: filteredStudents = students.filter((s) => s.englishName.toLowerCase().includes(searchTerm.toLowerCase()))
+  $: filteredStudents = students.filter((s) => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
 </script>
 
 {#if show}
@@ -467,7 +467,7 @@
                         ? 'opacity-50'
                         : ''}"
                     >
-                      {student.englishName}
+                      {student.name}
                       {#if isBooked}
                         <span class="text-warning text-xs">(Booked with {conflictInfo})</span>
                       {/if}

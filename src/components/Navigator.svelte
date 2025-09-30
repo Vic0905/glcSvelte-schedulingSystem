@@ -1,5 +1,23 @@
 <script>
   import { current } from '../lib/Pocketbase.svelte'
+  import { onMount, onDestroy } from 'svelte'
+
+  function handleOutsideClick(event) {
+    const openDetails = document.querySelectorAll('details[open]')
+    openDetails.forEach((el) => {
+      if (!el.contains(event.target)) {
+        el.removeAttribute('open')
+      }
+    })
+  }
+
+  onMount(() => {
+    document.addEventListener('click', handleOutsideClick)
+  })
+
+  onDestroy(() => {
+    document.removeEventListener('click', handleOutsideClick)
+  })
 </script>
 
 {#if current.user}
@@ -17,7 +35,7 @@
       </ul>
     </details>
   </li> 
-  <!-- <li>
+  <li>
     <details>
       <summary>Consent Forms</summary>
       <ul class="relative z-50 text-xs p-2">
@@ -65,8 +83,8 @@
     <details>
       <summary>Scheduling Table</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/schedule/scheduleinput">Input Table</a></li>
-        <li><a href="/#/schedule/grouptable">Group Table</a></li>
+        <li><a href="/#/schedules/scheduleinput">Input Daily Table</a></li>
+        <li><a href="/#/schedules/grouptable">Group Daily Table</a></li>
       </ul>
     </details>
   </li>
@@ -74,9 +92,9 @@
     <details>
       <summary>View Table</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/input/groupview">Group View Table</a></li>
-        <li><a href="/#/input/studentview">Student View Table</a></li>
-        <li><a href="/#/input/teacherview">Teacher View Table</a></li>
+        <li><a href="/#/view/groupview">Group View Table</a></li>
+        <li><a href="/#/view/studentview">Student View Table</a></li>
+        <li><a href="/#/view/teacherview">Teacher View Table</a></li>
         <!-- <li><a href="/#/schedule/schedulestudent">Student View Table</a></li> -->
       </ul>
     </details>
@@ -85,17 +103,17 @@
     <details>
       <summary>Management</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/input/subject">Subject</a></li>
-        <li><a href="/#/input/room">Room</a></li>
-        <li><a href="/#/input/group">Group</a></li>
-        <li><a href="/#/input/student">Student</a></li>
-        <li><a href="/#/input/teacher">Teacher</a></li>
+        <li><a href="/#/management/subject">Subject</a></li>
+        <li><a href="/#/management/room">Room</a></li>
+        <li><a href="/#/management/group">Group</a></li>
+        <li><a href="/#/management/student">Student</a></li>
+        <li><a href="/#/management/teacher">Teacher</a></li>
       </ul>
     </details>
   </li>
 {:else}
   <!-- public routes -->
-  <li>
+  <!-- <li>
     <details>
       <summary>Registration</summary>
       <ul class="p-2">
@@ -119,12 +137,12 @@
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/lessonforms/teacher">Teacher Request Form</a></li>
         <li><a href="/#/lessonforms/special">Special Classes Form</a></li>
-        <li><a href="/#/lessonforms/additional">Additional Classes Form</a></li>
-        <!-- <li><a>Class Cancellation Form</a></li>
+        <li><a href="/#/lessonforms/additional">Additional Classes Form</a></li> -->
+  <!-- <li><a>Class Cancellation Form</a></li>
         <li><a>Course Request Form</a></li> -->
-      </ul>
+  <!-- </ul>
     </details>
-  </li>
+  </li> -->
   <!-- <li> 
     <details>
       <summary>Consent Forms</summary>
@@ -146,10 +164,19 @@
   </li>
   <li>
     <details>
+      <summary>Templates Table</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/input/studenttemplate">Student Template</a></li>
+        <li><a href="/#/input/teachertemplate">Teacher Template</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
       <summary>Scheduling Table</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/schedule/scheduleinput">Input Table</a></li>
-        <li><a href="/#/schedule/grouptable">Group Table</a></li>
+        <li><a href="/#/schedule/scheduleinput">Input Daily Table</a></li>
+        <li><a href="/#/schedule/grouptable">Group Daily Table</a></li>
       </ul>
     </details>
   </li>
