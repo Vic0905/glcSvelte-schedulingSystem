@@ -180,18 +180,18 @@
     }
   }
 
-  onMount(() => {
-    loadTeacherSchedule()
-    // Subscribe to both collections for realtime updates
-    pb.collection('advanceBooking').subscribe('*', loadTeacherSchedule)
-    pb.collection('groupAdvanceBooking').subscribe('*', loadTeacherSchedule)
+  let unsubAdvance, unsubGroup
+
+  onMount(async () => {
+    await loadTeacherSchedule()
+    unsubAdvance = await pb.collection('advanceBooking').subscribe('*', loadTeacherSchedule)
+    unsubGroup = await pb.collection('groupAdvanceBooking').subscribe('*', loadTeacherSchedule)
   })
 
   onDestroy(() => {
     teacherGrid?.destroy()
-    // Unsubscribe from both collections
-    pb.collection('advanceBooking').unsubscribe('*')
-    pb.collection('groupAdvanceBooking').unsubscribe('*')
+    unsubAdvance?.() // removes only THIS subscription
+    unsubGroup?.()
   })
 </script>
 
@@ -204,8 +204,8 @@
   <div class="mb-6 flex items-center justify-between gap-4">
     <h3 class="text-xl font-semibold text-primary flex-1 text-center">{getWeekRange()}</h3>
     <div class="flex gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
+      <button class="btn btn-outline btn-sm" on:click={() => changeWeek(-1)}>&larr;</button>
+      <button class="btn btn-outline btn-sm" on:click={() => changeWeek(1)}>&rarr;</button>
     </div>
   </div>
 

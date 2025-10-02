@@ -5,6 +5,7 @@
   let { show = $bindable(false), advanceBooking = $bindable(), onSave } = $props()
 
   let existingBookings = $state([])
+  let groupLessonBookings = $state([])
   let teachers = $state([])
   let students = $state([])
   let subjects = $state([])
@@ -32,26 +33,45 @@
       const timeslotId = advanceBooking.timeslot.id
       if (!timeslotId) {
         existingBookings = []
+        groupLessonBookings = []
         return
       }
 
-      const records = await pb.collection('advanceBooking').getFullList({
+      // Load advance bookings
+      const advanceRecords = await pb.collection('advanceBooking').getFullList({
         filter: `timeslot = "${timeslotId}"${
           advanceBooking.mode === 'edit' && advanceBooking.id ? ` && id != "${advanceBooking.id}"` : ''
         }`,
         expand: 'teacher,student,room',
       })
 
-      existingBookings = records
+      existingBookings = advanceRecords
+
+      // Load group advance bookings for the same timeslot
+      const groupRecords = await pb.collection('groupAdvanceBooking').getFullList({
+        filter: `timeslot = "${timeslotId}"`,
+        expand: 'teacher,student,grouproom',
+      })
+
+      groupLessonBookings = groupRecords
     } catch (error) {
       console.error('Error loading existing bookings:', error)
       existingBookings = []
+      groupLessonBookings = []
     }
   }
 
   // Conflict detection helpers
   const isResourceBooked = (resourceId, type) => {
     return existingBookings.some((booking) => booking[type] === resourceId)
+  }
+
+  const isStudentInGroupLesson = (studentId) => {
+    return groupLessonBookings.some((booking) => Array.isArray(booking.student) && booking.student.includes(studentId))
+  }
+
+  const isTeacherInGroupLesson = (teacherId) => {
+    return groupLessonBookings.some((booking) => booking.teacher === teacherId)
   }
 
   const getConflictInfo = (resourceId, type) => {
@@ -68,6 +88,21 @@
       default:
         return ''
     }
+  }
+
+  const getGroupLessonConflictInfo = (studentId) => {
+    const booking = groupLessonBookings.find((b) => Array.isArray(b.student) && b.student.includes(studentId))
+    if (!booking?.expand) return 'Group Lesson'
+
+    return `Group Lesson with ${booking.expand.teacher?.name || 'Unknown Teacher'}`
+  }
+
+  const getGroupLessonTeacherConflictInfo = (teacherId) => {
+    const booking = groupLessonBookings.find((b) => b.teacher === teacherId)
+    if (!booking?.expand) return 'Group Lesson'
+
+    const studentCount = Array.isArray(booking.student) ? booking.student.length : 0
+    return `Group Lesson (${studentCount} students)`
   }
 
   // Validation and conflict checking
@@ -222,14 +257,18 @@
               <option value="">Select Student</option>
               {#each students as student}
                 {@const isBooked = isResourceBooked(student.id, 'student')}
-                {@const conflictInfo = getConflictInfo(student.id, 'student')}
-                <option value={student.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
+                {@const isInGroupLesson = isStudentInGroupLesson(student.id)}
+                {@const conflictInfo = isBooked
+                  ? getConflictInfo(student.id, 'student')
+                  : getGroupLessonConflictInfo(student.id)}
+                {@const hasConflict = isBooked || isInGroupLesson}
+                <option value={student.id} disabled={hasConflict} class={hasConflict ? 'text-gray-400' : ''}>
                   {student.englishName}
-                  {#if isBooked}(Booked with {conflictInfo}){/if}
+                  {#if hasConflict}({conflictInfo}){/if}
                 </option>
               {/each}
             </select>
-            {#if advanceBooking.student.id && isResourceBooked(advanceBooking.student.id, 'student')}
+            {#if advanceBooking.student.id && (isResourceBooked(advanceBooking.student.id, 'student') || isStudentInGroupLesson(advanceBooking.student.id))}
               <div class="label">
                 <span class="label-text-alt text-warning">⚠️ This student is already booked for this timeslot</span>
               </div>
@@ -255,14 +294,18 @@
               <option value="">Select Teacher</option>
               {#each teachers as teacher}
                 {@const isBooked = isResourceBooked(teacher.id, 'teacher')}
-                {@const conflictInfo = getConflictInfo(teacher.id, 'teacher')}
-                <option value={teacher.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
+                {@const isInGroupLesson = isTeacherInGroupLesson(teacher.id)}
+                {@const conflictInfo = isBooked
+                  ? getConflictInfo(teacher.id, 'teacher')
+                  : getGroupLessonTeacherConflictInfo(teacher.id)}
+                {@const hasConflict = isBooked || isInGroupLesson}
+                <option value={teacher.id} disabled={hasConflict} class={hasConflict ? 'text-gray-400' : ''}>
                   {teacher.name}
-                  {#if isBooked}(Booked with {conflictInfo}){/if}
+                  {#if hasConflict}({conflictInfo}){/if}
                 </option>
               {/each}
             </select>
-            {#if advanceBooking.teacher.id && isResourceBooked(advanceBooking.teacher.id, 'teacher')}
+            {#if advanceBooking.teacher.id && (isResourceBooked(advanceBooking.teacher.id, 'teacher') || isTeacherInGroupLesson(advanceBooking.teacher.id))}
               <div class="label">
                 <span class="label-text-alt text-warning">⚠️ This teacher is already booked for this timeslot</span>
               </div>

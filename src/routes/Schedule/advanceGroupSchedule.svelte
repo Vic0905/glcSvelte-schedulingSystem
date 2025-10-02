@@ -70,8 +70,8 @@
     // Handle multiple students
     const studentBadges =
       cell.students && cell.students.length > 0
-        ? cell.students.map((student) => createBadge(student.englishName || 'Unknown Student', 'badge-accent'))
-        : [createBadge('No Students', 'badge-accent')]
+        ? cell.students.map((student) => createBadge(student.englishName || 'Unknown Student', 'badge-neutral'))
+        : [createBadge('No Students', 'badge-neutral')]
 
     return h(
       'div',
@@ -80,12 +80,12 @@
       },
       [
         createBadge(cell.subject.name || 'No Subject', 'badge-primary'),
-        createBadge(cell.teacher.name || 'No Teacher', 'badge-success'),
+        createBadge(cell.teacher.name || 'No Teacher', 'badge-info'),
         createBadge(cell.groupRoom.name || 'No Room', 'badge-error'),
         ...studentBadges, // Spread multiple student badges
         // Add a count badge if there are many students
         ...(cell.students && cell.students.length > 3
-          ? [createBadge(`+${cell.students.length - 3} more`, 'badge-neutral')]
+          ? [createBadge(`+${cell.students.length - 3} more`, 'badge-warning')]
           : []),
       ]
     )
@@ -269,7 +269,7 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-success badge-xs"></div>
+        <div class="badge badge-info badge-xs"></div>
         <span>Teacher</span>
       </div>
       <div class="flex items-center gap-1">
@@ -277,11 +277,11 @@
         <span>Group Room</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-accent badge-xs"></div>
+        <div class="badge badge-neutral badge-xs"></div>
         <span>Students</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
+        <div class="badge badge-warning badge-xs"></div>
         <span>Additional Count</span>
       </div>
     </div>

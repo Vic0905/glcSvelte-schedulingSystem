@@ -193,18 +193,18 @@
     }
   }
 
+  let unsubAdvance, unsubGroup
+
   onMount(() => {
     loadStudentSchedule()
-    // Subscribe to both collections for realtime updates
-    pb.collection('advanceBooking').subscribe('*', loadStudentSchedule)
-    pb.collection('groupAdvanceBooking').subscribe('*', loadStudentSchedule)
+    unsubAdvance = pb.collection('advanceBooking').subscribe('*', loadStudentSchedule)
+    unsubGroup = pb.collection('groupAdvanceBooking').subscribe('*', loadStudentSchedule)
   })
 
   onDestroy(() => {
     studentGrid?.destroy()
-    // Unsubscribe from both collections
-    pb.collection('advanceBooking').unsubscribe('*')
-    pb.collection('groupAdvanceBooking').unsubscribe('*')
+    unsubAdvance?.()
+    unsubGroup?.()
   })
 </script>
 
@@ -217,8 +217,8 @@
   <div class="mb-6 flex items-center justify-between gap-4">
     <h3 class="text-xl font-semibold text-primary flex-1 text-center">{getWeekRange()}</h3>
     <div class="flex gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
+      <button class="btn btn-outline btn-sm" on:click={() => changeWeek(-1)}>&larr;</button>
+      <button class="btn btn-outline btn-sm" on:click={() => changeWeek(1)}>&rarr;</button>
     </div>
   </div>
 
