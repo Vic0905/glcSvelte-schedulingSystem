@@ -4,22 +4,48 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { pb } from '../../lib/Pocketbase.svelte'
 
-  let date = new Date().toISOString().split('T')[0]
-  let currentDate = new Date()
+  let weekStart = $state(getWeekStart(new Date()))
   let studentGrid = null
   let timeslots = []
 
-  const changeDate = (days) => {
-    currentDate.setDate(currentDate.getDate() + days)
-    date = currentDate.toISOString().split('T')[0]
+  function getWeekStart(date) {
+    const d = new Date(date)
+    const day = d.getDay()
+    const diff = day === 0 ? -5 : day === 1 ? 1 : 2 - day
+    d.setDate(d.getDate() + diff)
+    return d.toISOString().split('T')[0]
+  }
+
+  function getWeekDays(startDate) {
+    const days = []
+    const start = new Date(startDate)
+    for (let i = 0; i < 4; i++) {
+      const day = new Date(start)
+      day.setDate(start.getDate() + i)
+      days.push(day.toISOString().split('T')[0])
+    }
+    return days
+  }
+
+  function getWeekRangeDisplay(startDate) {
+    const start = new Date(startDate)
+    const end = new Date(start)
+    end.setDate(start.getDate() + 3)
+    const opts = { month: 'long', day: 'numeric', year: 'numeric' }
+    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', opts)}`
+  }
+
+  const changeWeek = (weeks) => {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + weeks * 7)
+    weekStart = getWeekStart(d)
     loadStudentSchedule()
   }
 
-  const createBadge = (text, colorClass) => h('span', { class: `badge ${colorClass} badge-xs` }, text)
+  const createBadge = (text, color) => h('span', { class: `badge ${color} badge-xs` }, text)
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
-
     return h(
       'div',
       { class: 'text-xs' },
@@ -28,7 +54,7 @@
           'div',
           { class: 'flex flex-col gap-1 items-center' },
           [
-            createBadge(item.subject?.name || '', 'badge-primary'),
+            createBadge(item.subject?.name || '', 'badge-primary p-3'),
             createBadge(item.teacher?.name || '', 'badge-info'),
             item.isGroup && createBadge('Group Class', 'badge-secondary'),
             createBadge(item.room?.name || '', 'badge-error'),
@@ -38,148 +64,125 @@
     )
   }
 
-  const buildColumns = () => [
-    { name: 'Student', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-    { name: 'English Name', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-    { name: 'Course', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-    { name: 'Level', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-    ...timeslots.map((t) => ({
-      name: `${t.start} - ${t.end}`,
-      formatter: formatCell,
-    })),
-  ]
+  async function loadStudentSchedule() {
+    try {
+      const weekDays = getWeekDays(weekStart)
+      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-  const fetchScheduleData = async () => {
-    const [students, individualSchedules, groupSchedules] = await Promise.all([
-      pb.collection('student').getFullList({ sort: 'name' }),
-      pb.collection('lessonSchedule').getList(1, 200, {
-        filter: `date = "${date}"`,
-        expand: 'teacher,student,subject,room,timeslot',
-      }),
-      pb.collection('groupLessonSchedule').getList(1, 200, {
-        filter: `date = "${date}"`,
-        expand: 'teacher,student,subject,grouproom,timeslot',
-      }),
-    ])
+      // Fetch all data in parallel
+      const [timeslotsData, students, individualSchedules, groupSchedules] = await Promise.all([
+        timeslots.length ? Promise.resolve(timeslots) : pb.collection('timeSlot').getFullList({ sort: 'start' }),
+        pb.collection('student').getFullList({ sort: 'name' }),
+        pb.collection('lessonSchedule').getList(1, 200, {
+          filter: dateFilter,
+          expand: 'teacher,student,subject,room,timeslot',
+        }),
+        pb.collection('groupLessonSchedule').getList(1, 200, {
+          filter: dateFilter,
+          expand: 'teacher,student,subject,grouproom,timeslot',
+        }),
+      ])
 
-    return { students, individualSchedules: individualSchedules.items, groupSchedules: groupSchedules.items }
-  }
+      timeslots = timeslotsData
 
-  const processScheduleData = (students, individualSchedules, groupSchedules) => {
-    // Initialize student data structure
-    const grouped = {}
-    students.forEach((student) => {
-      grouped[student.id] = {
-        student: student.name,
-        englishName: student.englishName || '',
-        course: student.course || '',
-        level: student.level || '',
-        slots: {},
-      }
-    })
+      // Build schedule lookup: student -> timeslot -> schedule
+      const scheduleMap = {}
 
-    // Process individual schedules
-    individualSchedules.forEach((schedule) => {
-      const student = schedule.expand.student
-      if (!student) return
-
-      const timeslotId = schedule.expand.timeslot?.id
-      if (!grouped[student.id].slots[timeslotId]) {
-        grouped[student.id].slots[timeslotId] = []
-      }
-
-      grouped[student.id].slots[timeslotId].push({
-        ...schedule,
-        isGroup: false,
-        expand: { ...schedule.expand, room: schedule.expand.room },
-      })
-    })
-
-    // Process group schedules
-    groupSchedules.forEach((schedule) => {
-      const students = Array.isArray(schedule.expand.student) ? schedule.expand.student : []
-
-      students.forEach((student) => {
-        if (!grouped[student.id]) return
-
-        const timeslotId = schedule.expand.timeslot?.id
-        if (!grouped[student.id].slots[timeslotId]) {
-          grouped[student.id].slots[timeslotId] = []
+      // Initialize all students
+      students.forEach((s) => {
+        scheduleMap[s.id] = {
+          student: s.name,
+          englishName: s.englishName || '',
+          course: s.course || '',
+          level: s.level || '',
+          slots: {},
         }
+      })
 
-        grouped[student.id].slots[timeslotId].push({
-          ...schedule,
-          isGroup: true,
-          expand: { ...schedule.expand, student, room: schedule.expand.grouproom },
+      // Process individual schedules
+      individualSchedules.items.forEach((s) => {
+        const studentId = s.expand?.student?.id
+        const timeslotId = s.expand?.timeslot?.id
+
+        if (!studentId || !timeslotId || !scheduleMap[studentId]) return
+
+        // Only store first occurrence (represents entire week)
+        if (!scheduleMap[studentId].slots[timeslotId]) {
+          scheduleMap[studentId].slots[timeslotId] = {
+            subject: s.expand?.subject,
+            teacher: s.expand?.teacher,
+            room: s.expand?.room,
+            isGroup: false,
+          }
+        }
+      })
+
+      // Process group schedules
+      groupSchedules.items.forEach((s) => {
+        const students = Array.isArray(s.expand?.student) ? s.expand.student : []
+        const timeslotId = s.expand?.timeslot?.id
+
+        if (!timeslotId) return
+
+        students.forEach((student) => {
+          if (!scheduleMap[student.id]) return
+
+          // Only store first occurrence
+          if (!scheduleMap[student.id].slots[timeslotId]) {
+            scheduleMap[student.id].slots[timeslotId] = {
+              subject: s.expand?.subject,
+              teacher: s.expand?.teacher,
+              room: s.expand?.grouproom,
+              isGroup: true,
+            }
+          }
         })
       })
-    })
 
-    return grouped
-  }
-
-  const buildTableData = (grouped) => {
-    return Object.values(grouped)
-      .sort((a, b) => a.student.localeCompare(b.student, undefined, { numeric: true }))
-      .map((entry) => {
-        const row = [
+      // Build table data
+      const data = Object.values(scheduleMap)
+        .sort((a, b) => a.student.localeCompare(b.student, undefined, { numeric: true }))
+        .map((entry) => [
           { label: 'Student', value: entry.student },
           { label: 'English Name', value: entry.englishName },
           { label: 'Course', value: entry.course },
           { label: 'Level', value: entry.level },
-        ]
+          ...timeslots.map((ts) => {
+            const schedule = entry.slots[ts.id]
+            return schedule ? [schedule] : []
+          }),
+        ])
 
-        timeslots.forEach((timeslot) => {
-          const slotData = entry.slots[timeslot.id] || []
-          row.push(
-            slotData.map((item) => ({
-              subject: item.expand.subject,
-              teacher: item.expand.teacher,
-              student: item.expand.student,
-              room: item.expand.room,
-              isGroup: item.isGroup,
-            }))
-          )
-        })
+      // Build columns
+      const columns = [
+        { name: 'Student', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'English Name', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Course', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Level', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        ...timeslots.map((t) => ({
+          name: `${t.start} - ${t.end}`,
+          width: '160px',
+          formatter: formatCell,
+        })),
+      ]
 
-        return row
-      })
-  }
-
-  const initializeGrid = (data) => {
-    const config = {
-      columns: buildColumns(),
-      data,
-      search: false,
-      sort: false,
-      className: {
-        table: 'w-full border text-sm max-w-[800px]',
-        th: 'bg-base-200 p-2 border text-center',
-        td: 'border p-2 whitespace-nowrap align-middle text-center',
-      },
-    }
-
-    if (studentGrid) {
-      requestAnimationFrame(() => {
+      // Initialize or update grid
+      if (studentGrid) {
         studentGrid.updateConfig({ data }).forceRender()
-      })
-    } else {
-      studentGrid = new Grid(config).render(document.getElementById('studentGrid'))
-    }
-  }
-
-  async function loadStudentSchedule() {
-    try {
-      // Load timeslots if not cached
-      if (!timeslots.length) {
-        timeslots = await pb.collection('timeSlot').getFullList({ sort: 'start' })
+      } else {
+        studentGrid = new Grid({
+          columns,
+          data,
+          search: false,
+          sort: false,
+          pagination: false,
+          className: {
+            table: 'w-full border text-sm',
+            th: 'bg-base-200 p-2 border text-center',
+            td: 'border p-2 align-middle text-center',
+          },
+        }).render(document.getElementById('studentGrid'))
       }
-
-      const { students, individualSchedules, groupSchedules } = await fetchScheduleData()
-      const grouped = processScheduleData(students, individualSchedules, groupSchedules)
-      const data = buildTableData(grouped)
-
-      initializeGrid(data)
     } catch (error) {
       console.error('Error loading schedule:', error)
     }
@@ -201,41 +204,34 @@
   })
 </script>
 
-<div class="p-6 max-w-auto mx-auto bg-base-100">
+<div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-2xl font-bold text-primary">Student</h2>
-    <h2 class="text-2xl font-bold text-primary text-center flex-1">Schedule Table</h2>
+    <h2 class="text-2xl font-bold text-primary text-center flex-1">Schedule Table (Weekly)</h2>
   </div>
 
-  <!-- Filter row -->
-  <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+  <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-4">
-      <label for="filterDate" class="text-sm font-semibold">Filter Date:</label>
+      <label for="filterDate" class="text-sm font-semibold">Week Starting:</label>
       <input
         type="date"
         id="filterDate"
-        name="filterDate"
-        bind:value={date}
+        bind:value={weekStart}
         class="input input-bordered input-sm w-40"
         onchange={loadStudentSchedule}
       />
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center">
-      {new Date(date).toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      })} - {new Date(date).toLocaleDateString('en-US', { weekday: 'long' })}
+    <h3 class="text-xl font-semibold text-primary text-center mr-20">
+      {getWeekRangeDisplay(weekStart)}
     </h3>
 
     <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeDate(-1)}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeDate(1)}>&rarr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr; Prev Week</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>Next Week &rarr;</button>
     </div>
   </div>
 
-  <!-- Legend -->
   <div class="p-3 bg-base-200 rounded-lg mb-4">
     <div class="flex flex-wrap gap-4 text-xs">
       <div class="flex items-center gap-1">
@@ -257,5 +253,7 @@
     </div>
   </div>
 
-  <div id="studentGrid" class="max-h-[680px] overflow-auto border rounded-lg"></div>
+  <div class="max-h-[700px] overflow-auto border rounded-lg">
+    <div id="studentGrid"></div>
+  </div>
 </div>

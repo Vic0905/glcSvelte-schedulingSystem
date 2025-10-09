@@ -2,7 +2,7 @@
   import { pb } from '../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
 
-  let { show = $bindable(false), getWeekRange, currentWeekStart, getWeekDates } = $props()
+  let { show = $bindable(false), getWeekRange, currentWeekStart } = $props()
 
   let isGoingLive = $state(false)
 
@@ -32,7 +32,14 @@
       loadingProgress.skippedSchedules = 0
       loadingProgress.conflicts = []
 
-      const weekDates = getWeekDates(currentWeekStart)
+      // ✅ Force-generate Tuesday–Friday dates for this week
+      const weekDates = []
+      const start = new Date(currentWeekStart)
+      for (let i = 2; i <= 5; i++) {
+        const date = new Date(start)
+        date.setDate(start.getDate() + (i - start.getDay()))
+        weekDates.push(date.toISOString().split('T')[0])
+      }
 
       // Step 1: Load advance bookings
       loadingProgress.currentStep = 'Loading advance bookings...'
@@ -51,7 +58,7 @@
 
       loadingProgress.totalBookings = advanceBookings.length
       loadingProgress.totalSchedules = advanceBookings.length * weekDates.length
-      loadingProgress.currentStep = `Processing ${advanceBookings.length} bookings for ${weekDates.length} days...`
+      loadingProgress.currentStep = `Processing ${advanceBookings.length} bookings for ${weekDates.length} days (Tuesday to Friday)...`
 
       let publishedCount = 0
       let skippedCount = 0
@@ -257,7 +264,8 @@
       </p>
       <div class="alert alert-warning">
         <span
-          >⚠️ This will create Monday-Friday schedules for each template and make them visible to students and teachers</span
+          >⚠️ This will create Tuesday to Friday schedules for each template and make them visible to students and
+          teachers</span
         >
       </div>
       <div class="modal-action">

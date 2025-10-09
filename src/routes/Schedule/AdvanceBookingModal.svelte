@@ -235,7 +235,7 @@
       </h3>
 
       <div class="alert alert-info">
-        <span>ℹ️ This template will be used to create schedules for Monday-Friday when published</span>
+        <span>ℹ️ This template will be used to create schedules for Tuesday-Friday when published</span>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

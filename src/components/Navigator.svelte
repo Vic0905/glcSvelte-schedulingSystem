@@ -175,8 +175,8 @@
     <details>
       <summary>Scheduling Table</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/schedule/scheduleinput">Input Daily Table</a></li>
-        <li><a href="/#/schedule/grouptable">Group Daily Table</a></li>
+        <li><a href="/#/schedule/scheduleinput">Input Table</a></li>
+        <li><a href="/#/schedule/grouptable">Group Table</a></li>
       </ul>
     </details>
   </li>

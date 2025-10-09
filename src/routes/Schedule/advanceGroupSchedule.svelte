@@ -209,6 +209,7 @@
         sort: false,
         pagination: false,
         autoWidth: true,
+        fixedHeader: true,
         className: {
           table: 'w-full border text-sm',
           th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',

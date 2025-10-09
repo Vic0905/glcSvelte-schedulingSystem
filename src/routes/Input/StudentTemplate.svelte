@@ -176,6 +176,8 @@
         search: false,
         sort: false,
         pagination: false,
+        fixedHeader: true,
+        weight: '100%',
         className: {
           table: 'w-full border text-sm',
           th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
@@ -193,28 +195,28 @@
     }
   }
 
-  let unsubAdvance, unsubGroup
-
   onMount(() => {
     loadStudentSchedule()
-    unsubAdvance = pb.collection('advanceBooking').subscribe('*', loadStudentSchedule)
-    unsubGroup = pb.collection('groupAdvanceBooking').subscribe('*', loadStudentSchedule)
+    // Subscribe to both collections for realtime updates
+    pb.collection('advanceBooking').subscribe('*', loadStudentSchedule)
+    pb.collection('groupAdvanceBooking').subscribe('*', loadStudentSchedule)
   })
 
   onDestroy(() => {
     studentGrid?.destroy()
-    unsubAdvance?.()
-    unsubGroup?.()
+    // Unsubscribe from both collections
+    pb.collection('advanceBooking').unsubscribe('*')
+    pb.collection('groupAdvanceBooking').unsubscribe('*')
   })
 </script>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-2xl font-bold text-primary">Student</h2>
-    <h2 class="text-2xl font-bold text-primary text-center flex-1">Advance Schedule (Weekly Template)</h2>
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+    <h2>Student</h2>
+    <h2 class="text-center flex-1">Advance Schedule (Weekly Template)</h2>
   </div>
 
-  <div class="mb-6 flex items-center justify-between gap-4">
+  <div class="relative mb-2 flex items-center justify-between gap-4">
     <h3 class="text-xl font-semibold text-primary flex-1 text-center">{getWeekRange()}</h3>
     <div class="flex gap-2">
       <button class="btn btn-outline btn-sm" on:click={() => changeWeek(-1)}>&larr;</button>

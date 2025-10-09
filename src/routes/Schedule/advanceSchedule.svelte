@@ -23,6 +23,7 @@
     mode: 'create',
   })
 
+  // 🗓️ Initialize week to current Monday
   const initializeWeek = () => {
     const today = new Date()
     const dow = today.getDay()
@@ -31,24 +32,29 @@
     currentWeekStart = monday.toISOString().split('T')[0]
   }
 
+  // 📅 Generate Tuesday to Friday dates
   const getWeekDates = (startDate) => {
     const monday = new Date(startDate)
-    return Array.from({ length: 5 }, (_, i) => {
+    const weekDates = []
+    for (let i = 2; i <= 5; i++) {
       const d = new Date(monday)
-      d.setDate(monday.getDate() + i)
-      return d.toISOString().split('T')[0]
-    })
+      d.setDate(monday.getDate() + (i - 1))
+      weekDates.push(d.toISOString().split('T')[0])
+    }
+    return weekDates
   }
 
   const getWeekRange = (startDate) => {
     const monday = new Date(startDate)
+    const tuesday = new Date(monday)
+    tuesday.setDate(monday.getDate() + 1)
     const friday = new Date(monday)
     friday.setDate(monday.getDate() + 4)
 
-    if (monday.getMonth() === friday.getMonth()) {
-      return `${monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${friday.getDate()}, ${friday.getFullYear()}`
+    if (tuesday.getMonth() === friday.getMonth()) {
+      return `${tuesday.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${friday.getDate()}, ${friday.getFullYear()}`
     }
-    return `${monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${friday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+    return `${tuesday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} & ${friday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }
 
   const changeWeek = (weeks) => {
@@ -63,8 +69,8 @@
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
 
-    return h('div', { class: 'w-full p-2 flex flex-col gap-1 text-xs whitespace-nowrap' }, [
-      createBadge(cell.subject.name, 'badge-primary'),
+    return h('div', { class: 'flex flex-col gap-1 text-xs items-center' }, [
+      createBadge(cell.subject.name, 'badge-primary p-3'),
       createBadge(cell.teacher.name, 'badge-info'),
       createBadge(cell.student.englishName, 'badge-neutral'),
       createBadge(cell.room.name, 'badge-error'),
@@ -74,15 +80,18 @@
   const buildColumns = () => [
     {
       name: 'Teacher',
+      width: '120px',
       formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
     },
     {
       name: 'Room',
+      width: '100px',
       formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
     },
     ...timeslots.map((t) => ({
       name: `${t.start} - ${t.end}`,
       id: t.id,
+      width: '160px',
       formatter: formatCell,
     })),
   ]
@@ -101,35 +110,23 @@
 
   const processBookingData = (bookings) => {
     const scheduledRooms = {}
-
     bookings.forEach((booking) => {
       const roomId = booking.expand?.room?.id || booking.room
       const slotId = booking.expand?.timeslot?.id || booking.timeslot
-
       if (!scheduledRooms[roomId]) {
         scheduledRooms[roomId] = {}
       }
       scheduledRooms[roomId][slotId] = booking
     })
-
     return scheduledRooms
   }
 
   const createSlotData = (item, room, timeslot, assignedTeacher) => ({
     label: item ? 'Schedule' : 'Empty',
     id: item?.id || '',
-    subject: {
-      name: item?.expand?.subject?.name || '',
-      id: item?.expand?.subject?.id || '',
-    },
-    teacher: {
-      name: item?.expand?.teacher?.name || '',
-      id: item?.expand?.teacher?.id || '',
-    },
-    student: {
-      englishName: item?.expand?.student?.englishName || '',
-      id: item?.expand?.student?.id || '',
-    },
+    subject: { name: item?.expand?.subject?.name || '', id: item?.expand?.subject?.id || '' },
+    teacher: { name: item?.expand?.teacher?.name || '', id: item?.expand?.teacher?.id || '' },
+    student: { englishName: item?.expand?.student?.englishName || '', id: item?.expand?.student?.id || '' },
     room: { name: room.name, id: room.id },
     timeslot: { id: timeslot.id, start: timeslot.start, end: timeslot.end },
     assignedTeacher,
@@ -158,14 +155,11 @@
   const handleCellClick = (_, cell) => {
     const cellData = cell.data
     if (cellData.disabled) return
-
     Object.assign(advanceBooking, cellData)
     advanceBooking.mode = cellData.label === 'Empty' ? 'create' : 'edit'
-
     if (cellData.label === 'Empty' && cellData.assignedTeacher) {
       advanceBooking.teacher = { ...cellData.assignedTeacher }
     }
-
     showAdvanceModal = true
   }
 
@@ -177,10 +171,11 @@
       sort: false,
       pagination: false,
       autoWidth: true,
+      fixedHeader: true,
       className: {
         table: 'w-full border text-sm',
-        th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
-        td: 'border p-2 whitespace-nowrap align-middle text-center',
+        th: 'bg-base-200 p-1 border text-center sticky top-0 z-10',
+        td: 'border p-2 align-middle text-center',
       },
     }
 
@@ -197,16 +192,35 @@
   async function loadAdvanceBookings() {
     try {
       const { timeslotsData, roomsData, bookings } = await fetchBookingData()
-
       timeslots = timeslotsData
       rooms = roomsData
-
       const scheduledRooms = processBookingData(bookings)
       const data = buildTableData(scheduledRooms)
-
       initializeGrid(data)
     } catch (error) {
       console.error('Error loading advance bookings:', error)
+    }
+  }
+
+  // 🗑️ Delete all advance bookings
+  const deleteAllAdvanceBookings = async () => {
+    if (!confirm('⚠️ Are you sure you want to delete ALL advance bookings? This action cannot be undone.')) return
+
+    try {
+      const allBookings = await pb.collection('advanceBooking').getFullList()
+      if (allBookings.length === 0) {
+        alert('No advance bookings found to delete.')
+        return
+      }
+
+      // Use Promise.all for faster bulk deletion
+      await Promise.all(allBookings.map((b) => pb.collection('advanceBooking').delete(b.id)))
+
+      alert(`✅ Successfully deleted ${allBookings.length} advance bookings.`)
+      loadAdvanceBookings()
+    } catch (error) {
+      console.error('Error deleting advance bookings:', error)
+      alert('❌ Failed to delete advance bookings. Check console for details.')
     }
   }
 
@@ -223,13 +237,15 @@
   })
 </script>
 
+<!-- 🧾 UI Layout -->
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
     <h2>Room</h2>
-    <h2 class="text-center flex-1">Advance Schedule Table (Weekly Template)</h2>
+    <h2 class="text-center flex-1">Advance Schedule Table (WEEKLY TEMPLATE)</h2>
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
+    <button class="btn btn-error btn-sm" onclick={deleteAllAdvanceBookings}>Delete All</button>
     <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
       {getWeekRange(currentWeekStart)}
     </h3>

@@ -163,6 +163,8 @@
         search: false,
         sort: false,
         pagination: false,
+        fixedHeader: true,
+        weight: '100%',
         className: {
           table: 'w-full border text-sm',
           th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
@@ -180,18 +182,18 @@
     }
   }
 
-  let unsubAdvance, unsubGroup
-
-  onMount(async () => {
-    await loadTeacherSchedule()
-    unsubAdvance = await pb.collection('advanceBooking').subscribe('*', loadTeacherSchedule)
-    unsubGroup = await pb.collection('groupAdvanceBooking').subscribe('*', loadTeacherSchedule)
+  onMount(() => {
+    loadTeacherSchedule()
+    // Subscribe to both collections for realtime updates
+    pb.collection('advanceBooking').subscribe('*', loadTeacherSchedule)
+    pb.collection('groupAdvanceBooking').subscribe('*', loadTeacherSchedule)
   })
 
   onDestroy(() => {
     teacherGrid?.destroy()
-    unsubAdvance?.() // removes only THIS subscription
-    unsubGroup?.()
+    // Unsubscribe from both collections
+    pb.collection('advanceBooking').unsubscribe('*')
+    pb.collection('groupAdvanceBooking').unsubscribe('*')
   })
 </script>
 
