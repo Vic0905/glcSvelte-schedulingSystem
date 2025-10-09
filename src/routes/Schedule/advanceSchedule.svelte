@@ -23,7 +23,7 @@
     mode: 'create',
   })
 
-  // 🗓️ Initialize week to current Monday
+  // helpers
   const initializeWeek = () => {
     const today = new Date()
     const dow = today.getDay()
@@ -32,7 +32,7 @@
     currentWeekStart = monday.toISOString().split('T')[0]
   }
 
-  // 📅 Generate Tuesday to Friday dates
+  // Generate Tuesday to Friday dates
   const getWeekDates = (startDate) => {
     const monday = new Date(startDate)
     const weekDates = []
@@ -85,7 +85,7 @@
     },
     {
       name: 'Room',
-      width: '100px',
+      width: '120px',
       formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
     },
     ...timeslots.map((t) => ({
@@ -173,7 +173,7 @@
       autoWidth: true,
       fixedHeader: true,
       className: {
-        table: 'w-full border text-sm',
+        table: 'w-full border text-xs',
         th: 'bg-base-200 p-1 border text-center sticky top-0 z-10',
         td: 'border p-2 align-middle text-center',
       },
@@ -240,8 +240,7 @@
 <!-- 🧾 UI Layout -->
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2>Room</h2>
-    <h2 class="text-center flex-1">Advance Schedule Table (WEEKLY TEMPLATE)</h2>
+    <h2 class="text-center flex-1">Advance MTM Schedule Table (TEMPLATE)</h2>
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">

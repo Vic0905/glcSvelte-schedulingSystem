@@ -62,7 +62,14 @@
       loadingProgress.skippedSchedules = 0
       loadingProgress.conflicts = []
 
-      const weekDates = getWeekDates(targetWeekStart)
+      // ✅ Force-generate Tuesday–Friday dates for this week
+      const weekDates = []
+      const start = new Date(targetWeekStart)
+      for (let i = 2; i <= 5; i++) {
+        const date = new Date(start)
+        date.setDate(start.getDate() + (i - start.getDay()))
+        weekDates.push(date.toISOString().split('T')[0])
+      }
 
       // Step 1: Load advance group bookings
       loadingProgress.currentStep = 'Loading advance group bookings...'
@@ -81,7 +88,7 @@
 
       loadingProgress.totalBookings = advanceBookings.length
       loadingProgress.totalSchedules = advanceBookings.length * weekDates.length
-      loadingProgress.currentStep = `Processing ${advanceBookings.length} group bookings for ${weekDates.length} days...`
+      loadingProgress.currentStep = `Processing ${advanceBookings.length} group bookings for ${weekDates.length} days (Tuesday to Friday)...`
 
       let createdCount = 0
       let skippedCount = 0
@@ -296,7 +303,7 @@
       <div class="space-y-4">
         <p class="text-sm text-base-content/80">
           Copy your advance group schedule templates to create actual schedules for a specific week. This will create
-          group lesson schedules for Monday through Friday.
+          group lesson schedules for Tuesday through Friday.
         </p>
 
         <!-- Current Week Option -->
@@ -367,7 +374,7 @@
           <div>
             <h4 class="font-medium">Warning</h4>
             <p class="text-sm">
-              This action will create new group lesson schedules for the entire week. Existing schedules for the same
+              This action will create new group lesson schedules for Tuesday to Friday. Existing schedules for the same
               time slots will be skipped to preserve your manual changes.
             </p>
           </div>

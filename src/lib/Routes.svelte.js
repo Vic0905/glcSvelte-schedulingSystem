@@ -106,6 +106,9 @@ export const guestRoutes = {
   '/input/teachertemplate': wrap({
     asyncComponent: () => import('../routes/Input/TeacherTemplate.svelte'),
   }),
+  '/input/grouptemplate': wrap({
+    asyncComponent: () => import('../routes/Input/GroupTemplate.svelte'),
+  }),
   '/input/groupview': wrap({
     asyncComponent: () => import('../routes/Input/GroupView.svelte'),
   }),

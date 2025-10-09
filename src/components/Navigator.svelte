@@ -159,24 +159,28 @@
       <ul class="relative z-50 text-xs p-2">
         <li><a href="#/schedule/advanceschedule">Advance Input Table</a></li>
         <li><a href="#/schedule/advancegroupschedule">Advance Group Table</a></li>
-      </ul>
-    </details>
-  </li>
-  <li>
-    <details>
-      <summary>Templates Table</summary>
-      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/input/grouptemplate">Group Template</a></li>
         <li><a href="/#/input/studenttemplate">Student Template</a></li>
         <li><a href="/#/input/teachertemplate">Teacher Template</a></li>
       </ul>
     </details>
   </li>
+  <!-- <li>
+    <details>
+      <summary>Templates Table</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/input/grouptemplate">Group Template</a></li>
+        <li><a href="/#/input/studenttemplate">Student Template</a></li>
+        <li><a href="/#/input/teachertemplate">Teacher Template</a></li>
+      </ul>
+    </details>
+  </li> -->
   <li>
     <details>
       <summary>Scheduling Table</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/schedule/scheduleinput">Input Table</a></li>
-        <li><a href="/#/schedule/grouptable">Group Table</a></li>
+        <li><a href="/#/schedule/scheduleinput">MTM Table</a></li>
+        <li><a href="/#/schedule/grouptable">GRP Table</a></li>
       </ul>
     </details>
   </li>

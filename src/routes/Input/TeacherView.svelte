@@ -32,8 +32,9 @@
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
+    const opt = { month: 'long', day: 'numeric' }
     const opts = { month: 'long', day: 'numeric', year: 'numeric' }
-    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', opts)}`
+    return `${start.toLocaleDateString('en-US', opt)} - ${end.toLocaleDateString('en-US', opts)}`
   }
 
   const changeWeek = (weeks) => {
@@ -162,7 +163,7 @@
           sort: false,
           pagination: false,
           className: {
-            table: 'w-full border text-sm',
+            table: 'w-full border text-xs',
             th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
             td: 'border p-2 text-center align-middle',
           },

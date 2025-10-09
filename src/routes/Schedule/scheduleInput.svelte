@@ -148,7 +148,7 @@
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
-    return h('div', { class: 'text-xs flex flex-col gap-1 items-center' }, [
+    return h('div', { class: 'flex flex-col gap-1 items-center' }, [
       createBadge(cell.subject.name, 'badge-primary p-3'),
       createBadge(cell.teacher.name, 'badge-info'),
       createBadge(cell.student.englishName, 'badge-neutral'),
@@ -167,7 +167,7 @@
     },
     {
       name: 'Room',
-      width: '100px',
+      width: '120px',
       formatter: (cell) =>
         cell.disabled
           ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
@@ -265,7 +265,7 @@
           sort: false,
           pagination: false,
           className: {
-            table: 'w-full border text-sm',
+            table: 'w-full border text-xs',
             th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
             td: 'border p-2 align-middle text-center',
           },
@@ -324,8 +324,7 @@
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2>Room</h2>
-    <h2 class="text-center flex-1">Schedule Table (Weekly)</h2>
+    <h2 class="text-center flex-1">MTM Schedule Table (Weekly)</h2>
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">

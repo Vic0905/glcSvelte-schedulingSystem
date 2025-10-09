@@ -31,8 +31,9 @@
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
+    const opt = { month: 'long', day: 'numeric' }
     const opts = { month: 'long', day: 'numeric', year: 'numeric' }
-    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', opts)}`
+    return `${start.toLocaleDateString('en-US', opt)} - ${end.toLocaleDateString('en-US', opts)}`
   }
 
   const changeWeek = (weeks) => {
@@ -177,7 +178,7 @@
           sort: false,
           pagination: false,
           className: {
-            table: 'w-full border text-sm',
+            table: 'w-full border text-xs',
             th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 align-middle text-center',
           },
@@ -227,8 +228,8 @@
     </h3>
 
     <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr; Prev Week</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>Next Week &rarr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
     </div>
   </div>
 

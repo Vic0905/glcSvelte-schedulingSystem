@@ -26,7 +26,7 @@
     mode: 'create',
   })
 
-  // --- Helpers ---
+  // helpers
   const initializeWeek = () => {
     const today = new Date()
     const dow = today.getDay()
@@ -35,23 +35,29 @@
     currentWeekStart = monday.toISOString().split('T')[0]
   }
 
+  // Generate Tuesday to Friday dates
   const getWeekDates = (startDate) => {
     const monday = new Date(startDate)
-    return Array.from({ length: 5 }, (_, i) => {
+    const weekDates = []
+    for (let i = 2; i <= 5; i++) {
       const d = new Date(monday)
-      d.setDate(monday.getDate() + i)
-      return d.toISOString().split('T')[0]
-    })
+      d.setDate(monday.getDate() + (i - 1))
+      weekDates.push(d.toISOString().split('T')[0])
+    }
+    return weekDates
   }
 
   const getWeekRange = (startDate) => {
     const monday = new Date(startDate)
+    const tuesday = new Date(monday)
+    tuesday.setDate(monday.getDate() + 1)
     const friday = new Date(monday)
     friday.setDate(monday.getDate() + 4)
-    if (monday.getMonth() === friday.getMonth()) {
-      return `${monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${friday.getDate()}, ${friday.getFullYear()}`
+
+    if (tuesday.getMonth() === friday.getMonth()) {
+      return `${tuesday.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${friday.getDate()}, ${friday.getFullYear()}`
     }
-    return `${monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${friday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+    return `${tuesday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} & ${friday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }
 
   const changeWeek = (weeks) => {
@@ -76,17 +82,17 @@
     return h(
       'div',
       {
-        class: 'w-full max-w-full rounded p-2 flex flex-col gap-1 text-xs justify-center items-left whitespace-nowrap',
+        class: 'flex flex-col gap-1 items-center',
       },
       [
-        createBadge(cell.subject.name || 'No Subject', 'badge-primary'),
+        createBadge(cell.subject.name || 'No Subject', 'badge-primary p-3'),
         createBadge(cell.teacher.name || 'No Teacher', 'badge-info'),
         createBadge(cell.groupRoom.name || 'No Room', 'badge-error'),
-        ...studentBadges, // Spread multiple student badges
-        // Add a count badge if there are many students
-        ...(cell.students && cell.students.length > 3
-          ? [createBadge(`+${cell.students.length - 3} more`, 'badge-warning')]
-          : []),
+        // ...studentBadges, // Spread multiple student badges
+        // // Add a count badge if there are many students
+        // ...(cell.students && cell.students.length > 3
+        //   ? [createBadge(`+${cell.students.length - 3} more`, 'badge-warning')]
+        //   : []), ===temporarly disabled
       ]
     )
   }
@@ -182,15 +188,18 @@
       columns = [
         {
           name: 'Teacher',
+          width: '120px',
           formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
         },
         {
           name: 'Group Room',
+          width: '120px',
           formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
         },
         ...timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
           id: t.id,
+          width: '160px',
           formatter: formatCell,
         })),
       ]
@@ -208,12 +217,10 @@
         search: false,
         sort: false,
         pagination: false,
-        autoWidth: true,
-        fixedHeader: true,
         className: {
-          table: 'w-full border text-sm',
+          table: 'w-full border text-xs',
           th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
-          td: 'border p-2 whitespace-pre-line align-middle text-left font-semibold',
+          td: 'border p-2 align-middle text-center',
         },
       }).render(document.getElementById('advance-group-grid'))
 
@@ -228,6 +235,28 @@
         }
         showAdvanceModal = true
       })
+    }
+  }
+
+  // 🗑️ Delete all advance group bookings
+  const deleteAllAdvanceGroupBookings = async () => {
+    if (!confirm('⚠️ Are you sure you want to delete ALL advance group bookings? This action cannot be undone.')) return
+
+    try {
+      const allBookings = await pb.collection('groupAdvanceBooking').getFullList()
+      if (allBookings.length === 0) {
+        alert('No advance group bookings found to delete.')
+        return
+      }
+
+      // Use Promise.all for faster bulk deletion
+      await Promise.all(allBookings.map((b) => pb.collection('groupAdvanceBooking').delete(b.id)))
+
+      alert(`✅ Successfully deleted ${allBookings.length} advance group bookings.`)
+      loadAdvanceGroupBookings()
+    } catch (error) {
+      console.error('Error deleting advance group bookings:', error)
+      alert('❌ Failed to delete advance group bookings. Check console for details.')
     }
   }
 
@@ -246,11 +275,11 @@
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2>Group Room</h2>
-    <h2 class="text-center flex-1">Advance Group Schedule Table (Weekly Template)</h2>
+    <h2 class="text-center flex-1">Advance GRP Schedule Table (TEMPLATE)</h2>
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
+    <button class="btn btn-error btn-sm" onclick={deleteAllAdvanceGroupBookings}>Delete All</button>
     <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
       {getWeekRange(currentWeekStart)}
     </h3>

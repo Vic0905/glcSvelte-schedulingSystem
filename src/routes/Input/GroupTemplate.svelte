@@ -66,11 +66,10 @@
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
       // Fetch all data in parallel
-      const [timeslotsData, groupRoomsData, schedules] = await Promise.all([
+      const [timeslotsData, groupRoomsData, bookings] = await Promise.all([
         timeslots.length ? Promise.resolve(timeslots) : pb.collection('timeSlot').getFullList({ sort: 'start' }),
         groupRooms.length ? Promise.resolve(groupRooms) : pb.collection('grouproom').getFullList({ sort: 'name' }),
-        pb.collection('groupLessonSchedule').getList(1, 500, {
-          filter: dateFilter,
+        pb.collection('groupAdvanceBooking').getList(1, 500, {
           expand: 'teacher,student,subject,grouproom,timeslot',
         }),
       ])
@@ -78,27 +77,25 @@
       timeslots = timeslotsData
       groupRooms = groupRoomsData
 
-      // Build schedule lookup: room -> timeslot -> schedule (with most students)
+      // Build schedule lookup: room -> timeslot -> schedule
       const scheduleMap = {}
 
-      schedules.items.forEach((s) => {
-        const roomId = s.expand?.grouproom?.id
-        const timeslotId = s.expand?.timeslot?.id
+      bookings.items.forEach((b) => {
+        const roomId = b.expand?.grouproom?.id
+        const timeslotId = b.expand?.timeslot?.id
 
         if (!roomId || !timeslotId) return
 
         if (!scheduleMap[roomId]) scheduleMap[roomId] = {}
 
-        // Store first or replace with one that has more students
-        const students = Array.isArray(s.expand?.student) ? s.expand.student : []
-        const existing = scheduleMap[roomId][timeslotId]
+        // Get students array
+        const students = Array.isArray(b.expand?.student) ? b.expand.student : []
 
-        if (!existing || students.length > (existing.students?.length || 0)) {
-          scheduleMap[roomId][timeslotId] = {
-            subject: s.expand?.subject,
-            teacher: s.expand?.teacher,
-            students,
-          }
+        // Store the booking (only one booking per room+timeslot in advance booking template)
+        scheduleMap[roomId][timeslotId] = {
+          subject: b.expand?.subject,
+          teacher: b.expand?.teacher,
+          students,
         }
       })
 
@@ -119,7 +116,7 @@
               student
                 ? {
                     schedule,
-                    studentName: student.englishName || 'Unknown',
+                    studentName: student.englishName || student.name || 'Unknown',
                   }
                 : null
             )
@@ -175,7 +172,7 @@
 
   onMount(() => {
     loadGroupSchedule()
-    pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
+    pb.collection('groupAdvanceBooking').subscribe('*', debouncedReload)
     pb.collection('grouproom').subscribe('*', () => {
       groupRooms = []
       debouncedReload()
@@ -188,7 +185,7 @@
       groupGrid.destroy()
       groupGrid = null
     }
-    pb.collection('groupLessonSchedule').unsubscribe()
+    pb.collection('groupAdvanceBooking').unsubscribe()
     pb.collection('grouproom').unsubscribe()
   })
 </script>
@@ -196,7 +193,7 @@
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
     <h2>Group</h2>
-    <h2 class="text-center flex-1">Schedule Table (Weekly)</h2>
+    <h2 class="text-center flex-1">Advance Schedule (Weekly Template)</h2>
     {#if isLoading}
       <div class="loading loading-spinner loading-sm"></div>
     {/if}
@@ -220,8 +217,8 @@
     </h3>
 
     <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}> &larr; </button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}> &rarr; </button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}> &larr; </button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}> &rarr; </button>
     </div>
   </div>
 
