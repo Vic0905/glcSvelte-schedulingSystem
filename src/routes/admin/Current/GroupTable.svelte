@@ -2,10 +2,10 @@
   import { onDestroy, onMount } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
-  import { pb } from '../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
   import { booking, grid } from './schedule.svelte'
   import GroupModal from './GroupModal.svelte'
+  import { pb } from '../../../lib/Pocketbase.svelte'
 
   let weekStart = $state(getWeekStart(new Date()))
   let timeslots = []

@@ -527,9 +527,7 @@
             </select>
             {#if booking.data.teacher.id && isTeacherBooked(booking.data.teacher.id)}
               <div class="label">
-                <span class="label-text-alt text-warning">
-                  ⚠️ This teacher is already booked for this week's timeslot
-                </span>
+                <span class="label-text-alt text-warning"> ⚠️ This teacher is already booked </span>
               </div>
             {/if}
           </div>
@@ -557,9 +555,7 @@
             </select>
             {#if booking.data.groupRoom.id && isGroupRoomBooked(booking.data.groupRoom.id)}
               <div class="label">
-                <span class="label-text-alt text-warning">
-                  ⚠️ This room is already occupied for this week's timeslot
-                </span>
+                <span class="label-text-alt text-warning"> ⚠️ This room is already occupied </span>
               </div>
             {/if}
           </div>
@@ -576,7 +572,7 @@
           </div>
 
           <!-- Week Range -->
-          <div class="form-control">
+          <!-- <div class="form-control">
             <label class="label"><span class="label-text">Week Range</span></label>
             <div class="space-y-2">
               <input
@@ -598,7 +594,7 @@
             <div class="label">
               <span class="label-text-alt">Lessons: Tuesday - Friday</span>
             </div>
-          </div>
+          </div> -->
 
           <!-- Schedule Info Display -->
           <div class="form-control">

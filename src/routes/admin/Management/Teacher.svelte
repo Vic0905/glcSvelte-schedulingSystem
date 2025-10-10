@@ -44,7 +44,7 @@
         columns: ['Name', 'Actions'],
         data,
         className: {
-          table: 'w-full text-sm',
+          table: 'w-full text-xs',
           th: 'bg-slate-100 p-2 border text-center',
           td: 'p-2 border align-middle text-center',
         },

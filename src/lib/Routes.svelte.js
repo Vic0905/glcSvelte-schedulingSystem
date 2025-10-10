@@ -31,6 +31,36 @@ export const adminRoutes = {
   '/view/teacherview': wrap({
     asyncComponent: () => import('../routes/admin/View/TeacherView.svelte'),
   }),
+  '/advance/advanceschedule': wrap({
+    asyncComponent: () => import('../routes/admin/Advance/advanceSchedule.svelte'),
+  }),
+  '/advance/advancegroupschedule': wrap({
+    asyncComponent: () => import('../routes/admin/Advance/advanceGroupSchedule.svelte'),
+  }),
+  '/advance/grouptemplate': wrap({
+    asyncComponent: () => import('../routes/admin/Advance/GroupTemplate.svelte'),
+  }),
+  '/advance/studenttemplate': wrap({
+    asyncComponent: () => import('../routes/admin/Advance/StudentTemplate.svelte'),
+  }),
+  '/advance/teachertemplate': wrap({
+    asyncComponent: () => import('../routes/admin/Advance/TeacherTemplate.svelte'),
+  }),
+  '/current/scheduleinput': wrap({
+    asyncComponent: () => import('../routes/admin/Current/scheduleInput.svelte'),
+  }),
+  '/current/grouptable': wrap({
+    asyncComponent: () => import('../routes/admin/Current/GroupTable.svelte'),
+  }),
+  '/current/groupview': wrap({
+    asyncComponent: () => import('../routes/admin/Current/GroupView.svelte'),
+  }),
+  '/current/studentview': wrap({
+    asyncComponent: () => import('../routes/admin/Current/StudentView.svelte'),
+  }),
+  '/current/teacherview': wrap({
+    asyncComponent: () => import('../routes/admin/Current/TeacherView.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),

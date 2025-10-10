@@ -13,27 +13,43 @@
   let groupRooms = []
   let timeslots = []
   let saving = false
+  let deleting = false
   let selectedStudents = []
   let maxStudentsAllowed = 0
   let searchTerm = ''
   let existingSchedules = []
+
+  // Get week days (Tue-Fri)
+  const getWeekDays = (startDate, endDate) => {
+    const days = []
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dayOfWeek = d.getDay()
+      if (dayOfWeek >= 2 && dayOfWeek <= 5) {
+        days.push(new Date(d).toISOString().split('T')[0])
+      }
+    }
+    return days
+  }
 
   // Show modal method (called from parent)
   export function showModal() {
     show = true
     loadDropdowns()
 
-    // Initialize selected students from booking data
-    if (booking.data.mode === 'edit' && booking.data.students) {
-      selectedStudents = booking.data.students.map((student) => student.id)
+    // Initialize selected students from booking data with null safety
+    if (booking?.data?.mode === 'edit' && Array.isArray(booking.data.students)) {
+      selectedStudents = booking.data.students.map((student) => student.id || student)
     } else {
       selectedStudents = []
     }
 
     setMaxStudentsAllowed()
 
-    // Always reload existing schedules when modal opens
-    if (booking.data.date && booking.data.timeslot.id) {
+    // Always reload existing schedules when modal opens with null safety
+    if (booking?.data?.startDate && booking?.data?.endDate && booking?.data?.timeslot?.id) {
       loadExistingSchedules()
     }
   }
@@ -43,46 +59,69 @@
     selectedStudents = []
     maxStudentsAllowed = 0
     searchTerm = ''
-    existingSchedules = [] // Reset existing schedules for clean state
+    existingSchedules = []
   }
 
   async function loadDropdowns() {
     try {
       subjects = await pb.collection('subject').getFullList({ sort: 'name' })
-      students = await pb.collection('student').getFullList({ sort: 'name' })
+      students = await pb.collection('student').getFullList({ sort: 'englishName' })
       teachers = await pb.collection('teacher').getFullList({ sort: 'name' })
       groupRooms = await pb.collection('groupRoom').getFullList({ sort: 'name' })
       timeslots = await pb.collection('timeslot').getFullList({ sort: 'start' })
 
-      // Set max students after loading group rooms
       setMaxStudentsAllowed()
     } catch (err) {
+      console.error('Error loading dropdowns:', err)
       toast.error('Failed to load dropdown data')
     }
   }
 
-  // Load existing schedules from BOTH collections
+  // Load existing schedules for conflict detection
   const loadExistingSchedules = async () => {
     try {
-      const currentDate = booking.data.date
-      if (!currentDate || !booking.data.timeslot.id) {
+      const startDate = booking?.data?.startDate
+      const endDate = booking?.data?.endDate
+      const timeslotId = booking?.data?.timeslot?.id
+
+      if (!startDate || !endDate || !timeslotId) {
         existingSchedules = []
         return
       }
 
-      // lessonSchedule
-      const lessonRecords = await pb.collection('lessonSchedule').getFullList({
-        filter: `date = "${currentDate}" && timeslot = "${booking.data.timeslot.id}"`,
-        expand: 'teacher,student,room',
-      })
+      const weekDays = getWeekDays(startDate, endDate)
+      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-      // groupLessonSchedule - using correct field names
-      const groupRecords = await pb.collection('groupLessonSchedule').getFullList({
-        filter: `date = "${currentDate}" && timeslot = "${booking.data.timeslot.id}"${booking.data.mode === 'edit' && booking.data.id ? ` && id != "${booking.data.id}"` : ''}`,
-        expand: 'teacher,student,grouproom,subject', // student is array, grouproom instead of room
-      })
+      // Exclude schedules being edited
+      let excludeFilter = ''
+      if (
+        booking?.data?.mode === 'edit' &&
+        booking?.data?.originalTeacherId &&
+        booking?.data?.originalGroupRoomId &&
+        booking?.data?.originalTimeslotId
+      ) {
+        const editingSchedules = await pb.collection('groupLessonSchedule').getFullList({
+          filter: `teacher = "${booking.data.originalTeacherId}" && timeslot = "${booking.data.originalTimeslotId}" && grouproom = "${booking.data.originalGroupRoomId}" && (${dateFilter})`,
+          fields: 'id',
+        })
 
-      // Merge both
+        if (editingSchedules.length > 0) {
+          const excludeIds = editingSchedules.map((s) => `id != "${s.id}"`).join(' && ')
+          excludeFilter = ` && (${excludeIds})`
+        }
+      }
+
+      const [lessonRecords, groupRecords] = await Promise.all([
+        pb.collection('lessonSchedule').getFullList({
+          filter: `(${dateFilter}) && timeslot = "${timeslotId}"`,
+          expand: 'teacher,student,room',
+        }),
+        pb.collection('groupLessonSchedule').getFullList({
+          filter: `(${dateFilter}) && timeslot = "${timeslotId}"${excludeFilter}`,
+          expand: 'teacher,student,grouproom,subject',
+        }),
+      ])
+
       existingSchedules = [...lessonRecords, ...groupRecords]
     } catch (error) {
       console.error('Error loading schedules:', error)
@@ -90,7 +129,7 @@
     }
   }
 
-  // Conflict helpers
+  // Rest of your functions remain the same...
   const isTeacherBooked = (teacherId) => {
     return existingSchedules.some((s) => s.teacher === teacherId)
   }
@@ -119,12 +158,10 @@
 
     switch (type) {
       case 'teacher':
-        // If group lesson (students array), just show "Booked for Group Class"
         if (Array.isArray(schedule.expand?.student)) {
           return 'Group Class'
         }
-        // Otherwise, show the individual student name
-        return schedule.expand?.student?.name || 'Unknown Student'
+        return schedule.expand?.student?.englishName || 'Unknown Student'
 
       case 'student':
         return schedule.expand?.teacher?.name || 'Unknown Teacher'
@@ -133,10 +170,10 @@
         const teacherName = schedule.expand?.teacher?.name || 'Unknown Teacher'
         let studentNames = ''
 
-        if (schedule.expand?.student?.name) {
-          studentNames = schedule.expand.student.name
+        if (schedule.expand?.student?.englishName) {
+          studentNames = schedule.expand.student.englishName
         } else if (Array.isArray(schedule.expand?.student)) {
-          studentNames = schedule.expand.student.map((st) => st.name).join(', ')
+          studentNames = schedule.expand.student.map((st) => st.englishName).join(', ')
         } else {
           studentNames = 'Group Students'
         }
@@ -148,103 +185,22 @@
     }
   }
 
-  // Check conflict across both collections with proper field mapping
-  const checkConflictInCollection = async (collection, baseFilter, resourceType, resourceId) => {
-    try {
-      let filter = baseFilter
-
-      // Handle different field names between collections
-      if (collection === 'groupLessonSchedule') {
-        if (resourceType === 'student') {
-          // Check if student is in the student array
-          filter += ` && student ~ "${resourceId}"`
-        } else if (resourceType === 'teacher') {
-          filter += ` && teacher = "${resourceId}"`
-        } else if (resourceType === 'grouproom') {
-          // Use "grouproom" field instead of "room"
-          filter += ` && grouproom = "${resourceId}"`
-        }
-
-        await pb.collection(collection).getFirstListItem(filter, {
-          expand: 'teacher,student,grouproom,subject',
-        })
-      } else {
-        // lessonSchedule collection
-        if (resourceType === 'student') {
-          filter += ` && student = "${resourceId}"`
-        } else if (resourceType === 'teacher') {
-          filter += ` && teacher = "${resourceId}"`
-        } else if (resourceType === 'grouproom') {
-          filter += ` && room = "${resourceId}"`
-        }
-
-        await pb.collection(collection).getFirstListItem(filter, {
-          expand: 'teacher,student,room',
-        })
-      }
-
-      return true
-    } catch (error) {
-      console.log(`No conflict found in ${collection}: ${error.status || error.message || 'not found'}`)
-      if (error.status === 400 && collection === 'groupLessonSchedule') {
-        console.warn('groupLessonSchedule collection may not exist or have different field names')
-      }
-      return false
-    }
-  }
-
-  const checkConflict = async (resourceType, resourceId, excludeCurrentRecord = false) => {
-    const currentDate = booking.data.date
-    const timeslotId = booking.data.timeslot.id
-
-    if (!currentDate || !timeslotId) return false
-
-    // Check individual lessons (lessonSchedule)
-    let lessonBaseFilter = `date = "${currentDate}" && timeslot = "${timeslotId}"`
-
-    const lessonConflict = await checkConflictInCollection('lessonSchedule', lessonBaseFilter, resourceType, resourceId)
-    if (lessonConflict) return true
-
-    // Check group lessons
-    try {
-      let groupBaseFilter = `date = "${currentDate}" && timeslot = "${timeslotId}"`
-
-      // Add exclusion for edit mode (only for group lessons)
-      if (excludeCurrentRecord && booking.data.mode === 'edit' && booking.data.id) {
-        groupBaseFilter += ` && id != "${booking.data.id}"`
-      }
-
-      const groupConflict = await checkConflictInCollection(
-        'groupLessonSchedule',
-        groupBaseFilter,
-        resourceType,
-        resourceId
-      )
-      if (groupConflict) return true
-    } catch (error) {
-      console.warn('Skipping groupLessonSchedule check due to collection issues:', error)
-    }
-
-    return false
-  }
-
-  // Reload schedules when date/timeslot changes
-  $: if (booking.data.date && booking.data.timeslot.id) {
+  // Reload schedules when date/timeslot changes - with null safety
+  $: if (booking?.data?.startDate && booking?.data?.endDate && booking?.data?.timeslot?.id) {
     loadExistingSchedules()
   }
 
   function setMaxStudentsAllowed() {
-    if (booking.data.groupRoom.id && groupRooms.length > 0) {
+    if (booking?.data?.groupRoom?.id && groupRooms.length > 0) {
       const selectedRoom = groupRooms.find((room) => room.id === booking.data.groupRoom.id)
       maxStudentsAllowed = selectedRoom?.maxstudents || 0
     } else {
-      maxStudentsAllowed = booking.data.groupRoom.maxstudents || 0
+      maxStudentsAllowed = booking?.data?.groupRoom?.maxstudents || 0
     }
   }
 
   function onGroupRoomChange() {
     setMaxStudentsAllowed()
-    // If current selection exceeds new limit, truncate it
     if (selectedStudents.length > maxStudentsAllowed && maxStudentsAllowed > 0) {
       selectedStudents = selectedStudents.slice(0, maxStudentsAllowed)
       toast.warning(`Student selection limited to ${maxStudentsAllowed} students for this room`)
@@ -278,87 +234,116 @@
     selectedStudents = []
   }
 
-  async function saveSchedule() {
-    if (!booking.data.subject.id) {
+  // Validation
+  const validateSchedule = () => {
+    if (!booking?.data?.subject?.id) {
       toast.error('Please select a subject')
-      return
+      return false
     }
     if (selectedStudents.length === 0) {
       toast.error('Please select at least one student')
-      return
+      return false
     }
-    if (!booking.data.groupRoom.id) {
+    if (!booking?.data?.groupRoom?.id) {
       toast.error('Please select a group room')
-      return
+      return false
     }
-    if (!booking.data.teacher.id) {
+    if (!booking?.data?.teacher?.id) {
       toast.error('Please select a teacher')
-      return
+      return false
     }
-    if (!booking.data.timeslot.id) {
+    if (!booking?.data?.timeslot?.id) {
       toast.error('Please select a timeslot')
-      return
+      return false
     }
 
-    // Check conflicts using the new function
-    const isEditMode = booking.data.mode === 'edit' && booking.data.id
-
-    if (await checkConflict('teacher', booking.data.teacher.id, isEditMode)) {
+    // Check conflicts
+    if (isTeacherBooked(booking.data.teacher.id)) {
       const conflictInfo = getConflictInfo(booking.data.teacher.id, 'teacher')
       toast.error('Teacher conflict', {
-        position: 'bottom-right',
-        duration: 5000,
         description: `${booking.data.teacher.name || 'Teacher'} is already booked with ${conflictInfo}`,
       })
-      return
+      return false
     }
 
-    // Check each selected student for conflicts
     for (const studentId of selectedStudents) {
-      if (await checkConflict('student', studentId, isEditMode)) {
+      if (isStudentBooked(studentId)) {
         const student = students.find((s) => s.id === studentId)
         const conflictInfo = getConflictInfo(studentId, 'student')
         toast.error('Student conflict', {
-          position: 'bottom-right',
-          duration: 5000,
-          description: `${student?.name || 'Student'} is already booked with ${conflictInfo}`,
+          description: `${student?.englishName || 'Student'} is already booked with ${conflictInfo}`,
         })
-        return
+        return false
       }
     }
 
-    if (await checkConflict('grouproom', booking.data.groupRoom.id, isEditMode)) {
+    if (isGroupRoomBooked(booking.data.groupRoom.id)) {
       const conflictInfo = getConflictInfo(booking.data.groupRoom.id, 'grouproom')
       toast.error('Room conflict', {
-        position: 'bottom-right',
-        duration: 5000,
         description: `${booking.data.groupRoom.name || 'Room'} is already occupied by ${conflictInfo}`,
       })
-      return
+      return false
+    }
+
+    return true
+  }
+
+  async function saveSchedule() {
+    if (!validateSchedule()) return
+
+    const { data } = booking
+    const weekDays = getWeekDays(data.startDate, data.endDate)
+
+    const scheduleData = {
+      timeslot: data.timeslot.id,
+      teacher: data.teacher.id,
+      student: selectedStudents,
+      subject: data.subject.id,
+      grouproom: data.groupRoom.id,
     }
 
     saving = true
     try {
-      const payload = {
-        date: booking.data.date,
-        grouproom: booking.data.groupRoom.id,
-        timeslot: booking.data.timeslot.id,
-        subject: booking.data.subject.id,
-        teacher: booking.data.teacher.id,
-        student: selectedStudents,
-      }
+      if (data.mode === 'edit' && data.id) {
+        const originalTeacherId = data.originalTeacherId || data.teacher.id
+        const originalTimeslotId = data.originalTimeslotId || data.timeslot.id
+        const originalGroupRoomId = data.originalGroupRoomId || data.groupRoom.id
 
-      if (booking.data.mode === 'edit') {
-        await pb.collection('groupLessonSchedule').update(booking.data.id, payload)
-        toast.success('Schedule updated!')
+        const existingWeekSchedules = await pb.collection('groupLessonSchedule').getFullList({
+          filter: `teacher = "${originalTeacherId}" && timeslot = "${originalTimeslotId}" && grouproom = "${originalGroupRoomId}" && (${weekDays.map((d) => `date = "${d}"`).join(' || ')})`,
+        })
+
+        await Promise.all(
+          existingWeekSchedules.map((schedule) =>
+            pb.collection('groupLessonSchedule').update(schedule.id, {
+              ...scheduleData,
+              date: schedule.date,
+            })
+          )
+        )
+
+        toast.success('Weekly group schedule updated!', {
+          description: `Updated ${existingWeekSchedules.length} group lesson(s)`,
+        })
       } else {
-        await pb.collection('groupLessonSchedule').create(payload)
-        toast.success('Schedule created!')
+        await Promise.all(
+          weekDays.map((date) =>
+            pb.collection('groupLessonSchedule').create({
+              ...scheduleData,
+              date,
+            })
+          )
+        )
+
+        toast.success('Weekly group schedule created!', {
+          description: `Created ${weekDays.length} group lessons (Tue-Fri)`,
+        })
       }
 
       closeModal()
       setTimeout(() => dispatch('refresh'), 200)
     } catch (err) {
+      console.error('Error saving schedule:', err)
       toast.error(`Error saving schedule: ${err.message}`)
     } finally {
       saving = false
@@ -366,40 +351,83 @@
   }
 
   async function deleteSchedule() {
-    if (!booking.data.id) return
+    const { data } = booking
 
-    if (!confirm('Are you sure you want to delete this schedule?')) return
+    if (!data?.id) {
+      toast.error('No schedule selected to delete')
+      return
+    }
 
-    saving = true
+    const weekDays = getWeekDays(data.startDate, data.endDate)
+
+    const confirmMessage =
+      `Are you sure you want to delete this WEEKLY group schedule?\n\n` +
+      `Week: ${new Date(data.startDate).toLocaleDateString()} - ${new Date(data.endDate).toLocaleDateString()}\n` +
+      `Days: Tuesday - Friday (${weekDays.length} lessons)\n` +
+      `Subject: ${data.subject.name}\n` +
+      `Teacher: ${data.teacher.name}\n` +
+      `Students: ${selectedStudents.length} selected\n` +
+      `Room: ${data.groupRoom.name}\n` +
+      `Time: ${data.timeslot.start} - ${data.timeslot.end}\n\n` +
+      `This will delete ALL ${weekDays.length} group lessons for this week. This action cannot be undone.`
+
+    if (!confirm(confirmMessage)) return
+
+    deleting = true
     try {
-      await pb.collection('groupLessonSchedule').delete(booking.data.id)
-      toast.success('Schedule deleted!')
+      const originalTeacherId = data.originalTeacherId || data.teacher.id
+      const originalTimeslotId = data.originalTimeslotId || data.timeslot.id
+      const originalGroupRoomId = data.originalGroupRoomId || data.groupRoom.id
+
+      const schedulesToDelete = await pb.collection('groupLessonSchedule').getFullList({
+        filter: `teacher = "${originalTeacherId}" && timeslot = "${originalTimeslotId}" && grouproom = "${originalGroupRoomId}" && (${weekDays.map((d) => `date = "${d}"`).join(' || ')})`,
+      })
+
+      await Promise.all(schedulesToDelete.map((schedule) => pb.collection('groupLessonSchedule').delete(schedule.id)))
+
+      toast.success('Weekly group schedule deleted!', {
+        description: `Deleted ${schedulesToDelete.length} group lesson(s) successfully`,
+      })
       closeModal()
       setTimeout(() => dispatch('refresh'), 200)
     } catch (err) {
+      console.error('Error deleting schedule:', err)
       toast.error(`Error deleting schedule: ${err.message}`)
     } finally {
-      saving = false
+      deleting = false
     }
   }
 
-  // Computed filtered students
-  $: filteredStudents = students.filter((s) => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  $: filteredStudents = students.filter((s) => s.englishName.toLowerCase().includes(searchTerm.toLowerCase()))
 </script>
 
 {#if show}
   <div class="modal modal-open">
     <div class="modal-box max-w-4xl w-full space-y-6 rounded-xl">
       <h3 class="text-xl font-bold text-center">
-        {booking.data.mode === 'edit' ? 'Edit Group Schedule' : 'Create Group Schedule'}
+        {booking.data.mode === 'edit' ? 'Edit Weekly Group Schedule' : 'Create Weekly Group Schedule'}
       </h3>
+
+      <div class="alert alert-info text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          ></path>
+        </svg>
+        <span
+          >This will {booking.data.mode === 'edit' ? 'update' : 'create'} group schedules for Tuesday through Friday (4 lessons
+          per week)</span
+        >
+      </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Left column -->
         <div class="space-y-4">
           <!-- Subject -->
           <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label"><span class="label-text">Subject</span></label>
             <select bind:value={booking.data.subject.id} class="select select-bordered w-full" required>
               <option value="">-- Select Subject --</option>
@@ -411,7 +439,6 @@
 
           <!-- Students -->
           <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text">
                 Students ({selectedStudents.length} selected
@@ -432,7 +459,6 @@
               </div>
             </label>
 
-            <!-- Search input -->
             <div class="mb-2">
               <input
                 type="text"
@@ -442,7 +468,6 @@
               />
             </div>
 
-            <!-- Student list -->
             <div class="border border-base-300 rounded-lg p-4 max-h-80 overflow-y-auto bg-base-100">
               {#each filteredStudents as student}
                 {@const isBooked = isStudentBooked(student.id)}
@@ -467,7 +492,7 @@
                         ? 'opacity-50'
                         : ''}"
                     >
-                      {student.name}
+                      {student.englishName}
                       {#if isBooked}
                         <span class="text-warning text-xs">(Booked with {conflictInfo})</span>
                       {/if}
@@ -486,7 +511,6 @@
         <div class="space-y-4">
           <!-- Teacher -->
           <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label"><span class="label-text">Teacher</span></label>
             <select bind:value={booking.data.teacher.id} class="select select-bordered w-full" required>
               <option value="">-- Select Teacher --</option>
@@ -503,14 +527,13 @@
             </select>
             {#if booking.data.teacher.id && isTeacherBooked(booking.data.teacher.id)}
               <div class="label">
-                <span class="label-text-alt text-warning"> ⚠️ This teacher is already booked for this timeslot </span>
+                <span class="label-text-alt text-warning"> ⚠️ This teacher is already booked </span>
               </div>
             {/if}
           </div>
 
           <!-- Group Room -->
           <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label"><span class="label-text">Group Room</span></label>
             <select
               bind:value={booking.data.groupRoom.id}
@@ -532,14 +555,13 @@
             </select>
             {#if booking.data.groupRoom.id && isGroupRoomBooked(booking.data.groupRoom.id)}
               <div class="label">
-                <span class="label-text-alt text-warning"> ⚠️ This room is already occupied for this timeslot </span>
+                <span class="label-text-alt text-warning"> ⚠️ This room is already occupied </span>
               </div>
             {/if}
           </div>
 
           <!-- Timeslot -->
           <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label"><span class="label-text">Timeslot</span></label>
             <select bind:value={booking.data.timeslot.id} class="select select-bordered w-full" required>
               <option value="">-- Select Timeslot --</option>
@@ -549,21 +571,40 @@
             </select>
           </div>
 
-          <!-- Date -->
-          <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="label"><span class="label-text">Date</span></label>
-            <input type="date" bind:value={booking.data.date} class="input input-bordered w-full" required />
-          </div>
+          <!-- Week Range -->
+          <!-- <div class="form-control">
+            <label class="label"><span class="label-text">Week Range</span></label>
+            <div class="space-y-2">
+              <input
+                type="date"
+                bind:value={booking.data.startDate}
+                class="input input-bordered w-full input-sm"
+                required
+                disabled
+              />
+              <div class="text-center text-xs text-gray-500">to</div>
+              <input
+                type="date"
+                bind:value={booking.data.endDate}
+                class="input input-bordered w-full input-sm"
+                required
+                disabled
+              />
+            </div>
+            <div class="label">
+              <span class="label-text-alt">Lessons: Tuesday - Friday</span>
+            </div>
+          </div> -->
 
           <!-- Schedule Info Display -->
           <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label"><span class="label-text">Schedule Info</span></label>
             <div class="bg-base-200 rounded-lg p-4 space-y-2">
               <div class="text-sm">
-                <span class="font-medium">Date:</span>
-                {booking.data.date || 'Not selected'}
+                <span class="font-medium">Week:</span>
+                {booking.data.startDate && booking.data.endDate
+                  ? `${new Date(booking.data.startDate).toLocaleDateString()} - ${new Date(booking.data.endDate).toLocaleDateString()}`
+                  : 'Not selected'}
               </div>
               <div class="text-sm">
                 <span class="font-medium">Room:</span>
@@ -589,15 +630,27 @@
 
       <!-- Buttons -->
       <div class="modal-action">
-        <button class="btn btn-primary" onclick={saveSchedule} disabled={saving}>
-          {saving ? 'Saving...' : booking.data.mode === 'edit' ? 'Update' : 'Save'}
-        </button>
         {#if booking.data.mode === 'edit'}
-          <button class="btn btn-error btn-outline" onclick={deleteSchedule} disabled={saving}>
-            Delete Schedule
+          <button class="btn btn-error mr-auto" onclick={deleteSchedule} disabled={deleting || saving}>
+            {#if deleting}
+              <span class="loading loading-spinner loading-sm"></span>
+              Deleting...
+            {:else}
+              Delete Week
+            {/if}
           </button>
         {/if}
-        <button class="btn" onclick={closeModal}>Cancel</button>
+
+        <button class="btn btn-primary" onclick={saveSchedule} disabled={saving || deleting}>
+          {#if saving}
+            <span class="loading loading-spinner loading-sm"></span>
+            Saving...
+          {:else}
+            {booking.data.mode === 'edit' ? 'Update Week' : 'Save Week'}
+          {/if}
+        </button>
+
+        <button class="btn" onclick={closeModal} disabled={saving || deleting}>Cancel</button>
       </div>
     </div>
   </div>
