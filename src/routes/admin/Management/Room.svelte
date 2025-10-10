@@ -90,7 +90,7 @@
           columns: ['Room Name', 'Assigned Teacher', 'Actions'],
           data,
           className: {
-            table: 'w-full text-sm',
+            table: 'w-full text-xs',
             th: 'bg-slate-100 p-2 border text-center',
             td: 'p-2 border align-middle text-center',
           },
@@ -173,7 +173,7 @@
   })
 </script>
 
-<div class="p-6 max-w-4xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
+<div class="p-6 max-w-7xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
   <div class="flex justify-between items-center mb-4">
     <h2 class="text-2xl font-bold text-primary">Room Management</h2>
     <button class="btn btn-outline btn-primary" onclick={openAddModal}>Add Room</button>

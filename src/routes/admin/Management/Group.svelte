@@ -71,7 +71,7 @@
         t.name,
         t.expand?.teacher?.name || 'No teacher assigned',
         t.maxstudents || 'Not set', // Display max students
-        h('div', { className: 'flex gap-2' }, [
+        h('div', { className: 'flex gap-2 justify-center' }, [
           h(
             'button',
             {
@@ -83,7 +83,7 @@
           h(
             'button',
             {
-              className: 'btn btn-outline btn-sm btn-error',
+              className: 'btn btn-outline btn-sm btn-error ',
               onClick: () => deleteGroupRoom(t.id),
             },
             'Delete'
@@ -98,7 +98,7 @@
           columns: ['Group Room Name', 'Assigned Teacher', 'Max Students', 'Actions'],
           data,
           className: {
-            table: 'w-full text-sm',
+            table: 'w-full text-xs',
             th: 'bg-slate-100 p-2 border text-center',
             td: 'p-2 border align-middle text-center',
           },
@@ -190,7 +190,7 @@
   })
 </script>
 
-<div class="p-6 max-w-4xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
+<div class="p-6 max-w-7xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
   <div class="flex justify-between items-center mb-4">
     <h2 class="text-2xl font-bold text-primary">Group Room Management</h2>
     <button class="btn btn-outline btn-primary" onclick={openAddModal}>Add Room</button>

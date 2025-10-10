@@ -111,7 +111,7 @@
   onMount(loadSubject)
 </script>
 
-<div class="p-6 max-w-4xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
+<div class="p-6 max-w-7xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
   <div class="flex justify-between items-center mb-4">
     <h2 class="text-2xl font-bold text-primary">Subject Management</h2>
     <button class="btn btn-outline btn-primary" on:click={openAddModal}>Add Subject</button>
