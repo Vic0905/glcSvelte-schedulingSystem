@@ -4,6 +4,21 @@
   import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
+  // Add sticky column styles
+  const stickyStyles = `
+    #teacherGrid table th:nth-child(1),
+    #teacherGrid table td:nth-child(1) {
+      position: sticky;
+      left: 0;
+      z-index: 10;
+      box-shadow: inset -1px 0 0 #ddd;
+
+    }
+    
+    #teacherGrid table th:nth-child(1)
+      
+  `
+
   let weekStart = $state(getWeekStart(new Date()))
   let teacherGrid = null
   let timeslots = []
@@ -51,15 +66,25 @@
     return h(
       'div',
       { class: 'text-xs flex flex-col gap-1 items-center' },
-      cell.map((item) =>
-        h('div', { class: 'flex flex-col gap-1 items-center' }, [
-          createBadge(item.subject?.name ?? 'No Subject', 'badge-primary p-3'),
-          item.isGroup
-            ? createBadge('Group Class', 'badge-secondary')
-            : createBadge(item.student?.englishName ?? 'No Student', 'badge-neutral'),
-          createBadge(item.room?.name ?? 'No Room', 'badge-error'),
-        ])
-      )
+      cell.map((item) => {
+        const badges = [createBadge(item.subject?.name ?? 'No Subject', 'badge-primary p-3')]
+
+        // Show student or group label
+        if (item.isGroup) {
+          badges.push(createBadge('Group Class', 'badge-secondary'))
+        } else {
+          badges.push(createBadge(item.student?.englishName ?? 'No Student', 'badge-neutral'))
+
+          // Only show 'NEW' badge if student status is 'new'
+          if (item.student?.status === 'new') {
+            badges.push(createBadge('NEW', 'badge-success'))
+          }
+        }
+
+        badges.push(createBadge(item.room?.name ?? 'No Room', 'badge-error'))
+
+        return h('div', { class: 'flex flex-col gap-1 items-center' }, badges)
+      })
     )
   }
 
@@ -164,7 +189,7 @@
           pagination: false,
           className: {
             table: 'w-full border text-xs',
-            th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
+            th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 text-center align-middle',
           },
         }).render(document.getElementById('teacherGrid'))
@@ -189,6 +214,10 @@
     pb.collection('groupLessonSchedule').unsubscribe()
   })
 </script>
+
+<svelte:head>
+  {@html `<style>${stickyStyles}</style>`}
+</svelte:head>
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
@@ -229,6 +258,10 @@
         <span>Student</span>
       </div>
       <div class="flex items-center gap-1">
+        <div class="badge badge-success badge-xs"></div>
+        <span>New Student</span>
+      </div>
+      <div class="flex items-center gap-1">
         <div class="badge badge-secondary badge-xs"></div>
         <span>Group Lesson</span>
       </div>
@@ -239,5 +272,7 @@
     </div>
   </div>
 
-  <div id="teacherGrid" class="max-h-[700px] overflow-auto border rounded-lg"></div>
+  <div class="max-h-[700px] overflow-auto border rounded-lg">
+    <div id="teacherGrid"></div>
+  </div>
 </div>

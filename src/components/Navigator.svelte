@@ -74,8 +74,8 @@
     <details>
       <summary>Advance Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="#/advance/advanceschedule">Advance Input Table</a></li>
-        <li><a href="#/advance/advancegroupschedule">Advance Group Table</a></li>
+        <li><a href="#/advance/advanceschedule">Advance MTM Table</a></li>
+        <li><a href="#/advance/advancegroupschedule">Advance GRP Table</a></li>
         <li><a href="/#/advance/grouptemplate">Group Template</a></li>
         <li><a href="/#/advance/studenttemplate">Student Template</a></li>
         <li><a href="/#/advance/teachertemplate">Teacher Template</a></li>
@@ -84,13 +84,13 @@
   </li>
   <li>
     <details>
-      <summary>Scheduling Table</summary>
+      <summary>Current Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/current/scheduleinput">MTM Table</a></li>
-        <li><a href="/#/current/grouptable">GRP Table</a></li>
-        <li><a href="/#/current/groupview">Group View Table</a></li>
-        <li><a href="/#/current/studentview">Student View Table</a></li>
-        <li><a href="/#/current/teacherview">Teacher View Table</a></li>
+        <li><a href="/#/current/scheduleinput">Current MTM Table</a></li>
+        <li><a href="/#/current/grouptable">Current GRP Table</a></li>
+        <li><a href="/#/current/groupview">Group Table</a></li>
+        <li><a href="/#/current/studentview">Student Table</a></li>
+        <li><a href="/#/current/teacherview">Teacher Table</a></li>
       </ul>
     </details>
   </li>
@@ -148,7 +148,7 @@
       </ul> 
     </details>
   </li> -->
-  <li>
+  <!-- <li>
     <details>
       <summary>Advance Booking</summary>
       <ul class="relative z-50 text-xs p-2">
@@ -159,7 +159,7 @@
         <li><a href="/#/input/teachertemplate">Teacher Template</a></li>
       </ul>
     </details>
-  </li>
+  </li> -->
   <!-- <li>
     <details>
       <summary>Templates Table</summary>
@@ -170,9 +170,9 @@
       </ul>
     </details>
   </li> -->
-  <li>
+  <!-- <li>
     <details>
-      <summary>Scheduling Table</summary>
+      <summary>Current Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/schedule/scheduleinput">MTM Table</a></li>
         <li><a href="/#/schedule/grouptable">GRP Table</a></li>
@@ -182,7 +182,7 @@
       </ul>
     </details>
   </li>
-  <!-- <li>
+  <li>
     <details>
       <summary>View Table</summary>
       <ul class="relative z-50 text-xs p-2">
@@ -191,7 +191,7 @@
         <li><a href="/#/input/teacherview">Teacher View Table</a></li>
       </ul>
     </details>
-  </li> -->
+  </li>
   <li>
     <details>
       <summary>Management</summary>
@@ -203,5 +203,5 @@
         <li><a href="/#/input/teacher">Teacher</a></li>
       </ul>
     </details>
-  </li>
+  </li> -->
 {/if}

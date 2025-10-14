@@ -4,6 +4,48 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
+  // Add sticky column styles
+  const stickyStyles = `
+    #studentGrid table th:nth-child(1),
+    #studentGrid table td:nth-child(1) {
+      position: sticky;
+      left: 0;
+      z-index: 10;
+      box-shadow: inset -1px 0 0 #ddd;
+
+    }
+    #studentGrid table th:nth-child(2),
+    #studentGrid table td:nth-child(2) {
+      position: sticky;
+      left: 150px;
+      z-index: 10;
+      box-shadow: inset -1px 0 0 #ddd;
+
+    }
+    #studentGrid table th:nth-child(3),
+    #studentGrid table td:nth-child(3) {
+      position: sticky;
+      left: 300px;
+      z-index: 10;
+      box-shadow: inset -1px 0 0 #ddd;
+
+    }
+    #studentGrid table th:nth-child(4),
+    #studentGrid table td:nth-child(4) {
+      position: sticky;
+      left: 450px;
+      z-index: 10;
+      box-shadow: inset -1px 0 0 #ddd;
+
+    }
+    #studentGrid table th:nth-child(1),
+    #studentGrid table th:nth-child(2),
+    #studentGrid table th:nth-child(3),
+    #studentGrid table th:nth-child(4) {
+      z-index: 11;
+    }
+  `
+
   let weekStart = $state(getWeekStart(new Date()))
   let studentGrid = null
   let timeslots = []
@@ -156,10 +198,10 @@
 
       // Build columns
       const columns = [
-        { name: 'Student', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'English Name', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Course', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Level', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Student', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'English Name', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Course', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Level', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
         ...timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
           width: '160px',
@@ -204,6 +246,10 @@
     pb.collection('groupLessonSchedule').unsubscribe()
   })
 </script>
+
+<svelte:head>
+  {@html `<style>${stickyStyles}</style>`}
+</svelte:head>
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4">

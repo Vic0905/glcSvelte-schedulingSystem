@@ -9,6 +9,7 @@
   let englishName = ''
   let course = ''
   let level = ''
+  let status = 'new'
   let editingId = null
   let showModal = false
   let showCSVModal = false
@@ -16,6 +17,13 @@
   let csvPreview = []
   let isProcessing = false
   let grid
+
+  const statusOptions = ['new', 'old', 'graduated']
+  const statusColors = {
+    new: 'badge-success',
+    old: 'badge-info',
+    graduated: 'badge-warning',
+  }
 
   async function loadStudent() {
     const records = await pb.collection('student').getFullList({
@@ -27,6 +35,7 @@
       t.englishName,
       t.course,
       t.level,
+      h('span', { className: `badge ${statusColors[t.status] || 'badge-neutral'}` }, t.status || 'new'),
       h('div', { className: 'flex gap-2 justify-center' }, [
         h(
           'button',
@@ -51,7 +60,7 @@
       grid.updateConfig({ data }).forceRender()
     } else {
       grid = new Grid({
-        columns: ['Name', 'English Name', 'Course', 'Level', 'Actions'],
+        columns: ['Name', 'English Name', 'Course', 'Level', 'Status', 'Actions'],
         data,
         className: {
           table: 'w-full text-xs',
@@ -72,7 +81,7 @@
     }
 
     try {
-      const payload = { name, englishName, course, level }
+      const payload = { name, englishName, course, level, status }
 
       if (editingId) {
         await pb.collection('student').update(editingId, payload)
@@ -87,6 +96,7 @@
       englishName = ''
       course = ''
       level = ''
+      status = 'new'
       editingId = null
       showModal = false
       await loadStudent()
@@ -101,6 +111,7 @@
     englishName = student.englishName || ''
     course = student.course || ''
     level = student.level || ''
+    status = student.status || 'new'
     editingId = student.id
     showModal = true
   }
@@ -123,6 +134,7 @@
     englishName = ''
     course = ''
     level = ''
+    status = 'new'
     editingId = null
     showModal = true
   }
@@ -167,6 +179,7 @@
             name: values[1] || '',
             course: values[2] || '',
             level: values[3] || '',
+            status: values[4] || 'new',
           })
         }
       }
@@ -255,7 +268,8 @@
   }
 
   function downloadTemplate() {
-    const csv = 'English Name,Name,Course,Level\nJuan Dela Cruz,John,BSIT,1\n,Mary,BSCS,2\nPedro Reyes,Peter,BSED,3'
+    const csv =
+      'English Name,Name,Course,Level,Status\nJuan Dela Cruz,John,BSIT,1,new\nMary Smith,Mary,BSCS,2,old\nPedro Reyes,Peter,BSED,3,graduated'
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -314,6 +328,17 @@
         </div>
       </div>
 
+      <div class="space-y-4">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Status</legend>
+          <select bind:value={status} class="select select-bordered w-full">
+            {#each statusOptions as option}
+              <option value={option}>{option.charAt(0).toUpperCase() + option.slice(1)}</option>
+            {/each}
+          </select>
+        </fieldset>
+      </div>
+
       <div class="modal-action">
         <button class="btn btn-outline btn-primary" onclick={saveStudent}>
           {editingId ? 'Update' : 'Save'}
@@ -332,7 +357,8 @@
 
       <div class="mb-4">
         <p class="text-sm text-gray-600 mb-2">
-          Upload a CSV file with student data. <strong>Required: English Name.</strong> Optional: Name, Course, Level
+          Upload a CSV file with student data. <strong>Required: English Name.</strong> Optional: Name, Course, Level, Status
+          (new/old/graduated)
         </p>
         <div class="alert alert-info text-xs mb-2">
           <svg
@@ -365,6 +391,7 @@
                   <th>Name</th>
                   <th>Course</th>
                   <th>Level</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -374,6 +401,11 @@
                     <td>{student.name || '-'}</td>
                     <td>{student.course || '-'}</td>
                     <td>{student.level || '-'}</td>
+                    <td
+                      ><span class={`badge ${statusColors[student.status] || 'badge-neutral'}`}
+                        >{student.status || 'new'}</span
+                      ></td
+                    >
                   </tr>
                 {/each}
               </tbody>
