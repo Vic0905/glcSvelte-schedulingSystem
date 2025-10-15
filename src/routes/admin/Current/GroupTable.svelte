@@ -1,43 +1,48 @@
 <script>
-  import { onDestroy, onMount } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
+  import { onDestroy, onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
   import { booking, grid } from './schedule.svelte'
   import GroupModal from './GroupModal.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
+  const stickyStyles = `
+    #group-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+    #group-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #group-grid th:nth-child(1), #group-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
+    #group-grid th:nth-child(1) { z-index: 25; }
+    #group-grid th:nth-child(2), #group-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+    #group-grid th:nth-child(2) { z-index: 25; }
+  `
+
   let weekStart = $state(getWeekStart(new Date()))
   let timeslots = []
   let groupModal
   let isCopying = $state(false)
+  let isLoading = $state(false)
 
   function getWeekStart(date) {
     const d = new Date(date)
-    const day = d.getDay()
-    const diff = day === 0 ? -5 : day === 1 ? 1 : 2 - day
+    const diff = d.getDay() === 0 ? -5 : d.getDay() === 1 ? 1 : 2 - d.getDay()
     d.setDate(d.getDate() + diff)
     return d.toISOString().split('T')[0]
   }
 
   function getWeekDays(startDate) {
-    const days = []
     const start = new Date(startDate)
-    for (let i = 0; i < 4; i++) {
+    return Array.from({ length: 4 }, (_, i) => {
       const day = new Date(start)
       day.setDate(start.getDate() + i)
-      days.push(day.toISOString().split('T')[0])
-    }
-    return days
+      return day.toISOString().split('T')[0]
+    })
   }
 
   function getWeekRangeDisplay(startDate) {
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
-    const opt = { month: 'long', day: 'numeric' }
-    const opts = { month: 'long', day: 'numeric', year: 'numeric' }
-    return `${start.toLocaleDateString('en-US', opt)} - ${end.toLocaleDateString('en-US', opts)}`
+    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }
 
   const changeWeek = (weeks) => {
@@ -52,7 +57,6 @@
       const weekDays = getWeekDays(weekStart)
       const dateFilter = `(${weekDays.map((d) => `date = "${d}"`).join(' || ')})`
 
-      // Fetch all schedules for the current week
       const schedules = await pb.collection('groupLessonSchedule').getFullList({
         filter: dateFilter,
         expand: 'teacher,student,subject,grouproom,timeslot',
@@ -63,32 +67,29 @@
         return
       }
 
-      // Get unique schedules (one per timeslot-grouproom-subject-teacher combination)
+      // Get unique schedules
       const uniqueSchedulesMap = {}
       schedules.forEach((schedule) => {
         const key = `${schedule.timeslot}-${schedule.grouproom}-${schedule.subject}-${schedule.teacher}`
-        if (!uniqueSchedulesMap[key]) {
-          uniqueSchedulesMap[key] = schedule
-        }
+        uniqueSchedulesMap[key] ??= schedule
       })
       const uniqueSchedules = Object.values(uniqueSchedulesMap)
 
-      // Check if any records already exist in groupAdvanceBooking (check without date filter)
       const existingBookings = await pb
         .collection('groupAdvanceBooking')
         .getFullList()
         .catch(() => [])
 
-      // Filter out schedules that already exist in groupAdvanceBooking
-      const schedulesToCopy = uniqueSchedules.filter((schedule) => {
-        return !existingBookings.some(
-          (booking) =>
-            booking.timeslot === schedule.timeslot &&
-            booking.teacher === schedule.teacher &&
-            booking.subject === schedule.subject &&
-            booking.grouproom === schedule.grouproom
-        )
-      })
+      const schedulesToCopy = uniqueSchedules.filter(
+        (schedule) =>
+          !existingBookings.some(
+            (booking) =>
+              booking.timeslot === schedule.timeslot &&
+              booking.teacher === schedule.teacher &&
+              booking.subject === schedule.subject &&
+              booking.grouproom === schedule.grouproom
+          )
+      )
 
       if (schedulesToCopy.length === 0) {
         toast.info('All schedules already copied!', {
@@ -111,21 +112,19 @@
 
       isCopying = true
 
-      // Copy each unique schedule to groupAdvanceBooking collection (only once, using first date)
-      const copyPromises = schedulesToCopy.map((schedule) => {
-        const bookingData = {
-          date: schedule.date, // Use the date from the schedule itself
-          timeslot: schedule.timeslot,
-          teacher: schedule.teacher,
-          student: schedule.student, // This should be an array of student IDs
-          subject: schedule.subject,
-          grouproom: schedule.grouproom,
-          status: 'pending',
-        }
-        return pb.collection('groupAdvanceBooking').create(bookingData)
-      })
-
-      await Promise.all(copyPromises)
+      await Promise.all(
+        schedulesToCopy.map((schedule) =>
+          pb.collection('groupAdvanceBooking').create({
+            date: schedule.date,
+            timeslot: schedule.timeslot,
+            teacher: schedule.teacher,
+            student: schedule.student,
+            subject: schedule.subject,
+            grouproom: schedule.grouproom,
+            status: 'pending',
+          })
+        )
+      )
 
       toast.success('Group schedules copied successfully!', {
         position: 'bottom-right',
@@ -144,34 +143,25 @@
     }
   }
 
-  const createBadge = (text, color) => h('div', { class: `badge ${color} badge-xs` }, text)
-
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
-
-    const students = cell.students || []
-    const visible = students.slice(0, 3)
-    const remaining = students.length - 3
-
     return h('div', { class: 'flex flex-col gap-1 items-center' }, [
-      createBadge(cell.subject.name || 'No Subject', 'badge-primary p-3'),
-      createBadge(cell.teacher.name || 'No Teacher', 'badge-info'),
-      createBadge(cell.groupRoom.name || 'No Room', 'badge-error'),
-      // ...(students.length > 0
-      //   ? visible.map((s) => createBadge(s.englishName || 'Unknown Student', 'badge-neutral'))
-      //   : [createBadge('No Students', 'badge-neutral')]),
-      // ...(remaining > 0 ? [createBadge(`+${remaining} more`, 'badge-warning')] : []),
+      h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
+      h('div', { class: 'badge badge-info badge-xs' }, cell.teacher.name || 'No Teacher'),
+      h('div', { class: 'badge badge-error badge-xs' }, cell.groupRoom.name || 'No Room'),
     ])
   }
 
   async function loadGroupSchedules() {
+    if (isLoading) return
+    isLoading = true
+
     try {
       const weekDays = getWeekDays(weekStart)
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-      // Fetch all data in parallel
       const [timeslotsData, groupRooms, schedules] = await Promise.all([
-        timeslots.length ? Promise.resolve(timeslots) : pb.collection('timeslot').getFullList({ sort: 'start' }),
+        timeslots.length ? timeslots : pb.collection('timeslot').getFullList({ sort: 'start' }),
         pb.collection('groupRoom').getFullList({ sort: 'name', expand: 'teacher' }),
         pb.collection('groupLessonSchedule').getFullList({
           filter: dateFilter,
@@ -181,19 +171,19 @@
 
       timeslots = timeslotsData
 
-      // Build schedule lookup: groupRoom -> timeslot -> scheduleKey -> schedule
+      // Build schedule map
       const scheduleMap = {}
-      schedules.forEach((s) => {
+      for (const s of schedules) {
         const gr = s.expand?.grouproom
         const ts = s.expand?.timeslot
-        if (!gr || !ts) return
+        if (!gr || !ts) continue
 
-        if (!scheduleMap[gr.id]) scheduleMap[gr.id] = {}
-        if (!scheduleMap[gr.id][ts.id]) scheduleMap[gr.id][ts.id] = {}
+        scheduleMap[gr.id] ??= {}
+        scheduleMap[gr.id][ts.id] ??= {}
 
         const key = `${s.subject}_${s.teacher}`
         scheduleMap[gr.id][ts.id][key] = s
-      })
+      }
 
       // Build table data
       const data = groupRooms.map((gr) => {
@@ -207,7 +197,6 @@
           const schedules = scheduleMap[gr.id]?.[ts.id]
 
           if (!schedules || Object.keys(schedules).length === 0) {
-            // Empty slot
             row.push({
               label: 'Empty',
               date: weekStart,
@@ -219,10 +208,8 @@
               assignedTeacher: teacher,
             })
           } else {
-            // Use first schedule entry
             const s = Object.values(schedules)[0]
 
-            // Process students array
             let studentsData = []
             if (s.expand?.student && Array.isArray(s.expand.student)) {
               studentsData = s.expand.student.map((student) => ({
@@ -250,7 +237,6 @@
         return row
       })
 
-      // Build columns
       const columns = [
         {
           name: 'Teacher',
@@ -262,18 +248,21 @@
           width: '120px',
           formatter: (cell) => h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value),
         },
-        ...timeslots.map((t) => ({
-          name: `${t.start} - ${t.end}`,
-          id: t.id,
-          width: '160px',
-          formatter: formatCell,
-        })),
+        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
       ]
 
-      // Initialize or update grid
       if (grid.groupSchedule) {
+        const wrapper = document.querySelector('#group-grid .gridjs-wrapper')
+        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+
+        grid.groupSchedule.updateConfig({ columns, data }).forceRender()
+
         requestAnimationFrame(() => {
-          grid.groupSchedule.updateConfig({ columns, data }).forceRender()
+          const w = document.querySelector('#group-grid .gridjs-wrapper')
+          if (w) {
+            w.scrollTop = scroll.top
+            w.scrollLeft = scroll.left
+          }
         })
       } else {
         grid.groupSchedule = new Grid({
@@ -284,9 +273,10 @@
           pagination: false,
           className: {
             table: 'w-full border text-xs',
-            th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
+            th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 align-middle text-center',
           },
+          style: { table: { 'border-collapse': 'collapse' } },
         }).render(document.getElementById('group-grid'))
 
         grid.groupSchedule.on('cellClick', (...args) => {
@@ -306,7 +296,6 @@
             mode: cellData.label === 'Empty' ? 'create' : 'edit',
           }
 
-          // Store originals for edit mode
           if (booking.data.mode === 'edit') {
             booking.data.originalTeacherId = cellData.teacher.id
             booking.data.originalSubjectId = cellData.subject.id
@@ -314,7 +303,6 @@
             booking.data.originalGroupRoomId = cellData.groupRoom.id
           }
 
-          // Auto-assign teacher for empty slots
           if (cellData.label === 'Empty' && cellData.assignedTeacher) {
             booking.data.teacher = {
               id: cellData.assignedTeacher.id,
@@ -332,28 +320,40 @@
     } catch (error) {
       console.error('Error loading group schedules:', error)
       toast.error('Failed to load schedules')
+    } finally {
+      isLoading = false
     }
   }
 
+  let reloadTimeout
+  const debouncedReload = () => {
+    clearTimeout(reloadTimeout)
+    reloadTimeout = setTimeout(loadGroupSchedules, 150)
+  }
+
   onMount(() => {
-    if (grid.groupSchedule) {
-      grid.groupSchedule.destroy()
-      grid.groupSchedule = null
-    }
+    grid.groupSchedule?.destroy()
+    grid.groupSchedule = null
     loadGroupSchedules()
+    pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
-    if (grid.groupSchedule) {
-      grid.groupSchedule.destroy()
-      grid.groupSchedule = null
-    }
+    clearTimeout(reloadTimeout)
+    grid.groupSchedule?.destroy()
+    grid.groupSchedule = null
+    pb.collection('groupLessonSchedule').unsubscribe()
   })
 </script>
 
+<svelte:head>
+  {@html `<style>${stickyStyles}</style>`}
+</svelte:head>
+
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">GRP Schedule Table (Weekly)</h2>
+    <h2 class="text-center flex-1">GRP Schedule Table (Current)</h2>
+    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
@@ -376,17 +376,15 @@
       </button>
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-20">
-      {getWeekRangeDisplay(weekStart)}
-    </h3>
+    <h3 class="text-xl font-semibold text-primary text-center mr-20">{getWeekRangeDisplay(weekStart)}</h3>
 
     <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
     </div>
   </div>
 
-  <div class="p-3 bg-base-200 rounded-lg">
+  <div class="p-3 bg-base-200 rounded-lg mb-4">
     <div class="flex flex-wrap gap-4 text-xs">
       <div class="flex items-center gap-1">
         <div class="badge badge-primary badge-xs"></div>
@@ -400,18 +398,10 @@
         <div class="badge badge-error badge-xs"></div>
         <span>Group Room</span>
       </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
-        <span>Students</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-warning badge-xs"></div>
-        <span>Additional Count</span>
-      </div>
     </div>
   </div>
 
-  <div id="group-grid" class="max-h-[700px] overflow-auto border rounded-lg"></div>
+  <div id="group-grid" class="border rounded-lg"></div>
 </div>
 
 <GroupModal on:refresh={loadGroupSchedules} bind:this={groupModal} />

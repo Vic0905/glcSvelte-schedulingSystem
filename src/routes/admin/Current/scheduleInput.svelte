@@ -1,43 +1,48 @@
 <script>
-  import { onDestroy, onMount } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
+  import { onDestroy, onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
   import { booking, grid } from './schedule.svelte'
   import ScheduleModal from './scheduleModal.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
+  const stickyStyles = `
+    #grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+    #grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #grid th:nth-child(1), #grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
+    #grid th:nth-child(1) { z-index: 25; }
+    #grid th:nth-child(2), #grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+    #grid th:nth-child(2) { z-index: 25; }
+  `
+
   let weekStart = $state(getWeekStart(new Date()))
   let timeslots = []
   let rooms = []
   let isCopying = $state(false)
+  let isLoading = $state(false)
 
   function getWeekStart(date) {
     const d = new Date(date)
-    const day = d.getDay()
-    const diff = day === 0 ? -5 : day === 1 ? 1 : 2 - day
+    const diff = d.getDay() === 0 ? -5 : d.getDay() === 1 ? 1 : 2 - d.getDay()
     d.setDate(d.getDate() + diff)
     return d.toISOString().split('T')[0]
   }
 
   function getWeekDays(startDate) {
-    const days = []
     const start = new Date(startDate)
-    for (let i = 0; i < 4; i++) {
+    return Array.from({ length: 4 }, (_, i) => {
       const day = new Date(start)
       day.setDate(start.getDate() + i)
-      days.push(day.toISOString().split('T')[0])
-    }
-    return days
+      return day.toISOString().split('T')[0]
+    })
   }
 
   function getWeekRangeDisplay(startDate) {
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
-    const opt = { month: 'long', day: 'numeric' }
-    const opts = { month: 'long', day: 'numeric', year: 'numeric' }
-    return `${start.toLocaleDateString('en-US', opt)} - ${end.toLocaleDateString('en-US', opts)}`
+    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }
 
   const changeWeek = (weeks) => {
@@ -52,7 +57,6 @@
       const weekDays = getWeekDays(weekStart)
       const dateFilter = `(${weekDays.map((d) => `date = "${d}"`).join(' || ')})`
 
-      // Fetch all schedules for the current week
       const schedules = await pb.collection('lessonSchedule').getFullList({
         filter: dateFilter,
         expand: 'teacher,student,subject,room,timeslot',
@@ -63,34 +67,29 @@
         return
       }
 
-      // Get unique schedules (one per student-timeslot-room combination)
+      // Get unique schedules
       const uniqueSchedulesMap = {}
       schedules.forEach((schedule) => {
         const key = `${schedule.student}-${schedule.timeslot}-${schedule.room}`
-        if (!uniqueSchedulesMap[key]) {
-          uniqueSchedulesMap[key] = schedule
-        }
+        uniqueSchedulesMap[key] ??= schedule
       })
       const uniqueSchedules = Object.values(uniqueSchedulesMap)
 
-      // Check if any records already exist in advanceBooking
       const existingBookings = await pb
         .collection('advanceBooking')
-        .getFullList({
-          filter: dateFilter,
-        })
+        .getFullList({ filter: dateFilter })
         .catch(() => [])
 
-      // Filter out schedules that already exist in advanceBooking
-      const schedulesToCopy = uniqueSchedules.filter((schedule) => {
-        return !existingBookings.some(
-          (booking) =>
-            booking.timeslot === schedule.timeslot &&
-            booking.teacher === schedule.teacher &&
-            booking.student === schedule.student &&
-            booking.room === schedule.room
-        )
-      })
+      const schedulesToCopy = uniqueSchedules.filter(
+        (schedule) =>
+          !existingBookings.some(
+            (booking) =>
+              booking.timeslot === schedule.timeslot &&
+              booking.teacher === schedule.teacher &&
+              booking.student === schedule.student &&
+              booking.room === schedule.room
+          )
+      )
 
       if (schedulesToCopy.length === 0) {
         toast.info('All schedules already copied!', {
@@ -111,21 +110,19 @@
 
       isCopying = true
 
-      // Copy each unique schedule to advanceBooking collection
-      const copyPromises = schedulesToCopy.map((schedule) => {
-        const bookingData = {
-          date: schedule.date,
-          timeslot: schedule.timeslot,
-          teacher: schedule.teacher,
-          student: schedule.student,
-          subject: schedule.subject,
-          room: schedule.room,
-          status: 'pending',
-        }
-        return pb.collection('advanceBooking').create(bookingData)
-      })
-
-      await Promise.all(copyPromises)
+      await Promise.all(
+        schedulesToCopy.map((schedule) =>
+          pb.collection('advanceBooking').create({
+            date: schedule.date,
+            timeslot: schedule.timeslot,
+            teacher: schedule.teacher,
+            student: schedule.student,
+            subject: schedule.subject,
+            room: schedule.room,
+            status: 'pending',
+          })
+        )
+      )
 
       toast.success('Schedules copied successfully!', {
         position: 'bottom-right',
@@ -144,52 +141,27 @@
     }
   }
 
-  const createBadge = (text, color) => h('span', { class: `badge ${color} badge-xs` }, text)
-
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
     return h('div', { class: 'flex flex-col gap-1 items-center' }, [
-      createBadge(cell.subject.name, 'badge-primary p-3'),
-      createBadge(cell.teacher.name, 'badge-info'),
-      createBadge(cell.student.englishName, 'badge-neutral'),
-      createBadge(cell.room.name, 'badge-error'),
+      h('span', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name),
+      h('span', { class: 'badge badge-info badge-xs' }, cell.teacher.name),
+      h('span', { class: 'badge badge-neutral badge-xs' }, cell.student.englishName),
+      h('span', { class: 'badge badge-error badge-xs' }, cell.room.name),
     ])
   }
 
-  const buildColumns = () => [
-    {
-      name: 'Teacher',
-      width: '120px',
-      formatter: (cell) =>
-        cell.disabled
-          ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-          : cell.value,
-    },
-    {
-      name: 'Room',
-      width: '120px',
-      formatter: (cell) =>
-        cell.disabled
-          ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-          : cell.value,
-    },
-    ...timeslots.map((t) => ({
-      name: `${t.start} - ${t.end}`,
-      id: t.id,
-      width: '160px',
-      formatter: formatCell,
-    })),
-  ]
-
   async function loadSchedules() {
+    if (isLoading) return
+    isLoading = true
+
     try {
       const weekDays = getWeekDays(weekStart)
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-      // Fetch all data in parallel
       const [timeslotsData, roomsData, schedules] = await Promise.all([
-        pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
+        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
+        rooms.length ? rooms : pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
         pb.collection('lessonSchedule').getList(1, 200, {
           filter: dateFilter,
           expand: 'teacher,student,subject,room,timeslot',
@@ -199,17 +171,18 @@
       timeslots = timeslotsData
       rooms = roomsData
 
-      // Build schedule lookup: room -> timeslot -> student -> schedule
+      // Build schedule map
       const scheduleMap = {}
-      schedules.items.forEach((s) => {
-        const rId = s.expand.room.id
-        const tId = s.expand.timeslot.id
-        const sId = s.expand.student.id
+      for (const s of schedules.items) {
+        const rId = s.expand?.room?.id
+        const tId = s.expand?.timeslot?.id
+        const sId = s.expand?.student?.id
+        if (!rId || !tId || !sId) continue
 
-        if (!scheduleMap[rId]) scheduleMap[rId] = {}
-        if (!scheduleMap[rId][tId]) scheduleMap[rId][tId] = {}
+        scheduleMap[rId] ??= {}
+        scheduleMap[rId][tId] ??= {}
         scheduleMap[rId][tId][sId] = s
-      })
+      }
 
       // Build table data
       const data = rooms.map((room) => {
@@ -223,7 +196,6 @@
           const students = scheduleMap[room.id]?.[ts.id]
 
           if (!students || Object.keys(students).length === 0) {
-            // Empty slot
             row.push({
               label: 'Empty',
               date: weekStart,
@@ -235,7 +207,6 @@
               assignedTeacher: teacher,
             })
           } else {
-            // Use first schedule entry
             const s = Object.values(students)[0]
             row.push({
               label: 'Schedule',
@@ -254,21 +225,52 @@
         return row
       })
 
-      // Initialize or update grid
+      const columns = [
+        {
+          name: 'Teacher',
+          width: '120px',
+          formatter: (cell) =>
+            cell.disabled
+              ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
+              : cell.value,
+        },
+        {
+          name: 'Room',
+          width: '120px',
+          formatter: (cell) =>
+            cell.disabled
+              ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
+              : cell.value,
+        },
+        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
+      ]
+
       if (grid.schedule) {
-        grid.schedule.updateConfig({ data }).forceRender()
+        const wrapper = document.querySelector('#grid .gridjs-wrapper')
+        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+
+        grid.schedule.updateConfig({ columns, data }).forceRender()
+
+        requestAnimationFrame(() => {
+          const w = document.querySelector('#grid .gridjs-wrapper')
+          if (w) {
+            w.scrollTop = scroll.top
+            w.scrollLeft = scroll.left
+          }
+        })
       } else {
         grid.schedule = new Grid({
-          columns: buildColumns(),
+          columns,
           data,
           search: false,
           sort: false,
           pagination: false,
           className: {
             table: 'w-full border text-xs',
-            th: 'bg-base-200 p-2 border text-center sticky top-0 z-10',
+            th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 align-middle text-center',
           },
+          style: { table: { 'border-collapse': 'collapse' } },
         }).render(document.getElementById('grid'))
 
         grid.schedule.on('cellClick', (...args) => {
@@ -284,13 +286,11 @@
             mode: cellData.label === 'Empty' ? 'create' : 'edit',
           })
 
-          // Auto-assign teacher for empty slots
           if (cellData.label === 'Empty' && cellData.assignedTeacher) {
             booking.data.teacher.id = cellData.assignedTeacher.id
             booking.data.teacher.name = cellData.assignedTeacher.name
           }
 
-          // Store originals for edit mode
           if (booking.data.mode === 'edit') {
             booking.data.originalStudentId = cellData.student?.id || ''
             booking.data.originalTimeslotId = cellData.timeslot?.id || ''
@@ -303,28 +303,40 @@
     } catch (error) {
       console.error('Error loading schedules:', error)
       toast.error('Failed to load schedules')
+    } finally {
+      isLoading = false
     }
   }
 
+  let reloadTimeout
+  const debouncedReload = () => {
+    clearTimeout(reloadTimeout)
+    reloadTimeout = setTimeout(loadSchedules, 150)
+  }
+
   onMount(() => {
-    if (grid.schedule) {
-      grid.schedule.destroy()
-      grid.schedule = null
-    }
+    grid.schedule?.destroy()
+    grid.schedule = null
     loadSchedules()
+    pb.collection('lessonSchedule').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
-    if (grid.schedule) {
-      grid.schedule.destroy()
-      grid.schedule = null
-    }
+    clearTimeout(reloadTimeout)
+    grid.schedule?.destroy()
+    grid.schedule = null
+    pb.collection('lessonSchedule').unsubscribe()
   })
 </script>
 
+<svelte:head>
+  {@html `<style>${stickyStyles}</style>`}
+</svelte:head>
+
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">MTM Schedule Table (Weekly)</h2>
+    <h2 class="text-center flex-1">MTM Schedule Table (Current)</h2>
+    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
@@ -347,17 +359,15 @@
       </button>
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-20">
-      {getWeekRangeDisplay(weekStart)}
-    </h3>
+    <h3 class="text-xl font-semibold text-primary text-center mr-20">{getWeekRangeDisplay(weekStart)}</h3>
 
     <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
     </div>
   </div>
 
-  <div class="p-3 bg-base-200 rounded-lg">
+  <div class="p-3 bg-base-200 rounded-lg mb-4">
     <div class="flex flex-wrap gap-4 text-xs">
       <div class="flex items-center gap-1">
         <div class="badge badge-primary badge-xs"></div>
@@ -378,7 +388,7 @@
     </div>
   </div>
 
-  <div id="grid" class="max-h-[700px] overflow-auto border rounded-lg"></div>
+  <div id="grid" class="border rounded-lg"></div>
 </div>
 
 <ScheduleModal on:refresh={loadSchedules} />

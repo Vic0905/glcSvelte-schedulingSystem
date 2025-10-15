@@ -74,9 +74,9 @@
     <details>
       <summary>Advance Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="#/advance/advanceschedule">Advance MTM Table</a></li>
-        <li><a href="#/advance/advancegroupschedule">Advance GRP Table</a></li>
-        <li><a href="/#/advance/grouptemplate">Group Template</a></li>
+        <li><a href="#/advance/advanceschedule">MTM Table</a></li>
+        <li><a href="#/advance/advancegroupschedule">GRP Table</a></li>
+        <li><a href="/#/advance/grouptemplate">GRP Room Template</a></li>
         <li><a href="/#/advance/studenttemplate">Student Template</a></li>
         <li><a href="/#/advance/teachertemplate">Teacher Template</a></li>
       </ul>
@@ -86,9 +86,9 @@
     <details>
       <summary>Current Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/current/scheduleinput">Current MTM Table</a></li>
-        <li><a href="/#/current/grouptable">Current GRP Table</a></li>
-        <li><a href="/#/current/groupview">Group Table</a></li>
+        <li><a href="/#/current/scheduleinput">MTM Table</a></li>
+        <li><a href="/#/current/grouptable">GRP Table</a></li>
+        <li><a href="/#/current/groupview">GRP Room Table</a></li>
         <li><a href="/#/current/studentview">Student Table</a></li>
         <li><a href="/#/current/teacherview">Teacher Table</a></li>
       </ul>

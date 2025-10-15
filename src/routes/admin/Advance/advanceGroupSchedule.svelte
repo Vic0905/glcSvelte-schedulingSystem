@@ -275,7 +275,7 @@
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">Advance GRP Schedule Table (TEMPLATE)</h2>
+    <h2 class="text-center flex-1">GRP Schedule Table (Advance Template)</h2>
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">

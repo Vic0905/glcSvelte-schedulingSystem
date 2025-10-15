@@ -192,8 +192,7 @@
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2>Group</h2>
-    <h2 class="text-center flex-1">Advance Schedule (Weekly Template)</h2>
+    <h2 class="text-center flex-1">GRP Room Slot Table (Advance Template)</h2>
     {#if isLoading}
       <div class="loading loading-spinner loading-sm"></div>
     {/if}
@@ -212,7 +211,7 @@
       />
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-20">
+    <h3 class="text-xl font-semibold text-primary text-center mr-50">
       {getWeekRangeDisplay(weekStart)}
     </h3>
 

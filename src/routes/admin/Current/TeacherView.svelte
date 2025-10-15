@@ -4,52 +4,40 @@
   import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  // Add sticky column styles
   const stickyStyles = `
-    #teacherGrid table th:nth-child(1),
-    #teacherGrid table td:nth-child(1) {
-      position: sticky;
-      left: 0;
-      z-index: 10;
-      box-shadow: inset -1px 0 0 #ddd;
-
-    }
-    
-    #teacherGrid table th:nth-child(1)
-      
+    #teacherGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+    #teacherGrid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #teacherGrid th:nth-child(1), #teacherGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15;  box-shadow: inset -1px 0 0 #ddd; }
+    #teacherGrid th:nth-child(1) { z-index: 25; }
   `
 
   let weekStart = $state(getWeekStart(new Date()))
   let teacherGrid = null
   let timeslots = []
   let teachers = []
+  let isLoading = $state(false)
 
   function getWeekStart(date) {
     const d = new Date(date)
-    const day = d.getDay()
-    const diff = day === 0 ? -5 : day === 1 ? 1 : 2 - day
+    const diff = d.getDay() === 0 ? -5 : d.getDay() === 1 ? 1 : 2 - d.getDay()
     d.setDate(d.getDate() + diff)
     return d.toISOString().split('T')[0]
   }
 
   function getWeekDays(startDate) {
-    const days = []
     const start = new Date(startDate)
-    for (let i = 0; i < 4; i++) {
+    return Array.from({ length: 4 }, (_, i) => {
       const day = new Date(start)
       day.setDate(start.getDate() + i)
-      days.push(day.toISOString().split('T')[0])
-    }
-    return days
+      return day.toISOString().split('T')[0]
+    })
   }
 
   function getWeekRangeDisplay(startDate) {
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
-    const opt = { month: 'long', day: 'numeric' }
-    const opts = { month: 'long', day: 'numeric', year: 'numeric' }
-    return `${start.toLocaleDateString('en-US', opt)} - ${end.toLocaleDateString('en-US', opts)}`
+    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }
 
   const changeWeek = (weeks) => {
@@ -59,29 +47,24 @@
     loadTeacherSchedule()
   }
 
-  const createBadge = (text, color) => h('span', { class: `badge ${color} badge-xs` }, text)
-
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
     return h(
       'div',
       { class: 'text-xs flex flex-col gap-1 items-center' },
       cell.map((item) => {
-        const badges = [createBadge(item.subject?.name ?? 'No Subject', 'badge-primary p-3')]
+        const badges = [h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject')]
 
-        // Show student or group label
         if (item.isGroup) {
-          badges.push(createBadge('Group Class', 'badge-secondary'))
+          badges.push(h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'))
         } else {
-          badges.push(createBadge(item.student?.englishName ?? 'No Student', 'badge-neutral'))
-
-          // Only show 'NEW' badge if student status is 'new'
+          badges.push(h('span', { class: 'badge badge-neutral badge-xs' }, item.student?.englishName ?? 'No Student'))
           if (item.student?.status === 'new') {
-            badges.push(createBadge('NEW', 'badge-success'))
+            badges.push(h('span', { class: 'badge badge-success badge-xs' }, 'NEW'))
           }
         }
 
-        badges.push(createBadge(item.room?.name ?? 'No Room', 'badge-error'))
+        badges.push(h('span', { class: 'badge badge-error badge-xs' }, item.room?.name ?? 'No Room'))
 
         return h('div', { class: 'flex flex-col gap-1 items-center' }, badges)
       })
@@ -89,14 +72,16 @@
   }
 
   async function loadTeacherSchedule() {
+    if (isLoading) return
+    isLoading = true
+
     try {
       const weekDays = getWeekDays(weekStart)
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-      // Fetch all data in parallel
       const [timeslotsData, teachersData, individualSchedules, groupSchedules] = await Promise.all([
-        timeslots.length ? Promise.resolve(timeslots) : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        teachers.length ? Promise.resolve(teachers) : pb.collection('teacher').getFullList({ sort: 'name' }),
+        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
+        teachers.length ? teachers : pb.collection('teacher').getFullList({ sort: 'name' }),
         pb.collection('lessonSchedule').getList(1, 200, {
           filter: dateFilter,
           expand: 'teacher,student,subject,room,timeslot',
@@ -110,42 +95,38 @@
       timeslots = timeslotsData
       teachers = teachersData
 
-      // Build schedule lookup: teacher -> timeslot -> unique key -> schedule
+      // Build schedule map
       const scheduleMap = {}
 
       // Process individual lessons
-      individualSchedules.items.forEach((s) => {
+      for (const s of individualSchedules.items) {
         const teacherId = s.expand?.teacher?.id
         const timeslotId = s.expand?.timeslot?.id
         const studentId = s.expand?.student?.id
+        if (!teacherId || !timeslotId) continue
 
-        if (!teacherId || !timeslotId) return
+        scheduleMap[teacherId] ??= {}
+        scheduleMap[teacherId][timeslotId] ??= {}
 
-        if (!scheduleMap[teacherId]) scheduleMap[teacherId] = {}
-        if (!scheduleMap[teacherId][timeslotId]) scheduleMap[teacherId][timeslotId] = {}
-
-        // Use student ID as key (one entry per student per week)
         scheduleMap[teacherId][timeslotId][studentId] = {
           subject: s.expand?.subject,
           student: s.expand?.student,
           room: s.expand?.room,
           isGroup: false,
         }
-      })
+      }
 
       // Process group lessons
-      groupSchedules.items.forEach((s) => {
+      for (const s of groupSchedules.items) {
         const teacherId = s.expand?.teacher?.id
         const timeslotId = s.expand?.timeslot?.id
         const subjectId = s.expand?.subject?.id
         const roomId = s.expand?.grouproom?.id
+        if (!teacherId || !timeslotId) continue
 
-        if (!teacherId || !timeslotId) return
+        scheduleMap[teacherId] ??= {}
+        scheduleMap[teacherId][timeslotId] ??= {}
 
-        if (!scheduleMap[teacherId]) scheduleMap[teacherId] = {}
-        if (!scheduleMap[teacherId][timeslotId]) scheduleMap[teacherId][timeslotId] = {}
-
-        // Use composite key for groups (one entry per group per week)
         const key = `group_${subjectId}_${roomId}`
         scheduleMap[teacherId][timeslotId][key] = {
           subject: s.expand?.subject,
@@ -153,7 +134,7 @@
           room: s.expand?.grouproom,
           isGroup: true,
         }
-      })
+      }
 
       // Build table data
       const data = teachers.map((teacher) => {
@@ -167,19 +148,24 @@
         ]
       })
 
-      // Build columns
       const columns = [
         { name: 'Teacher', width: '120px', formatter: (cell) => cell.value },
-        ...timeslots.map((t) => ({
-          name: `${t.start} - ${t.end}`,
-          width: '160px',
-          formatter: formatCell,
-        })),
+        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
       ]
 
-      // Initialize or update grid
       if (teacherGrid) {
+        const wrapper = document.querySelector('#teacherGrid .gridjs-wrapper')
+        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+
         teacherGrid.updateConfig({ data }).forceRender()
+
+        requestAnimationFrame(() => {
+          const w = document.querySelector('#teacherGrid .gridjs-wrapper')
+          if (w) {
+            w.scrollTop = scroll.top
+            w.scrollLeft = scroll.left
+          }
+        })
       } else {
         teacherGrid = new Grid({
           columns,
@@ -192,24 +178,31 @@
             th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 text-center align-middle',
           },
+          style: { table: { 'border-collapse': 'collapse' } },
         }).render(document.getElementById('teacherGrid'))
       }
     } catch (error) {
       console.error('Error loading teacher schedule:', error)
+    } finally {
+      isLoading = false
     }
+  }
+
+  let reloadTimeout
+  const debouncedReload = () => {
+    clearTimeout(reloadTimeout)
+    reloadTimeout = setTimeout(loadTeacherSchedule, 150)
   }
 
   onMount(() => {
     loadTeacherSchedule()
-    pb.collection('lessonSchedule').subscribe('*', loadTeacherSchedule)
-    pb.collection('groupLessonSchedule').subscribe('*', loadTeacherSchedule)
+    pb.collection('lessonSchedule').subscribe('*', debouncedReload)
+    pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
-    if (teacherGrid) {
-      teacherGrid.destroy()
-      teacherGrid = null
-    }
+    clearTimeout(reloadTimeout)
+    teacherGrid?.destroy()
     pb.collection('lessonSchedule').unsubscribe()
     pb.collection('groupLessonSchedule').unsubscribe()
   })
@@ -221,8 +214,8 @@
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2>Teacher</h2>
-    <h2 class="text-center flex-1">Schedule Table (Weekly)</h2>
+    <h2 class="text-center flex-1">Teacher View Table (Current)</h2>
+    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
@@ -234,16 +227,15 @@
         bind:value={weekStart}
         class="input input-bordered input-sm w-40"
         onchange={loadTeacherSchedule}
+        disabled={isLoading}
       />
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-20">
-      {getWeekRangeDisplay(weekStart)}
-    </h3>
+    <h3 class="text-xl font-semibold text-primary text-center mr-50">{getWeekRangeDisplay(weekStart)}</h3>
 
     <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
     </div>
   </div>
 
@@ -272,7 +264,5 @@
     </div>
   </div>
 
-  <div class="max-h-[700px] overflow-auto border rounded-lg">
-    <div id="teacherGrid"></div>
-  </div>
+  <div id="teacherGrid" class="border rounded-lg"></div>
 </div>

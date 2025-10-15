@@ -32,8 +32,9 @@
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
+    const opt = { month: 'long', day: 'numeric' }
     const opts = { month: 'long', day: 'numeric', year: 'numeric' }
-    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', opts)}`
+    return `${start.toLocaleDateString('en-US', opt)} - ${end.toLocaleDateString('en-US', opts)}`
   }
 
   const changeWeek = (weeks) => {
@@ -189,8 +190,7 @@
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2>Teacher</h2>
-    <h2 class="text-center flex-1">Advance Schedule (Weekly Template)</h2>
+    <h2 class="text-center flex-1">Teacher View Table (Advance Template)</h2>
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
@@ -205,7 +205,7 @@
       />
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-20">
+    <h3 class="text-xl font-semibold text-primary text-center mr-50">
       {getWeekRangeDisplay(weekStart)}
     </h3>
 
