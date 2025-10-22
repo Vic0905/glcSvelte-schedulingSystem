@@ -99,12 +99,11 @@
         }
       }
 
-      // Build table data
-      const data = groupRooms.flatMap((room) => {
+      const data = groupRooms.flatMap((room, roomIndex) => {
         const maxSlots = Math.min(room.maxstudents || 30, 50)
         const roomSchedule = scheduleMap[room.id] || {}
 
-        return Array.from({ length: maxSlots }, (_, i) => {
+        const rows = Array.from({ length: maxSlots }, (_, i) => {
           const slot = i + 1
           return [
             room.name,
@@ -116,6 +115,13 @@
             }),
           ]
         })
+
+        // Add a separator row after each room except the last
+        if (roomIndex < groupRooms.length - 1) {
+          rows.push(['', '', ...timeslots.map(() => h('div', { class: 'h-[3px] w-full rounded-full' }))])
+        }
+
+        return rows
       })
 
       const columns = [
@@ -213,20 +219,11 @@
     </div>
   </div>
 
-  <div class="p-3 bg-base-200 rounded-lg mb-4">
-    <div class="flex flex-wrap gap-4 text-xs">
-      <div class="flex items-center gap-1">
-        <div class="badge badge-primary badge-xs"></div>
-        <span>Subject</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-info badge-xs"></div>
-        <span>Teacher</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
-        <span>Student Names</span>
-      </div>
+  <div class="bg-base-200 rounded lg m-2 p-2">
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span>Subject</div>
+      <div class="flex gap-1"><span class="badge badge-info badge-xs"></span>Teacher</div>
+      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span>Student Names</div>
     </div>
   </div>
 

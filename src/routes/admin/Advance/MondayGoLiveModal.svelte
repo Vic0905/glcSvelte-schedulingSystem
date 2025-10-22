@@ -1,0 +1,185 @@
+<script>
+  import { pb } from '../../../lib/Pocketbase.svelte'
+
+  let { show = $bindable(false), getMondayDisplay, currentMonday, getMondayDate } = $props()
+
+  let isProcessing = $state(false)
+  let result = $state({ success: 0, failed: 0, errors: [] })
+
+  async function goLive() {
+    if (isProcessing) return
+
+    const mondayDate = getMondayDate()
+    const confirmMessage = `🚀 Go Live for ${getMondayDisplay(mondayDate)}?\n\nThis will copy all Monday advance bookings to the live schedule for this specific Monday.`
+
+    if (!confirm(confirmMessage)) return
+
+    isProcessing = true
+    result = { success: 0, failed: 0, errors: [] }
+
+    try {
+      // 🔹 Get all Monday advance bookings
+      const mondayBookings = await pb.collection('mondayAdvanceBooking').getFullList({
+        expand: 'teacher,student,subject,room,timeslot',
+      })
+
+      if (mondayBookings.length === 0) {
+        alert('⚠️ No Monday advance bookings found to publish.')
+        isProcessing = false
+        return
+      }
+
+      // 🔹 Process each booking
+      for (const booking of mondayBookings) {
+        try {
+          const scheduleData = {
+            date: mondayDate,
+            room: booking.room,
+            timeslot: booking.timeslot,
+            teacher: booking.teacher,
+            student: booking.student,
+            subject: booking.subject,
+            status: 'scheduled',
+          }
+
+          // 🔹 Check if schedule already exists (404-safe)
+          let existing = []
+          try {
+            existing = await pb.collection('mondayLessonSchedule').getFullList({
+              filter: `date = "${mondayDate}" && room = "${booking.room}" && timeslot = "${booking.timeslot}"`,
+            })
+          } catch (err) {
+            if (err.status !== 404) throw err
+          }
+
+          if (existing.length > 0) {
+            // 🟡 Update existing
+            await pb.collection('mondayLessonSchedule').update(existing[0].id, scheduleData)
+          } else {
+            // 🟢 Create new
+            await pb.collection('mondayLessonSchedule').create(scheduleData)
+          }
+
+          result.success++
+        } catch (error) {
+          result.failed++
+          result.errors.push({
+            room: booking.expand?.room?.name || 'Unknown',
+            timeslot: `${booking.expand?.timeslot?.start || ''} - ${booking.expand?.timeslot?.end || ''}`,
+            error: error.message,
+          })
+        }
+      }
+
+      // ✅ Show results
+      if (result.failed === 0) {
+        alert(`✅ Success! Published ${result.success} Monday bookings to live schedule.`)
+        show = false
+      } else {
+        alert(
+          `⚠️ Partially completed:\n✅ Success: ${result.success}\n❌ Failed: ${result.failed}\n\nCheck the modal for error details.`
+        )
+      }
+    } catch (error) {
+      console.error('Error going live:', error)
+      alert('❌ Failed to publish Monday schedule. Check console for details.')
+    } finally {
+      isProcessing = false
+    }
+  }
+
+  function resetResult() {
+    result = { success: 0, failed: 0, errors: [] }
+  }
+
+  $effect(() => {
+    if (!show) {
+      resetResult()
+    }
+  })
+</script>
+
+{#if show}
+  <div class="modal modal-open">
+    <div class="modal-box max-w-2xl">
+      <h3 class="font-bold text-lg mb-4">🚀 Go Live - Monday Schedule</h3>
+
+      <div class="space-y-4">
+        <div class="alert alert-info">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            class="stroke-current shrink-0 w-6 h-6"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            ></path>
+          </svg>
+          <div>
+            <div class="font-bold">Publishing Monday Schedule</div>
+            <div class="text-sm">{getMondayDisplay(currentMonday)}</div>
+          </div>
+        </div>
+
+        <div class="bg-base-200 p-4 rounded-lg">
+          <h4 class="font-semibold mb-2">What will happen:</h4>
+          <ul class="list-disc list-inside space-y-1 text-sm">
+            <li>All Monday advance bookings will be copied to the live schedule</li>
+            <li>Date will be set to: {currentMonday}</li>
+            <li>Existing schedules for this date/room/timeslot will be updated</li>
+            <li>Status will be set to "scheduled"</li>
+          </ul>
+        </div>
+
+        {#if result.success > 0 || result.failed > 0}
+          <div class="bg-base-200 p-4 rounded-lg">
+            <h4 class="font-semibold mb-2">Results:</h4>
+            <div class="stats stats-vertical lg:stats-horizontal shadow w-full">
+              <div class="stat">
+                <div class="stat-title">Success</div>
+                <div class="stat-value text-success">{result.success}</div>
+              </div>
+              <div class="stat">
+                <div class="stat-title">Failed</div>
+                <div class="stat-value text-error">{result.failed}</div>
+              </div>
+            </div>
+
+            {#if result.errors.length > 0}
+              <div class="mt-4">
+                <h5 class="font-semibold text-error mb-2">Errors:</h5>
+                <div class="max-h-40 overflow-auto space-y-2">
+                  {#each result.errors as error}
+                    <div class="alert alert-error py-2">
+                      <div class="text-xs">
+                        <div><strong>Room:</strong> {error.room}</div>
+                        <div><strong>Time:</strong> {error.timeslot}</div>
+                        <div><strong>Error:</strong> {error.error}</div>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <div class="modal-action">
+        <button class="btn" onclick={() => (show = false)} disabled={isProcessing}>
+          {result.success > 0 || result.failed > 0 ? 'Close' : 'Cancel'}
+        </button>
+        {#if result.success === 0 && result.failed === 0}
+          <button class="btn btn-primary" onclick={goLive} disabled={isProcessing}>
+            {isProcessing ? 'Publishing...' : '🚀 Publish to Live'}
+          </button>
+        {/if}
+      </div>
+    </div>
+    <div class="modal-backdrop" onclick={() => (show = false)}></div>
+  </div>
+{/if}

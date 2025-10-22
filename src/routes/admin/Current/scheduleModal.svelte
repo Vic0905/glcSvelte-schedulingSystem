@@ -15,6 +15,15 @@
   let rooms = $state([])
   let timeslots = $state([])
 
+  $effect(() => {
+    if (!booking.data) booking.data = {}
+    if (!booking.data.subject) booking.data.subject = { name: '', id: '' }
+    if (!booking.data.teacher) booking.data.teacher = { name: '', id: '' }
+    if (!booking.data.student) booking.data.student = { englishName: '', id: '' }
+    if (!booking.data.room) booking.data.room = { name: '', id: '' }
+    if (!booking.data.timeslot) booking.data.timeslot = { id: '', start: '', end: '' }
+  })
+
   // Get week days (Tue-Fri)
   const getWeekDays = (startDate, endDate) => {
     const days = []
@@ -356,165 +365,181 @@
   })
 </script>
 
-<dialog id="editModal" class="modal">
-  <div class="modal-box max-w-3xl w-full space-y-6 rounded-xl">
-    <h3 class="text-xl font-bold text-center">
-      {booking.data.mode === 'edit' ? 'Edit Weekly Schedule' : 'Create Weekly Schedule'}
-    </h3>
+{#if booking.data && booking.data.teacher && booking.data.student && booking.data.subject && booking.data.room && booking.data.timeslot}
+  <dialog id="editModal" class="modal">
+    <div class="modal-box max-w-3xl w-full space-y-6 rounded-xl">
+      <h3 class="text-xl font-bold text-center">
+        {booking.data.mode === 'edit' ? 'Edit Weekly Schedule' : 'Create Weekly Schedule'}
+      </h3>
 
-    <div class="alert alert-info text-sm">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-        ></path>
-      </svg>
-      <span
-        >This will {booking.data.mode === 'edit' ? 'update' : 'create'} schedules for Tuesday through Friday (4 lessons per
-        week)</span
-      >
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- Left column -->
-      <div class="space-y-4">
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend font-semibold text-gray-700">Subject</legend>
-          <select class="select select-bordered w-full" bind:value={booking.data.subject.id} required>
-            <option value="">Select Subject</option>
-            {#each subjects as subject}
-              <option value={subject.id}>{subject.name}</option>
-            {/each}
-          </select>
-        </fieldset>
-
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend font-semibold text-gray-700">Student</legend>
-          <select class="select select-bordered w-full" bind:value={booking.data.student.id} required>
-            <option value="">Select Student</option>
-            {#each students as student}
-              {@const isBooked = isResourceBooked(student.id, 'student')}
-              {@const conflictInfo = getConflictInfo(student.id, 'student')}
-              <option value={student.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
-                {student.englishName}
-                {#if isBooked}(Booked with {conflictInfo}){/if}
-              </option>
-            {/each}
-          </select>
-          {#if booking.data.student.id && isResourceBooked(booking.data.student.id, 'student')}
-            <div class="label">
-              <span class="label-text-alt text-warning">⚠️ This student is already booked for this week's timeslot</span
-              >
-            </div>
-          {/if}
-        </fieldset>
-
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend font-semibold text-gray-700">Week Range</legend>
-          <div class="space-y-2">
-            <input
-              type="date"
-              bind:value={booking.data.startDate}
-              class="input input-bordered w-full input-sm"
-              required
-              disabled
-            />
-            <div class="text-center text-xs text-gray-500">to</div>
-            <input
-              type="date"
-              bind:value={booking.data.endDate}
-              class="input input-bordered w-full input-sm"
-              required
-              disabled
-            />
-          </div>
-          <div class="label">
-            <span class="label-text-alt">Lessons: Tuesday - Friday</span>
-          </div>
-        </fieldset>
+      <div class="alert alert-info text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          ></path>
+        </svg>
+        <span
+          >This will {booking.data.mode === 'edit' ? 'update' : 'create'} schedules for Tuesday through Friday (4 lessons
+          per week)</span
+        >
       </div>
 
-      <!-- Right column -->
-      <div class="space-y-4">
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend font-semibold text-gray-700">Teacher</legend>
-          <select class="select select-bordered w-full" bind:value={booking.data.teacher.id} required>
-            <option value="">Select Teacher</option>
-            {#each teachers as teacher}
-              {@const isBooked = isResourceBooked(teacher.id, 'teacher')}
-              {@const conflictInfo = getConflictInfo(teacher.id, 'teacher')}
-              <option value={teacher.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
-                {teacher.name}
-                {#if isBooked}(Booked with {conflictInfo}){/if}
-              </option>
-            {/each}
-          </select>
-          {#if booking.data.teacher.id && isResourceBooked(booking.data.teacher.id, 'teacher')}
-            <div class="label">
-              <span class="label-text-alt text-warning">⚠️ This teacher is already booked</span>
-            </div>
-          {/if}
-        </fieldset>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Left column -->
+        <div class="space-y-4">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-semibold text-gray-700">Subject</legend>
+            <select class="select select-bordered w-full" bind:value={booking.data.subject.id} required>
+              <option value="">Select Subject</option>
+              {#each subjects as subject}
+                <option value={subject.id}>{subject.name}</option>
+              {/each}
+            </select>
+          </fieldset>
 
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend font-semibold text-gray-700">Room</legend>
-          <select class="select select-bordered w-full" bind:value={booking.data.room.id} required>
-            <option value="">Select Room</option>
-            {#each rooms as room}
-              {@const isBooked = isResourceBooked(room.id, 'room')}
-              {@const conflictInfo = getConflictInfo(room.id, 'room')}
-              <option value={room.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
-                {room.name}
-                {#if isBooked}(Occupied by {conflictInfo}){/if}
-              </option>
-            {/each}
-          </select>
-          {#if booking.data.room.id && isResourceBooked(booking.data.room.id, 'room')}
-            <div class="label">
-              <span class="label-text-alt text-warning">⚠️ This room is already occupied for this week's timeslot</span>
-            </div>
-          {/if}
-        </fieldset>
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-semibold text-gray-700">Student</legend>
+            <select class="select select-bordered w-full" bind:value={booking.data.student.id} required>
+              <option value="">Select Student</option>
+              {#each students as student (student.id)}
+                {#if student.status !== 'graduated' || student.id === booking.data.student.id}
+                  {@const isBooked = isResourceBooked(student.id, 'student')}
+                  {@const conflictInfo = getConflictInfo(student.id, 'student')}
+                  <option
+                    value={student.id}
+                    disabled={student.status === 'graduated' || isBooked}
+                    class={student.status === 'graduated' ? 'text-gray-400 italic' : isBooked ? 'text-gray-400' : ''}
+                  >
+                    {student.englishName}
+                    {#if student.status === 'graduated'}
+                      (Graduated)
+                    {:else if isBooked}
+                      (Booked with {conflictInfo})
+                    {/if}
+                  </option>
+                {/if}
+              {/each}
+            </select>
 
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
-          <select class="select select-bordered w-full" bind:value={booking.data.timeslot.id} required>
-            <option value="">Select Timeslot</option>
-            {#each timeslots as slot}
-              <option value={slot.id}>{slot.start} - {slot.end}</option>
-            {/each}
-          </select>
-        </fieldset>
+            {#if booking.data.student.id && isResourceBooked(booking.data.student.id, 'student')}
+              <div class="label">
+                <span class="label-text-alt text-warning">
+                  ⚠️ This student is already booked for this week's timeslot
+                </span>
+              </div>
+            {/if}
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-semibold text-gray-700">Week Range</legend>
+            <div class="space-y-2">
+              <input
+                type="date"
+                bind:value={booking.data.startDate}
+                class="input input-bordered w-full input-sm"
+                required
+                disabled
+              />
+              <div class="text-center text-xs text-gray-500">to</div>
+              <input
+                type="date"
+                bind:value={booking.data.endDate}
+                class="input input-bordered w-full input-sm"
+                required
+                disabled
+              />
+            </div>
+            <div class="label">
+              <span class="label-text-alt">Lessons: Tuesday - Friday</span>
+            </div>
+          </fieldset>
+        </div>
+
+        <!-- Right column -->
+        <div class="space-y-4">
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-semibold text-gray-700">Teacher</legend>
+            <select class="select select-bordered w-full" bind:value={booking.data.teacher.id} required>
+              <option value="">Select Teacher</option>
+              {#each teachers as teacher}
+                {@const isBooked = isResourceBooked(teacher.id, 'teacher')}
+                {@const conflictInfo = getConflictInfo(teacher.id, 'teacher')}
+                <option value={teacher.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
+                  {teacher.name}
+                  {#if isBooked}(Booked with {conflictInfo}){/if}
+                </option>
+              {/each}
+            </select>
+            {#if booking.data.teacher.id && isResourceBooked(booking.data.teacher.id, 'teacher')}
+              <div class="label">
+                <span class="label-text-alt text-warning">⚠️ This teacher is already booked</span>
+              </div>
+            {/if}
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-semibold text-gray-700">Room</legend>
+            <select class="select select-bordered w-full" bind:value={booking.data.room.id} required>
+              <option value="">Select Room</option>
+              {#each rooms as room}
+                {@const isBooked = isResourceBooked(room.id, 'room')}
+                {@const conflictInfo = getConflictInfo(room.id, 'room')}
+                <option value={room.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
+                  {room.name}
+                  {#if isBooked}(Occupied by {conflictInfo}){/if}
+                </option>
+              {/each}
+            </select>
+            {#if booking.data.room.id && isResourceBooked(booking.data.room.id, 'room')}
+              <div class="label">
+                <span class="label-text-alt text-warning"
+                  >⚠️ This room is already occupied for this week's timeslot</span
+                >
+              </div>
+            {/if}
+          </fieldset>
+
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
+            <select class="select select-bordered w-full" bind:value={booking.data.timeslot.id} required>
+              <option value="">Select Timeslot</option>
+              {#each timeslots as slot}
+                <option value={slot.id}>{slot.start} - {slot.end}</option>
+              {/each}
+            </select>
+          </fieldset>
+        </div>
       </div>
-    </div>
 
-    <!-- Buttons -->
-    <div class="modal-action">
-      {#if booking.data.mode === 'edit' && booking.data.id}
-        <button class="btn btn-error mr-auto" onclick={deleteSchedule} disabled={isDeleting || isSaving}>
-          {#if isDeleting}
+      <!-- Buttons -->
+      <div class="modal-action">
+        {#if booking.data.mode === 'edit' && booking.data.id}
+          <button class="btn btn-error mr-auto" onclick={deleteSchedule} disabled={isDeleting || isSaving}>
+            {#if isDeleting}
+              <span class="loading loading-spinner loading-sm"></span>
+              Deleting...
+            {:else}
+              Delete Week
+            {/if}
+          </button>
+        {/if}
+
+        <button class="btn btn-primary" onclick={saveSchedule} disabled={isSaving || isDeleting}>
+          {#if isSaving}
             <span class="loading loading-spinner loading-sm"></span>
-            Deleting...
+            Saving...
           {:else}
-            Delete Week
+            {booking.data.mode === 'edit' ? 'Update Week' : 'Save Week'}
           {/if}
         </button>
-      {/if}
 
-      <button class="btn btn-primary" onclick={saveSchedule} disabled={isSaving || isDeleting}>
-        {#if isSaving}
-          <span class="loading loading-spinner loading-sm"></span>
-          Saving...
-        {:else}
-          {booking.data.mode === 'edit' ? 'Update Week' : 'Save Week'}
-        {/if}
-      </button>
-
-      <form method="dialog">
-        <button class="btn" disabled={isSaving || isDeleting}>Close</button>
-      </form>
+        <form method="dialog">
+          <button class="btn" disabled={isSaving || isDeleting}>Close</button>
+        </form>
+      </div>
     </div>
-  </div>
-</dialog>
+  </dialog>
+{/if}

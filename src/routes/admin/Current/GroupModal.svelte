@@ -469,38 +469,37 @@
             </div>
 
             <div class="border border-base-300 rounded-lg p-4 max-h-80 overflow-y-auto bg-base-100">
-              {#each filteredStudents as student}
-                {@const isBooked = isStudentBooked(student.id)}
-                {@const conflictInfo = getConflictInfo(student.id, 'student')}
-                <div class="form-control">
-                  <label class="label cursor-pointer justify-start gap-3">
-                    <input
-                      type="checkbox"
-                      class="checkbox checkbox-sm"
-                      checked={selectedStudents.includes(student.id)}
-                      disabled={isBooked ||
-                        (maxStudentsAllowed > 0 &&
-                          !selectedStudents.includes(student.id) &&
-                          selectedStudents.length >= maxStudentsAllowed)}
-                      onchange={() => toggleStudent(student.id)}
-                    />
-                    <span
-                      class="label-text {isBooked ||
-                      (maxStudentsAllowed > 0 &&
-                        !selectedStudents.includes(student.id) &&
-                        selectedStudents.length >= maxStudentsAllowed)
-                        ? 'opacity-50'
-                        : ''}"
-                    >
-                      {student.englishName}
-                      {#if isBooked}
-                        <span class="text-warning text-xs">(Booked with {conflictInfo})</span>
-                      {/if}
-                    </span>
-                  </label>
-                </div>
+              {#each filteredStudents as student (student.id)}
+                {#if student.status !== 'graduated' || selectedStudents.includes(student.id)}
+                  {@const isBooked = isStudentBooked(student.id)}
+                  {@const conflictInfo = getConflictInfo(student.id, 'student')}
+                  <div class="form-control">
+                    <label class="label cursor-pointer justify-start gap-3">
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm"
+                        checked={selectedStudents.includes(student.id)}
+                        disabled={student.status === 'graduated' ||
+                          isBooked ||
+                          (maxStudentsAllowed > 0 &&
+                            !selectedStudents.includes(student.id) &&
+                            selectedStudents.length >= maxStudentsAllowed)}
+                        onchange={() => toggleStudent(student.id)}
+                      />
+                      <span class="label-text {student.status === 'graduated' || isBooked ? 'opacity-50 italic' : ''}">
+                        {student.englishName}
+                        {#if student.status === 'graduated'}
+                          <span class="text-xs text-gray-400">(Graduated)</span>
+                        {:else if isBooked}
+                          <span class="text-warning text-xs">(Booked with {conflictInfo})</span>
+                        {/if}
+                      </span>
+                    </label>
+                  </div>
+                {/if}
               {/each}
-              {#if filteredStudents.length === 0}
+
+              {#if filteredStudents.filter((s) => s.status !== 'graduated' || selectedStudents.includes(s.id)).length === 0}
                 <p class="text-sm text-base-content/100 text-center py-4">No matching students</p>
               {/if}
             </div>

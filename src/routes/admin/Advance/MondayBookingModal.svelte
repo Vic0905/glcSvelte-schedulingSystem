@@ -2,7 +2,7 @@
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  let { show = $bindable(false), advanceBooking = $bindable(), onSave } = $props()
+  let { show = $bindable(false), mondayBooking = $bindable(), onSave } = $props()
 
   let existingBookings = $state([])
   let groupLessonBookings = $state([])
@@ -30,30 +30,34 @@
   // Load existing bookings for conflict detection
   const loadExistingBookings = async () => {
     try {
-      const timeslotId = advanceBooking.timeslot.id
+      const timeslotId = mondayBooking.timeslot.id
       if (!timeslotId) {
         existingBookings = []
         groupLessonBookings = []
         return
       }
 
-      // Load advance bookings
-      const advanceRecords = await pb.collection('advanceBooking').getFullList({
+      // Load Monday advance bookings
+      const mondayRecords = await pb.collection('mondayAdvanceBooking').getFullList({
         filter: `timeslot = "${timeslotId}"${
-          advanceBooking.mode === 'edit' && advanceBooking.id ? ` && id != "${advanceBooking.id}"` : ''
+          mondayBooking.mode === 'edit' && mondayBooking.id ? ` && id != "${mondayBooking.id}"` : ''
         }`,
         expand: 'teacher,student,room',
       })
 
-      existingBookings = advanceRecords
+      existingBookings = mondayRecords
 
-      // Load group advance bookings for the same timeslot
-      const groupRecords = await pb.collection('groupAdvanceBooking').getFullList({
-        filter: `timeslot = "${timeslotId}"`,
-        expand: 'teacher,student,grouproom',
-      })
-
-      groupLessonBookings = groupRecords
+      // Load group Monday bookings for the same timeslot (if you have this collection)
+      try {
+        const groupRecords = await pb.collection('groupMondayAdvanceBooking').getFullList({
+          filter: `timeslot = "${timeslotId}"`,
+          expand: 'teacher,student,grouproom',
+        })
+        groupLessonBookings = groupRecords
+      } catch {
+        // Collection might not exist, that's okay
+        groupLessonBookings = []
+      }
     } catch (error) {
       console.error('Error loading existing bookings:', error)
       existingBookings = []
@@ -107,7 +111,7 @@
 
   // Validation and conflict checking
   const validateAndCheckConflicts = async () => {
-    const data = advanceBooking
+    const data = mondayBooking
 
     // Required field validation
     const requiredFields = [
@@ -130,7 +134,7 @@
     try {
       // Check teacher conflict
       await pb
-        .collection('advanceBooking')
+        .collection('mondayAdvanceBooking')
         .getFirstListItem(`teacher = "${data.teacher.id}" && timeslot = "${timeslotId}"${excludeFilter}`)
       toast.error('Teacher is already booked at this timeslot')
       return false
@@ -141,7 +145,7 @@
     try {
       // Check room conflict
       await pb
-        .collection('advanceBooking')
+        .collection('mondayAdvanceBooking')
         .getFirstListItem(`room = "${data.room.id}" && timeslot = "${timeslotId}"${excludeFilter}`)
       toast.error('Room is already occupied at this timeslot')
       return false
@@ -152,11 +156,11 @@
     return true
   }
 
-  // Save advance booking
-  const saveAdvanceBooking = async () => {
+  // Save Monday booking
+  const saveMondayBooking = async () => {
     if (!(await validateAndCheckConflicts())) return
 
-    const data = advanceBooking
+    const data = mondayBooking
     const bookingData = {
       timeslot: data.timeslot.id,
       teacher: data.teacher.id,
@@ -167,44 +171,44 @@
 
     try {
       if (data.mode === 'edit' && data.id) {
-        await pb.collection('advanceBooking').update(data.id, bookingData)
-        toast.success('Advance booking updated successfully')
+        await pb.collection('mondayAdvanceBooking').update(data.id, bookingData)
+        toast.success('Monday booking updated successfully')
       } else {
-        await pb.collection('advanceBooking').create(bookingData)
-        toast.success('Advance booking created successfully')
+        await pb.collection('mondayAdvanceBooking').create(bookingData)
+        toast.success('Monday booking created successfully')
       }
 
       closeModal()
       onSave()
     } catch (error) {
-      console.error('Error saving advance booking:', error)
-      toast.error('Failed to save advance booking')
+      console.error('Error saving Monday booking:', error)
+      toast.error('Failed to save Monday booking')
     }
   }
 
-  // Delete advance booking
-  const deleteAdvanceBooking = async () => {
-    if (!advanceBooking.id) return
+  // Delete Monday booking
+  const deleteMondayBooking = async () => {
+    if (!mondayBooking.id) return
 
     const confirmMessage =
-      `Are you sure you want to delete this advance booking?\n\n` +
-      `Subject: ${advanceBooking.subject.name}\n` +
-      `Teacher: ${advanceBooking.teacher.name}\n` +
-      `Student: ${advanceBooking.student.englishName}\n` +
-      `Room: ${advanceBooking.room.name}\n` +
-      `Time: ${advanceBooking.timeslot.start} - ${advanceBooking.timeslot.end}\n\n` +
+      `Are you sure you want to delete this Monday booking?\n\n` +
+      `Subject: ${mondayBooking.subject.name}\n` +
+      `Teacher: ${mondayBooking.teacher.name}\n` +
+      `Student: ${mondayBooking.student.englishName}\n` +
+      `Room: ${mondayBooking.room.name}\n` +
+      `Time: ${mondayBooking.timeslot.start} - ${mondayBooking.timeslot.end}\n\n` +
       `This action cannot be undone.`
 
     if (!confirm(confirmMessage)) return
 
     try {
-      await pb.collection('advanceBooking').delete(advanceBooking.id)
-      toast.success('Advance booking deleted successfully')
+      await pb.collection('mondayAdvanceBooking').delete(mondayBooking.id)
+      toast.success('Monday booking deleted successfully')
       closeModal()
       onSave()
     } catch (error) {
-      console.error('Error deleting advance booking:', error)
-      toast.error('Failed to delete advance booking')
+      console.error('Error deleting Monday booking:', error)
+      toast.error('Failed to delete Monday booking')
     }
   }
 
@@ -214,7 +218,7 @@
 
   // Load data when timeslot changes
   $effect(() => {
-    if (advanceBooking.timeslot.id) {
+    if (mondayBooking.timeslot.id) {
       loadExistingBookings()
     }
   })
@@ -231,11 +235,11 @@
   <dialog class="modal modal-open">
     <div class="modal-box max-w-3xl w-full space-y-6 rounded-xl">
       <h3 class="text-xl font-bold text-center">
-        {advanceBooking.mode === 'edit' ? 'Edit Weekly Template' : 'Create Weekly Template'}
+        {mondayBooking.mode === 'edit' ? 'Edit Monday Template' : 'Create Monday Template'}
       </h3>
 
       <div class="alert alert-info">
-        <span>ℹ️ This template will be used to create schedules for Tuesday-Friday when published</span>
+        <span>ℹ️ This template will be used to create Monday schedules when published</span>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -243,7 +247,7 @@
         <div class="space-y-4">
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Subject</legend>
-            <select class="select select-bordered w-full" bind:value={advanceBooking.subject.id} required>
+            <select class="select select-bordered w-full" bind:value={mondayBooking.subject.id} required>
               <option value="">Select Subject</option>
               {#each subjects as subject}
                 <option value={subject.id}>{subject.name}</option>
@@ -253,35 +257,24 @@
 
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Student</legend>
-            <select class="select select-bordered w-full" bind:value={advanceBooking.student.id} required>
+            <select class="select select-bordered w-full" bind:value={mondayBooking.student.id} required>
               <option value="">Select Student</option>
-              {#each students as student (student.id)}
-                {#if student.status !== 'graduated' || student.id === advanceBooking.student.id}
-                  {@const isBooked = isResourceBooked(student.id, 'student')}
-                  {@const isInGroupLesson = isStudentInGroupLesson(student.id)}
-                  {@const conflictInfo = isBooked
-                    ? getConflictInfo(student.id, 'student')
-                    : getGroupLessonConflictInfo(student.id)}
-                  {@const hasConflict = isBooked || isInGroupLesson}
-                  <option
-                    value={student.id}
-                    disabled={hasConflict || student.status === 'graduated'}
-                    class={student.status === 'graduated' ? 'text-gray-400 italic' : hasConflict ? 'text-gray-400' : ''}
-                  >
-                    {student.englishName}
-                    {#if student.status === 'graduated'}
-                      (Graduated)
-                    {:else if hasConflict}
-                      ({conflictInfo})
-                    {/if}
-                  </option>
-                {/if}
+              {#each students as student}
+                {@const isBooked = isResourceBooked(student.id, 'student')}
+                {@const isInGroupLesson = isStudentInGroupLesson(student.id)}
+                {@const conflictInfo = isBooked
+                  ? getConflictInfo(student.id, 'student')
+                  : getGroupLessonConflictInfo(student.id)}
+                {@const hasConflict = isBooked || isInGroupLesson}
+                <option value={student.id} disabled={hasConflict} class={hasConflict ? 'text-gray-400' : ''}>
+                  {student.englishName}
+                  {#if hasConflict}({conflictInfo}){/if}
+                </option>
               {/each}
             </select>
-
-            {#if advanceBooking.student.id && (isResourceBooked(advanceBooking.student.id, 'student') || isStudentInGroupLesson(advanceBooking.student.id))}
+            {#if mondayBooking.student.id && (isResourceBooked(mondayBooking.student.id, 'student') || isStudentInGroupLesson(mondayBooking.student.id))}
               <div class="label">
-                <span class="label-text-alt text-warning"> ⚠️ This student is already booked for this timeslot </span>
+                <span class="label-text-alt text-warning">⚠️ This student is already booked for this timeslot</span>
               </div>
             {/if}
           </fieldset>
@@ -290,7 +283,7 @@
             <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
             <input
               type="text"
-              value="{advanceBooking.timeslot.start} - {advanceBooking.timeslot.end}"
+              value="{mondayBooking.timeslot.start} - {mondayBooking.timeslot.end}"
               class="input input-bordered w-full"
               readonly
             />
@@ -301,7 +294,7 @@
         <div class="space-y-4">
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Teacher</legend>
-            <select class="select select-bordered w-full" bind:value={advanceBooking.teacher.id} required>
+            <select class="select select-bordered w-full" bind:value={mondayBooking.teacher.id} required>
               <option value="">Select Teacher</option>
               {#each teachers as teacher}
                 {@const isBooked = isResourceBooked(teacher.id, 'teacher')}
@@ -316,7 +309,7 @@
                 </option>
               {/each}
             </select>
-            {#if advanceBooking.teacher.id && (isResourceBooked(advanceBooking.teacher.id, 'teacher') || isTeacherInGroupLesson(advanceBooking.teacher.id))}
+            {#if mondayBooking.teacher.id && (isResourceBooked(mondayBooking.teacher.id, 'teacher') || isTeacherInGroupLesson(mondayBooking.teacher.id))}
               <div class="label">
                 <span class="label-text-alt text-warning">⚠️ This teacher is already booked for this timeslot</span>
               </div>
@@ -325,8 +318,8 @@
 
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Room</legend>
-            <input type="text" value={advanceBooking.room.name} class="input input-bordered w-full" readonly />
-            {#if advanceBooking.room.id && isResourceBooked(advanceBooking.room.id, 'room')}
+            <input type="text" value={mondayBooking.room.name} class="input input-bordered w-full" readonly />
+            {#if mondayBooking.room.id && isResourceBooked(mondayBooking.room.id, 'room')}
               <div class="label">
                 <span class="label-text-alt text-warning">⚠️ This room is already occupied for this timeslot</span>
               </div>
@@ -337,8 +330,8 @@
 
       <!-- Buttons -->
       <div class="modal-action">
-        {#if advanceBooking.mode === 'edit' && advanceBooking.id}
-          <button class="btn btn-error mr-auto" onclick={deleteAdvanceBooking}>
+        {#if mondayBooking.mode === 'edit' && mondayBooking.id}
+          <button class="btn btn-error mr-auto" onclick={deleteMondayBooking}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-4 w-4"
@@ -357,8 +350,8 @@
           </button>
         {/if}
 
-        <button class="btn btn-primary" onclick={saveAdvanceBooking}>
-          {advanceBooking.mode === 'edit' ? 'Update' : 'Create'}
+        <button class="btn btn-primary" onclick={saveMondayBooking}>
+          {mondayBooking.mode === 'edit' ? 'Update' : 'Create'}
         </button>
 
         <button class="btn" onclick={closeModal}>Close</button>

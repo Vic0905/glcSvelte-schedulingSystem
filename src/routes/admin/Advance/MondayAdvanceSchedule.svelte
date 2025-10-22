@@ -3,27 +3,27 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
-  import AdvanceBookingModal from './AdvanceBookingModal.svelte'
-  import GoLiveModal from './GoLiveModal.svelte'
+  import MondayBookingModal from './MondayBookingModal.svelte'
+  import MondayGoLiveModal from './MondayGoLiveModal.svelte'
 
   const stickyStyles = `
-    #advance-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #advance-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-grid th:nth-child(1), #advance-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-grid th:nth-child(1) { z-index: 25; }
-    #advance-grid th:nth-child(2), #advance-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-grid th:nth-child(2) { z-index: 25; }
+    #monday-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+    #monday-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #monday-grid th:nth-child(1), #monday-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
+    #monday-grid th:nth-child(1) { z-index: 25; }
+    #monday-grid th:nth-child(2), #monday-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+    #monday-grid th:nth-child(2) { z-index: 25; }
   `
 
-  let currentWeekStart = $state('')
+  let currentMonday = $state('')
   let timeslots = []
   let rooms = []
-  let advanceGrid = null
-  let showAdvanceModal = $state(false)
+  let mondayGrid = null
+  let showMondayModal = $state(false)
   let showGoLiveModal = $state(false)
   let isLoading = $state(false)
 
-  let advanceBooking = $state({
+  let mondayBooking = $state({
     id: '',
     room: { id: '', name: '' },
     timeslot: { id: '', start: '', end: '' },
@@ -33,41 +33,33 @@
     mode: 'create',
   })
 
-  const initializeWeek = () => {
+  const initializeMonday = () => {
     const today = new Date()
     const dow = today.getDay()
     const monday = new Date(today)
     monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1))
-    currentWeekStart = monday.toISOString().split('T')[0]
+    currentMonday = monday.toISOString().split('T')[0]
   }
 
-  const getWeekDates = (startDate) => {
-    const monday = new Date(startDate)
-    return Array.from({ length: 4 }, (_, i) => {
-      const d = new Date(monday)
-      d.setDate(monday.getDate() + i + 1)
-      return d.toISOString().split('T')[0]
+  const getMondayDate = () => {
+    return currentMonday
+  }
+
+  const getMondayDisplay = (mondayDate) => {
+    const monday = new Date(mondayDate)
+    return monday.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
     })
   }
 
-  const getWeekRange = (startDate) => {
-    const monday = new Date(startDate)
-    const tuesday = new Date(monday)
-    tuesday.setDate(monday.getDate() + 1)
-    const friday = new Date(monday)
-    friday.setDate(monday.getDate() + 4)
-
-    if (tuesday.getMonth() === friday.getMonth()) {
-      return `${tuesday.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${friday.getDate()}, ${friday.getFullYear()}`
-    }
-    return `${tuesday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} & ${friday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-  }
-
   const changeWeek = (weeks) => {
-    const monday = new Date(currentWeekStart)
+    const monday = new Date(currentMonday)
     monday.setDate(monday.getDate() + weeks * 7)
-    currentWeekStart = monday.toISOString().split('T')[0]
-    loadAdvanceBookings()
+    currentMonday = monday.toISOString().split('T')[0]
+    loadMondayBookings()
   }
 
   const formatCell = (cell) => {
@@ -80,7 +72,7 @@
     ])
   }
 
-  async function loadAdvanceBookings() {
+  async function loadMondayBookings() {
     if (isLoading) return
     isLoading = true
 
@@ -88,7 +80,7 @@
       const [timeslotsData, roomsData, bookings] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
         rooms.length ? rooms : pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
-        pb.collection('advanceBooking').getList(1, 500, {
+        pb.collection('mondayAdvanceBooking').getList(1, 500, {
           expand: 'teacher,student,subject,room,timeslot',
         }),
       ])
@@ -141,21 +133,21 @@
         ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
       ]
 
-      if (advanceGrid) {
-        const wrapper = document.querySelector('#advance-grid .gridjs-wrapper')
+      if (mondayGrid) {
+        const wrapper = document.querySelector('#monday-grid .gridjs-wrapper')
         const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
 
-        advanceGrid.updateConfig({ columns, data }).forceRender()
+        mondayGrid.updateConfig({ columns, data }).forceRender()
 
         requestAnimationFrame(() => {
-          const w = document.querySelector('#advance-grid .gridjs-wrapper')
+          const w = document.querySelector('#monday-grid .gridjs-wrapper')
           if (w) {
             w.scrollTop = scroll.top
             w.scrollLeft = scroll.left
           }
         })
       } else {
-        advanceGrid = new Grid({
+        mondayGrid = new Grid({
           columns,
           data,
           search: false,
@@ -167,65 +159,114 @@
             td: 'border p-2 align-middle text-center',
           },
           style: { table: { 'border-collapse': 'collapse' } },
-        }).render(document.getElementById('advance-grid'))
+        }).render(document.getElementById('monday-grid'))
 
-        advanceGrid.on('cellClick', (_, cell) => {
+        mondayGrid.on('cellClick', (_, cell) => {
           const cellData = cell.data
           if (cellData.disabled) return
 
-          Object.assign(advanceBooking, cellData)
-          advanceBooking.mode = cellData.label === 'Empty' ? 'create' : 'edit'
+          Object.assign(mondayBooking, cellData)
+          mondayBooking.mode = cellData.label === 'Empty' ? 'create' : 'edit'
 
           if (cellData.label === 'Empty' && cellData.assignedTeacher) {
-            advanceBooking.teacher = { ...cellData.assignedTeacher }
+            mondayBooking.teacher = { ...cellData.assignedTeacher }
           }
 
-          showAdvanceModal = true
+          showMondayModal = true
         })
       }
     } catch (error) {
-      console.error('Error loading advance bookings:', error)
+      console.error('Error loading Monday bookings:', error)
     } finally {
       isLoading = false
     }
   }
 
-  const deleteAllAdvanceBookings = async () => {
-    if (!confirm('⚠️ Are you sure you want to delete ALL advance bookings? This action cannot be undone.')) return
+  const deleteAllMondayBookings = async () => {
+    if (!confirm('⚠️ Are you sure you want to delete ALL Monday advance bookings? This action cannot be undone.'))
+      return
 
     try {
-      const allBookings = await pb.collection('advanceBooking').getFullList()
+      const allBookings = await pb.collection('mondayAdvanceBooking').getFullList()
       if (allBookings.length === 0) {
-        alert('No advance bookings found to delete.')
+        alert('No Monday advance bookings found to delete.')
         return
       }
 
-      await Promise.all(allBookings.map((b) => pb.collection('advanceBooking').delete(b.id)))
-      alert(`✅ Successfully deleted ${allBookings.length} advance bookings.`)
-      loadAdvanceBookings()
+      await Promise.all(allBookings.map((b) => pb.collection('mondayAdvanceBooking').delete(b.id)))
+      alert(`✅ Successfully deleted ${allBookings.length} Monday advance bookings.`)
+      loadMondayBookings()
     } catch (error) {
-      console.error('Error deleting advance bookings:', error)
-      alert('❌ Failed to delete advance bookings. Check console for details.')
+      console.error('Error deleting Monday bookings:', error)
+      alert('❌ Failed to delete Monday bookings. Check console for details.')
     }
   }
 
   let reloadTimeout
   const debouncedReload = () => {
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadAdvanceBookings, 150)
+    reloadTimeout = setTimeout(loadMondayBookings, 150)
+  }
+
+  async function copyFromAdvanceBooking() {
+    if (isLoading) return
+    if (!confirm('⚡ Copy all records from Advance Booking to Monday Advance Booking?')) return
+
+    isLoading = true
+    try {
+      // Fetch all advance bookings
+      const advanceBookings = await pb.collection('advanceBooking').getFullList({
+        expand: 'teacher,student,subject,room,timeslot',
+      })
+
+      if (!advanceBookings.length) {
+        alert('No records found in Advance Booking.')
+        return
+      }
+
+      // Optional: delete existing Monday bookings before copying
+      const existing = await pb.collection('mondayAdvanceBooking').getFullList()
+      if (existing.length > 0) {
+        const confirmDelete = confirm(
+          `There are already ${existing.length} Monday advance bookings.\nDo you want to delete them before copying?`
+        )
+        if (confirmDelete) {
+          await Promise.all(existing.map((b) => pb.collection('mondayAdvanceBooking').delete(b.id)))
+        }
+      }
+
+      // Copy each advance booking to mondayAdvanceBooking
+      for (const booking of advanceBookings) {
+        await pb.collection('mondayAdvanceBooking').create({
+          room: booking.room,
+          timeslot: booking.timeslot,
+          teacher: booking.teacher,
+          student: booking.student,
+          subject: booking.subject,
+        })
+      }
+
+      alert(`✅ Successfully copied ${advanceBookings.length} records from Advance Booking!`)
+      loadMondayBookings()
+    } catch (error) {
+      console.error('Error copying from Advance Booking:', error)
+      alert('❌ Failed to copy from Advance Booking. Check console for details.')
+    } finally {
+      isLoading = false
+    }
   }
 
   onMount(() => {
-    initializeWeek()
-    loadAdvanceBookings()
-    pb.collection('advanceBooking').subscribe('*', debouncedReload)
+    initializeMonday()
+    loadMondayBookings()
+    pb.collection('mondayAdvanceBooking').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
     clearTimeout(reloadTimeout)
-    advanceGrid?.destroy()
-    advanceGrid = null
-    pb.collection('advanceBooking').unsubscribe()
+    mondayGrid?.destroy()
+    mondayGrid = null
+    pb.collection('mondayAdvanceBooking').unsubscribe()
   })
 </script>
 
@@ -235,14 +276,27 @@
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">MTM Schedule Table (Advance Template)</h2>
+    <h2 class="text-center flex-1">Monday Schedule Table (Advance Template)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
-    <button class="btn btn-error btn-sm" onclick={deleteAllAdvanceBookings}>Delete All</button>
+    <div class="flex items-center gap-2">
+      <button class="btn btn-success btn-sm" onclick={copyFromAdvanceBooking}>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+          />
+        </svg>
+        Copy from advance
+      </button>
+      <button class="btn btn-error btn-sm" onclick={deleteAllMondayBookings}>Delete All</button>
+    </div>
     <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
-      {getWeekRange(currentWeekStart)}
+      {getMondayDisplay(currentMonday)}
     </h3>
 
     <div class="flex items-center gap-2 ml-auto">
@@ -273,8 +327,8 @@
     </div>
   </div>
 
-  <div id="advance-grid" class="border rounded-lg"></div>
+  <div id="monday-grid" class="border rounded-lg"></div>
 </div>
 
-<AdvanceBookingModal bind:show={showAdvanceModal} bind:advanceBooking onSave={loadAdvanceBookings} />
-<GoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} {getWeekDates} />
+<MondayBookingModal bind:show={showMondayModal} bind:mondayBooking onSave={loadMondayBookings} />
+<MondayGoLiveModal bind:show={showGoLiveModal} {getMondayDisplay} {currentMonday} {getMondayDate} />

@@ -355,33 +355,39 @@
 
             <!-- Student list -->
             <div class="border border-base-300 rounded-lg p-4 max-h-80 overflow-y-auto">
-              {#each filteredStudents as student}
-                {@const isConflicted = isStudentConflicted(student.id)}
-                {@const conflictInfo = getStudentConflictInfo(student.id)}
-                {@const isDisabled =
-                  isConflicted ||
-                  (maxStudentsAllowed > 0 &&
-                    !selectedStudents.includes(student.id) &&
-                    selectedStudents.length >= maxStudentsAllowed)}
-                <div class="form-control">
-                  <label class="label cursor-pointer justify-start gap-3">
-                    <input
-                      type="checkbox"
-                      class="checkbox checkbox-sm"
-                      checked={selectedStudents.includes(student.id)}
-                      disabled={isDisabled}
-                      onchange={() => toggleStudent(student.id)}
-                    />
-                    <span class="label-text {isDisabled ? 'opacity-100' : ''}"
-                      >{student.englishName}
-                      {#if isConflicted}
-                        <span class="text-xs text-warning ml-2">({conflictInfo})</span>
-                      {/if}
-                    </span>
-                  </label>
-                </div>
+              {#each filteredStudents as student (student.id)}
+                {#if student.status !== 'graduated' || selectedStudents.includes(student.id)}
+                  {@const isConflicted = isStudentConflicted(student.id)}
+                  {@const conflictInfo = getStudentConflictInfo(student.id)}
+                  {@const isDisabled =
+                    isConflicted ||
+                    student.status === 'graduated' ||
+                    (maxStudentsAllowed > 0 &&
+                      !selectedStudents.includes(student.id) &&
+                      selectedStudents.length >= maxStudentsAllowed)}
+                  <div class="form-control">
+                    <label class="label cursor-pointer justify-start gap-3">
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm"
+                        checked={selectedStudents.includes(student.id)}
+                        disabled={isDisabled}
+                        onchange={() => toggleStudent(student.id)}
+                      />
+                      <span class="label-text {isDisabled ? 'opacity-50 italic' : ''}">
+                        {student.englishName}
+                        {#if student.status === 'graduated'}
+                          <span class="text-xs text-gray-400 ml-2">(Graduated)</span>
+                        {:else if isConflicted}
+                          <span class="text-xs text-warning ml-2">({conflictInfo})</span>
+                        {/if}
+                      </span>
+                    </label>
+                  </div>
+                {/if}
               {/each}
-              {#if filteredStudents.length === 0}
+
+              {#if filteredStudents.filter((s) => s.status !== 'graduated' || selectedStudents.includes(s.id)).length === 0}
                 <p class="text-sm text-base-content/100 text-center py-4">No matching students</p>
               {/if}
             </div>

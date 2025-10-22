@@ -15,7 +15,7 @@
   function getAvatarUrl(user) {
     if (!user || !user.avatar) return null
     // Use PocketBase SDK's getFileUrl method
-    return pb.files.getUrl(user, user.avatar)
+    return pb.files.getURL(user, user.avatar)
   }
 
   // Handle image error
@@ -81,6 +81,12 @@
               <span class="text-center text-xl">{current.user.username || current.user.email}</span>
               {#if current.user.role === 'admin'}
                 <span class="badge badge-primary badge-sm">Admin</span>
+              {/if}
+              {#if current.user.role === 'staff'}
+                <span class="badge badge-primary badge-sm">Staff</span>
+              {/if}
+              {#if current.user.role === 'teacher'}
+                <span class="badge badge-primary badge-sm">Teacher</span>
               {/if}
               <div class="avatar mt-2">
                 <div class="w-18 rounded-full ring ring-primary ring-offset-base-100 ring-offset-4">

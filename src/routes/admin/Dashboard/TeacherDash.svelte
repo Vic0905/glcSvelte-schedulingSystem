@@ -17,8 +17,8 @@
         Good day, <span class="text-primary italic font-semibold">{username}</span> <br />Let’s make the most of {today}.
       </h1>
       ```
-      <p class="py-6 text-gray-600 italic">Plan smart, schedule better, achieve more.</p>
-      <a href="#/current/scheduleinput" class="btn btn-primary">Get Started</a>
+      <p class="py-6 text-gray-600 italic">Plan your lessons. Inspire your students. Own the day.</p>
+      <a href="#/current/teacherview" class="btn btn-outline btn-primary">Get Started</a>
     </div>
   </div>
 </div>

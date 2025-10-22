@@ -1,39 +1,48 @@
 <script>
-  import { onMount, onDestroy } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
+  import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+
+  const stickyStyles = `
+    #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+    #studentGrid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
+    #studentGrid th:nth-child(1) { z-index: 25; }
+    #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+    #studentGrid th:nth-child(2) { z-index: 25; }
+    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+    #studentGrid th:nth-child(3) { z-index: 25; }
+    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 450px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+    #studentGrid th:nth-child(4) { z-index: 25; }
+  `
 
   let weekStart = $state(getWeekStart(new Date()))
   let studentGrid = null
   let timeslots = []
+  let isLoading = $state(false)
 
   function getWeekStart(date) {
     const d = new Date(date)
-    const day = d.getDay()
-    const diff = day === 0 ? -5 : day === 1 ? 1 : 2 - day
+    const diff = d.getDay() === 0 ? -5 : d.getDay() === 1 ? 1 : 2 - d.getDay()
     d.setDate(d.getDate() + diff)
     return d.toISOString().split('T')[0]
   }
 
   function getWeekDays(startDate) {
-    const days = []
     const start = new Date(startDate)
-    for (let i = 0; i < 4; i++) {
+    return Array.from({ length: 4 }, (_, i) => {
       const day = new Date(start)
       day.setDate(start.getDate() + i)
-      days.push(day.toISOString().split('T')[0])
-    }
-    return days
+      return day.toISOString().split('T')[0]
+    })
   }
 
   function getWeekRangeDisplay(startDate) {
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
-    const opt = { month: 'long', day: 'numeric' }
-    const opts = { month: 'long', day: 'numeric', year: 'numeric' }
-    return `${start.toLocaleDateString('en-US', opt)} - ${end.toLocaleDateString('en-US', opts)}`
+    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }
 
   const changeWeek = (weeks) => {
@@ -42,8 +51,6 @@
     weekStart = getWeekStart(d)
     loadStudentSchedule()
   }
-
-  const createBadge = (text, color) => h('span', { class: `badge ${color} badge-xs` }, text)
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
@@ -55,10 +62,10 @@
           'div',
           { class: 'flex flex-col gap-1 items-center' },
           [
-            createBadge(item.subject?.name || '', 'badge-primary p-3'),
-            createBadge(item.teacher?.name || '', 'badge-info'),
-            item.isGroup && createBadge('Group Class', 'badge-secondary'),
-            createBadge(item.room?.name || '', 'badge-error'),
+            h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name || ''),
+            h('span', { class: 'badge badge-info badge-xs' }, item.teacher?.name || ''),
+            item.isGroup && h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'),
+            h('span', { class: 'badge badge-error badge-xs' }, item.room?.name || ''),
           ].filter(Boolean)
         )
       )
@@ -66,13 +73,15 @@
   }
 
   async function loadStudentSchedule() {
+    if (isLoading) return
+    isLoading = true
+
     try {
       const weekDays = getWeekDays(weekStart)
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-      // Fetch all data in parallel
-      const [timeslotsData, students, individualBookings, groupBookings] = await Promise.all([
-        timeslots.length ? Promise.resolve(timeslots) : pb.collection('timeSlot').getFullList({ sort: 'start' }),
+      const [timeslotsData, allStudents, individualBookings, groupBookings] = await Promise.all([
+        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
         pb.collection('student').getFullList({ sort: 'name' }),
         pb.collection('advanceBooking').getList(1, 500, {
           expand: 'teacher,student,subject,room,timeslot',
@@ -82,12 +91,31 @@
         }),
       ])
 
+      // Track which students have bookings
+      const studentsWithBookings = new Set()
+
       timeslots = timeslotsData
 
-      // Build schedule lookup: student -> timeslot -> schedule
-      const scheduleMap = {}
+      // Process individual bookings to track students with bookings
+      for (const b of individualBookings.items) {
+        const studentId = b.expand?.student?.id
+        if (studentId) studentsWithBookings.add(studentId)
+      }
 
-      // Initialize all students
+      // Process group bookings to track students with bookings
+      for (const b of groupBookings.items) {
+        const students = Array.isArray(b.expand?.student) ? b.expand.student : []
+        students.forEach((student) => studentsWithBookings.add(student.id))
+      }
+
+      // Filter students: include non-graduated OR graduated students WITH bookings
+      const students = allStudents.filter((s) => {
+        if (s.status !== 'graduated') return true
+        return studentsWithBookings.has(s.id)
+      })
+
+      // Build schedule map
+      const scheduleMap = {}
       students.forEach((s) => {
         scheduleMap[s.id] = {
           student: s.name,
@@ -99,44 +127,35 @@
       })
 
       // Process individual bookings
-      individualBookings.items.forEach((b) => {
+      for (const b of individualBookings.items) {
         const studentId = b.expand?.student?.id
         const timeslotId = b.expand?.timeslot?.id
+        if (!studentId || !timeslotId || !scheduleMap[studentId]) continue
 
-        if (!studentId || !timeslotId || !scheduleMap[studentId]) return
-
-        // Only store first occurrence (represents entire week)
-        if (!scheduleMap[studentId].slots[timeslotId]) {
-          scheduleMap[studentId].slots[timeslotId] = {
-            subject: b.expand?.subject,
-            teacher: b.expand?.teacher,
-            room: b.expand?.room,
-            isGroup: false,
-          }
+        scheduleMap[studentId].slots[timeslotId] ??= {
+          subject: b.expand?.subject,
+          teacher: b.expand?.teacher,
+          room: b.expand?.room,
+          isGroup: false,
         }
-      })
+      }
 
       // Process group bookings
-      groupBookings.items.forEach((b) => {
+      for (const b of groupBookings.items) {
         const students = Array.isArray(b.expand?.student) ? b.expand.student : []
         const timeslotId = b.expand?.timeslot?.id
-
-        if (!timeslotId) return
+        if (!timeslotId) continue
 
         students.forEach((student) => {
           if (!scheduleMap[student.id]) return
-
-          // Only store first occurrence
-          if (!scheduleMap[student.id].slots[timeslotId]) {
-            scheduleMap[student.id].slots[timeslotId] = {
-              subject: b.expand?.subject,
-              teacher: b.expand?.teacher,
-              room: b.expand?.grouproom,
-              isGroup: true,
-            }
+          scheduleMap[student.id].slots[timeslotId] ??= {
+            subject: b.expand?.subject,
+            teacher: b.expand?.teacher,
+            room: b.expand?.grouproom,
+            isGroup: true,
           }
         })
-      })
+      }
 
       // Build table data
       const data = Object.values(scheduleMap)
@@ -152,22 +171,27 @@
           }),
         ])
 
-      // Build columns
       const columns = [
-        { name: 'Student', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'English Name', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Course', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Level', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        ...timeslots.map((t) => ({
-          name: `${t.start} - ${t.end}`,
-          width: '160px',
-          formatter: formatCell,
-        })),
+        { name: 'Student', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'English Name', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Course', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Level', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
       ]
 
-      // Initialize or update grid
       if (studentGrid) {
-        studentGrid.updateConfig({ data }).forceRender()
+        const wrapper = document.querySelector('#studentGrid .gridjs-wrapper')
+        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+
+        studentGrid.updateConfig({ columns, data }).forceRender()
+
+        requestAnimationFrame(() => {
+          const w = document.querySelector('#studentGrid .gridjs-wrapper')
+          if (w) {
+            w.scrollTop = scroll.top
+            w.scrollLeft = scroll.left
+          }
+        })
       } else {
         studentGrid = new Grid({
           columns,
@@ -180,32 +204,45 @@
             th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 align-middle text-center',
           },
+          style: { table: { 'border-collapse': 'collapse' } },
         }).render(document.getElementById('studentGrid'))
       }
     } catch (error) {
       console.error('Error loading schedule:', error)
+    } finally {
+      isLoading = false
     }
+  }
+
+  let reloadTimeout
+  const debouncedReload = () => {
+    clearTimeout(reloadTimeout)
+    reloadTimeout = setTimeout(loadStudentSchedule, 150)
   }
 
   onMount(() => {
     loadStudentSchedule()
-    pb.collection('advanceBooking').subscribe('*', loadStudentSchedule)
-    pb.collection('groupAdvanceBooking').subscribe('*', loadStudentSchedule)
+    pb.collection('advanceBooking').subscribe('*', debouncedReload)
+    pb.collection('groupAdvanceBooking').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
-    if (studentGrid) {
-      studentGrid.destroy()
-      studentGrid = null
-    }
+    clearTimeout(reloadTimeout)
+    studentGrid?.destroy()
+    studentGrid = null
     pb.collection('advanceBooking').unsubscribe()
     pb.collection('groupAdvanceBooking').unsubscribe()
   })
 </script>
 
+<svelte:head>
+  {@html `<style>${stickyStyles}</style>`}
+</svelte:head>
+
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-2xl font-bold text-primary text-center flex-1">Student View Table (Advance Template)</h2>
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+    <h2 class="text-center flex-1">Student View Table (Advance Template)</h2>
+    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
@@ -217,16 +254,15 @@
         bind:value={weekStart}
         class="input input-bordered input-sm w-40"
         onchange={loadStudentSchedule}
+        disabled={isLoading}
       />
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-50">
-      {getWeekRangeDisplay(weekStart)}
-    </h3>
+    <h3 class="text-xl font-semibold text-primary text-center mr-50">{getWeekRangeDisplay(weekStart)}</h3>
 
     <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
     </div>
   </div>
 
@@ -251,7 +287,5 @@
     </div>
   </div>
 
-  <div class="max-h-[700px] overflow-auto border rounded-lg">
-    <div id="studentGrid"></div>
-  </div>
+  <div id="studentGrid" class="border rounded-lg"></div>
 </div>

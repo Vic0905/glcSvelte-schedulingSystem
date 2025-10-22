@@ -80,7 +80,7 @@
       const weekDays = getWeekDays(weekStart)
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-      const [timeslotsData, students, individualSchedules, groupSchedules] = await Promise.all([
+      const [timeslotsData, allStudents, individualSchedules, groupSchedules] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
         pb.collection('student').getFullList({ sort: 'name' }),
         pb.collection('lessonSchedule').getList(1, 200, {
@@ -93,7 +93,28 @@
         }),
       ])
 
+      // Track which students have lessons this week
+      const studentsWithLessons = new Set()
+
       timeslots = timeslotsData
+
+      // Process individual schedules to track students with lessons
+      for (const s of individualSchedules.items) {
+        const studentId = s.expand?.student?.id
+        if (studentId) studentsWithLessons.add(studentId)
+      }
+
+      // Process group schedules to track students with lessons
+      for (const s of groupSchedules.items) {
+        const students = Array.isArray(s.expand?.student) ? s.expand.student : []
+        students.forEach((student) => studentsWithLessons.add(student.id))
+      }
+
+      // Filter students: include non-graduated OR graduated students WITH lessons this week
+      const students = allStudents.filter((s) => {
+        if (s.status !== 'graduated') return true
+        return studentsWithLessons.has(s.id)
+      })
 
       // Build schedule map
       const scheduleMap = {}

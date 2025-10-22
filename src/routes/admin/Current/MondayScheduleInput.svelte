@@ -3,67 +3,75 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { onDestroy, onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
-  import { booking, grid } from './schedule.svelte'
-  import ScheduleModal from './scheduleModal.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import MondayScheduleModal from './MondayScheduleModal.svelte'
 
   const stickyStyles = `
-    #grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
-    #grid th:nth-child(1), #grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #grid th:nth-child(1) { z-index: 25; }
-    #grid th:nth-child(2), #grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #grid th:nth-child(2) { z-index: 25; }
+    #monday-current-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+    #monday-current-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #monday-current-grid th:nth-child(1), #monday-current-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
+    #monday-current-grid th:nth-child(1) { z-index: 25; }
+    #monday-current-grid th:nth-child(2), #monday-current-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+    #monday-current-grid th:nth-child(2) { z-index: 25; }
   `
 
-  let weekStart = $state(getWeekStart(new Date()))
+  let currentMonday = $state('')
   let timeslots = []
   let rooms = []
+  let mondayCurrentGrid = null
+  let showModal = $state(false)
   let isCopying = $state(false)
   let isLoading = $state(false)
 
-  function getWeekStart(date) {
-    const d = new Date(date)
-    const diff = d.getDay() === 0 ? -5 : d.getDay() === 1 ? 1 : 2 - d.getDay()
-    d.setDate(d.getDate() + diff)
-    return d.toISOString().split('T')[0]
+  let mondaySchedule = $state({
+    id: '',
+    date: '',
+    room: { id: '', name: '' },
+    timeslot: { id: '', start: '', end: '' },
+    teacher: { id: '', name: '' },
+    student: { id: '', englishName: '' },
+    subject: { id: '', name: '' },
+    mode: 'create',
+    assignedTeacher: null,
+    originalStudentId: '',
+    originalTimeslotId: '',
+    originalRoomId: '',
+  })
+
+  const initializeMonday = () => {
+    const today = new Date()
+    const dow = today.getDay()
+    const monday = new Date(today)
+    monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1))
+    currentMonday = monday.toISOString().split('T')[0]
   }
 
-  function getWeekDays(startDate) {
-    const start = new Date(startDate)
-    return Array.from({ length: 4 }, (_, i) => {
-      const day = new Date(start)
-      day.setDate(start.getDate() + i)
-      return day.toISOString().split('T')[0]
+  const getMondayDisplay = (mondayDate) => {
+    const monday = new Date(mondayDate)
+    return monday.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
     })
   }
 
-  function getWeekRangeDisplay(startDate) {
-    const start = new Date(startDate)
-    const end = new Date(start)
-    end.setDate(start.getDate() + 3)
-    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-  }
-
   const changeWeek = (weeks) => {
-    const d = new Date(weekStart)
-    d.setDate(d.getDate() + weeks * 7)
-    weekStart = getWeekStart(d)
-    loadSchedules()
+    const monday = new Date(currentMonday)
+    monday.setDate(monday.getDate() + weeks * 7)
+    currentMonday = monday.toISOString().split('T')[0]
+    loadMondaySchedules()
   }
 
-  const copyToAdvanceBooking = async () => {
+  const copyToMondayAdvance = async () => {
     try {
-      const weekDays = getWeekDays(weekStart)
-      const dateFilter = `(${weekDays.map((d) => `date = "${d}"`).join(' || ')})`
-
-      const schedules = await pb.collection('lessonSchedule').getFullList({
-        filter: dateFilter,
+      const schedules = await pb.collection('mondayLessonSchedule').getFullList({
+        filter: `date = "${currentMonday}"`,
         expand: 'teacher,student,subject,room,timeslot',
       })
 
       if (schedules.length === 0) {
-        toast.info('No schedules found for this week', { position: 'bottom-right', duration: 3000 })
+        toast.info('No Monday schedules found', { position: 'bottom-right', duration: 3000 })
         return
       }
 
@@ -76,8 +84,8 @@
       const uniqueSchedules = Object.values(uniqueSchedulesMap)
 
       const existingBookings = await pb
-        .collection('advanceBooking')
-        .getFullList({ filter: dateFilter })
+        .collection('mondayAdvanceBooking')
+        .getFullList()
         .catch(() => [])
 
       const schedulesToCopy = uniqueSchedules.filter(
@@ -95,16 +103,16 @@
         toast.info('All schedules already copied!', {
           position: 'bottom-right',
           duration: 3000,
-          description: 'No new records to copy for this week',
+          description: 'No new records to copy',
         })
         return
       }
 
       const confirmMessage =
-        `Copy ${schedulesToCopy.length} unique schedule(s) to Advance Booking?\n\n` +
-        `Week: ${getWeekRangeDisplay(weekStart)}\n` +
+        `Copy ${schedulesToCopy.length} unique Monday schedule(s) to Monday Advance Booking?\n\n` +
+        `Date: ${getMondayDisplay(currentMonday)}\n` +
         (existingBookings.length > 0 ? `(${existingBookings.length} already exist, skipping duplicates)\n` : '') +
-        `This will create ${schedulesToCopy.length} advance booking record(s).`
+        `This will create ${schedulesToCopy.length} Monday advance booking record(s).`
 
       if (!confirm(confirmMessage)) return
 
@@ -112,25 +120,23 @@
 
       await Promise.all(
         schedulesToCopy.map((schedule) =>
-          pb.collection('advanceBooking').create({
-            date: schedule.date,
+          pb.collection('mondayAdvanceBooking').create({
             timeslot: schedule.timeslot,
             teacher: schedule.teacher,
             student: schedule.student,
             subject: schedule.subject,
             room: schedule.room,
-            status: 'pending',
           })
         )
       )
 
-      toast.success('Schedules copied successfully!', {
+      toast.success('Monday schedules copied successfully!', {
         position: 'bottom-right',
         duration: 3000,
-        description: `${schedulesToCopy.length} unique record(s) copied to Advance Booking`,
+        description: `${schedulesToCopy.length} unique record(s) copied to Monday Advance Booking`,
       })
     } catch (error) {
-      console.error('Error copying to advance booking:', error)
+      console.error('Error copying to Monday advance booking:', error)
       toast.error('Failed to copy schedules', {
         position: 'bottom-right',
         duration: 5000,
@@ -151,19 +157,16 @@
     ])
   }
 
-  async function loadSchedules() {
+  async function loadMondaySchedules() {
     if (isLoading) return
     isLoading = true
 
     try {
-      const weekDays = getWeekDays(weekStart)
-      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
-
       const [timeslotsData, roomsData, schedules] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
         rooms.length ? rooms : pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
-        pb.collection('lessonSchedule').getList(1, 200, {
-          filter: dateFilter,
+        pb.collection('mondayLessonSchedule').getList(1, 200, {
+          filter: `date = "${currentMonday}"`,
           expand: 'teacher,student,subject,room,timeslot',
         }),
       ])
@@ -198,7 +201,7 @@
           if (!students || Object.keys(students).length === 0) {
             row.push({
               label: 'Empty',
-              date: weekStart,
+              date: currentMonday,
               subject: { name: '', id: '' },
               teacher: { name: '', id: '' },
               student: { englishName: '', id: '' },
@@ -211,7 +214,7 @@
             row.push({
               label: 'Schedule',
               id: s.id,
-              date: weekStart,
+              date: currentMonday,
               subject: { name: s.expand?.subject?.name || '', id: s.expand?.subject?.id || '' },
               teacher: { name: s.expand?.teacher?.name || '', id: s.expand?.teacher?.id || '' },
               student: { englishName: s.expand?.student?.englishName || '', id: s.expand?.student?.id || '' },
@@ -245,21 +248,21 @@
         ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
       ]
 
-      if (grid.schedule) {
-        const wrapper = document.querySelector('#grid .gridjs-wrapper')
+      if (mondayCurrentGrid) {
+        const wrapper = document.querySelector('#monday-current-grid .gridjs-wrapper')
         const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
 
-        grid.schedule.updateConfig({ columns, data }).forceRender()
+        mondayCurrentGrid.updateConfig({ columns, data }).forceRender()
 
         requestAnimationFrame(() => {
-          const w = document.querySelector('#grid .gridjs-wrapper')
+          const w = document.querySelector('#monday-current-grid .gridjs-wrapper')
           if (w) {
             w.scrollTop = scroll.top
             w.scrollLeft = scroll.left
           }
         })
       } else {
-        grid.schedule = new Grid({
+        mondayCurrentGrid = new Grid({
           columns,
           data,
           search: false,
@@ -271,51 +274,33 @@
             td: 'border p-2 align-middle text-center',
           },
           style: { table: { 'border-collapse': 'collapse' } },
-        }).render(document.getElementById('grid'))
+        }).render(document.getElementById('monday-current-grid'))
 
-        grid.schedule.on('cellClick', (...args) => {
+        mondayCurrentGrid.on('cellClick', (...args) => {
           const cellData = args[1].data
           if (cellData.disabled) return
 
-          const endDate = new Date(weekStart)
-          endDate.setDate(endDate.getDate() + 3)
-
-          booking.data = {
-            ...booking.data,
-            ...cellData,
-            subject: cellData.subject ?? { name: '', id: '' },
-            teacher: cellData.teacher ?? { name: '', id: '' },
-            student: cellData.student ?? { englishName: '', id: '' },
-            room: cellData.room ?? { name: '', id: '' },
-            timeslot: cellData.timeslot ?? { id: '', start: '', end: '' },
-            startDate: weekStart,
-            endDate: endDate.toISOString().split('T')[0],
+          Object.assign(mondaySchedule, cellData, {
             mode: cellData.label === 'Empty' ? 'create' : 'edit',
-          }
+          })
 
           if (cellData.label === 'Empty' && cellData.assignedTeacher) {
-            booking.data.teacher = {
-              id: cellData.assignedTeacher.id,
-              name: cellData.assignedTeacher.name,
-            }
+            mondaySchedule.teacher.id = cellData.assignedTeacher.id
+            mondaySchedule.teacher.name = cellData.assignedTeacher.name
           }
 
-          if (booking.data.mode === 'edit') {
-            booking.data.originalStudentId = cellData.student?.id || ''
-            booking.data.originalTimeslotId = cellData.timeslot?.id || ''
-            booking.data.originalRoomId = cellData.room?.id || ''
+          if (mondaySchedule.mode === 'edit') {
+            mondaySchedule.originalStudentId = cellData.student?.id || ''
+            mondaySchedule.originalTimeslotId = cellData.timeslot?.id || ''
+            mondaySchedule.originalRoomId = cellData.room?.id || ''
           }
 
-          // Open the modal using the native dialog showModal method
-          const modal = document.getElementById('editModal')
-          if (modal) {
-            modal.showModal()
-          }
+          showModal = true
         })
       }
     } catch (error) {
-      console.error('Error loading schedules:', error)
-      toast.error('Failed to load schedules')
+      console.error('Error loading Monday schedules:', error)
+      toast.error('Failed to load Monday schedules')
     } finally {
       isLoading = false
     }
@@ -324,21 +309,20 @@
   let reloadTimeout
   const debouncedReload = () => {
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadSchedules, 150)
+    reloadTimeout = setTimeout(loadMondaySchedules, 150)
   }
 
   onMount(() => {
-    grid.schedule?.destroy()
-    grid.schedule = null
-    loadSchedules()
-    pb.collection('lessonSchedule').subscribe('*', debouncedReload)
+    initializeMonday()
+    loadMondaySchedules()
+    pb.collection('mondayLessonSchedule').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
     clearTimeout(reloadTimeout)
-    grid.schedule?.destroy()
-    grid.schedule = null
-    pb.collection('lessonSchedule').unsubscribe()
+    mondayCurrentGrid?.destroy()
+    mondayCurrentGrid = null
+    pb.collection('mondayLessonSchedule').unsubscribe()
   })
 </script>
 
@@ -346,24 +330,20 @@
   {@html `<style>${stickyStyles}</style>`}
 </svelte:head>
 
-<div class="p-2 sm:p-4 md:p-6 bg-base-100">
+<div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">MTM Schedule Table (Current)</h2>
+    <h2 class="text-center flex-1">Monday Schedule Table (Current)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-4">
-      <button
-        class="btn btn-success btn-sm flex items-center gap-2"
-        onclick={copyToAdvanceBooking}
-        disabled={isCopying}
-      >
+      <button class="btn btn-success btn-sm" onclick={copyToMondayAdvance} disabled={isCopying}>
         {#if isCopying}
           <span class="loading loading-spinner loading-sm"></span>
           Copying...
         {:else}
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -371,12 +351,12 @@
               d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
             />
           </svg>
-          Copy to Advance Booking
+          Copy to Monday Advance
         {/if}
       </button>
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-20">{getWeekRangeDisplay(weekStart)}</h3>
+    <h3 class="text-xl font-semibold text-primary text-center mr-20">{getMondayDisplay(currentMonday)}</h3>
 
     <div class="flex items-center gap-2">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
@@ -384,16 +364,28 @@
     </div>
   </div>
 
-  <div class="bg-base-200 rounded lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-2 text-xs">
-      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span>Subject</div>
-      <div class="flex gap-1"><span class="badge badge-info badge-xs"></span>Teacher</div>
-      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span>Student</div>
-      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span>Room</div>
+  <div class="p-3 bg-base-200 rounded-lg mb-4">
+    <div class="flex flex-wrap gap-4 text-xs">
+      <div class="flex items-center gap-1">
+        <div class="badge badge-primary badge-xs"></div>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-info badge-xs"></div>
+        <span>Teacher</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-neutral badge-xs"></div>
+        <span>Student</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-error badge-xs"></div>
+        <span>Room</span>
+      </div>
     </div>
   </div>
 
-  <div id="grid" class="border rounded-lg"></div>
+  <div id="monday-current-grid" class="border rounded-lg"></div>
 </div>
 
-<ScheduleModal on:refresh={loadSchedules} />
+<MondayScheduleModal bind:show={showModal} bind:mondaySchedule onSave={loadMondaySchedules} />

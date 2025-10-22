@@ -20,7 +20,7 @@
   })
 </script>
 
-{#if current.user}
+{#if current.user && current.user.role === 'admin'}
   <!-- admin routes -->
   <!-- <li><a href="/#/registration">Registration</a></li> -->
   <!-- <li>
@@ -74,8 +74,8 @@
     <details>
       <summary>Advance Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="#/advance/advanceschedule">MTM Table</a></li>
-        <li><a href="#/advance/advancegroupschedule">GRP Table</a></li>
+        <li><a href="#/advance/advanceschedule">MTM Input Table</a></li>
+        <li><a href="#/advance/advancegroupschedule">GRP Input Table</a></li>
         <li><a href="/#/advance/grouptemplate">GRP Room Template</a></li>
         <li><a href="/#/advance/studenttemplate">Student Template</a></li>
         <li><a href="/#/advance/teachertemplate">Teacher Template</a></li>
@@ -86,8 +86,8 @@
     <details>
       <summary>Current Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/current/scheduleinput">MTM Table</a></li>
-        <li><a href="/#/current/grouptable">GRP Table</a></li>
+        <li><a href="/#/current/scheduleinput">MTM Input Table</a></li>
+        <li><a href="/#/current/grouptable">GR Input Table</a></li>
         <li><a href="/#/current/groupview">GRP Room Table</a></li>
         <li><a href="/#/current/studentview">Student Table</a></li>
         <li><a href="/#/current/teacherview">Teacher Table</a></li>
@@ -103,6 +103,34 @@
         <li><a href="/#/management/group">Group</a></li>
         <li><a href="/#/management/student">Student</a></li>
         <li><a href="/#/management/teacher">Teacher</a></li>
+      </ul>
+    </details>
+  </li>
+{:else if current.user && current.user.role === 'teacher'}
+  <!-- teacher routes -->
+  <!-- <li>
+    <details>
+      <summary>Teacher Table</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/current/teacherview">Teacher Table</a></li>
+      </ul>
+    </details>
+  </li> -->
+{:else if current.user && current.user.role === 'staff'}
+  <!-- staff routes -->
+  <li>
+    <details>
+      <summary>Advance Booking</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/advance/mondayadvanceschedule">Advance Monday Table</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Current Booking</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/current/mondayscheduleinput">Monday Table</a></li>
       </ul>
     </details>
   </li>

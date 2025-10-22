@@ -350,7 +350,7 @@
   {@html `<style>${stickyStyles}</style>`}
 </svelte:head>
 
-<div class="p-6 bg-base-100">
+<div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
     <h2 class="text-center flex-1">GRP Schedule Table (Current)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
@@ -384,20 +384,11 @@
     </div>
   </div>
 
-  <div class="p-3 bg-base-200 rounded-lg mb-4">
-    <div class="flex flex-wrap gap-4 text-xs">
-      <div class="flex items-center gap-1">
-        <div class="badge badge-primary badge-xs"></div>
-        <span>Subject</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-info badge-xs"></div>
-        <span>Teacher</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-error badge-xs"></div>
-        <span>Group Room</span>
-      </div>
+  <div class="bg-base-200 rounded-lg m-2 p-2">
+    <div class="flex flex-wrap items-center gap-2 text-[11px]">
+      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
+      <div class="flex gap-1"><span class="badge badge-info badge-xs"></span> Teacher</div>
+      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Group Room</div>
     </div>
   </div>
 

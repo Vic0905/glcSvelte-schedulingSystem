@@ -17,6 +17,8 @@
   let csvPreview = []
   let isProcessing = false
   let grid
+  let selectedStudents = new Set()
+  let showBulkActions = false
 
   const statusOptions = ['new', 'old', 'graduated']
   const statusColors = {
@@ -31,6 +33,12 @@
     })
 
     const data = records.map((t) => [
+      h('input', {
+        type: 'checkbox',
+        className: 'checkbox checkbox-primary',
+        checked: selectedStudents.has(t.id),
+        onChange: (e) => toggleStudentSelection(t.id, e.target.checked),
+      }),
       t.name || '-',
       t.englishName,
       t.course,
@@ -60,7 +68,7 @@
       grid.updateConfig({ data }).forceRender()
     } else {
       grid = new Grid({
-        columns: ['Name', 'English Name', 'Course', 'Level', 'Status', 'Actions'],
+        columns: ['Select', 'Name', 'English Name', 'Course', 'Level', 'Status', 'Actions'],
         data,
         className: {
           table: 'w-full text-xs',
@@ -68,10 +76,22 @@
           td: 'p-2 border align-middle text-center',
         },
         pagination: false,
-        search: true,
         sort: true,
+        search: {
+          enabled: true,
+          selector: (cell, rowIndex, cellIndex) => {
+            // This makes search use the actual text for each cell
+            if (typeof cell === 'string') return cell
+            if (cell && cell.props && cell.props.children) {
+              return cell.props.children // e.g., "new", "old", "graduated"
+            }
+            return ''
+          },
+        },
       }).render(document.getElementById('studentGrid'))
     }
+
+    showBulkActions = selectedStudents.size > 0
   }
 
   async function saveStudent() {
@@ -279,6 +299,70 @@
     URL.revokeObjectURL(url)
   }
 
+  function toggleStudentSelection(id, checked) {
+    if (checked) {
+      selectedStudents.add(id)
+    } else {
+      selectedStudents.delete(id)
+    }
+    selectedStudents = selectedStudents
+    showBulkActions = selectedStudents.size > 0
+  }
+
+  function selectAll() {
+    pb.collection('student')
+      .getFullList()
+      .then((records) => {
+        selectedStudents = new Set(records.map((r) => r.id))
+        loadStudent()
+      })
+  }
+
+  function deselectAll() {
+    selectedStudents = new Set()
+    loadStudent()
+  }
+
+  async function bulkUpdateStatus(newStatus) {
+    if (selectedStudents.size === 0) {
+      toast.error('No students selected')
+      return
+    }
+
+    const statusLabel = newStatus.charAt(0).toUpperCase() + newStatus.slice(1)
+    if (!confirm(`Are you sure you want to change ${selectedStudents.size} student(s) to ${statusLabel}?`)) {
+      return
+    }
+
+    isProcessing = true
+    let successCount = 0
+    let errorCount = 0
+
+    try {
+      for (const studentId of selectedStudents) {
+        try {
+          await pb.collection('student').update(studentId, { status: newStatus })
+          successCount++
+        } catch (err) {
+          console.error(`Error updating student ${studentId}:`, err)
+          errorCount++
+        }
+      }
+
+      const message = `${successCount} student(s) updated to ${statusLabel}!${errorCount > 0 ? ` ${errorCount} failed.` : ''}`
+      toast.success(message)
+
+      selectedStudents = new Set()
+      showBulkActions = false
+      await loadStudent()
+    } catch (err) {
+      console.error(err)
+      toast.error('Error updating students')
+    } finally {
+      isProcessing = false
+    }
+  }
+
   onMount(loadStudent)
 </script>
 
@@ -290,6 +374,35 @@
       <button class="btn btn-outline btn-primary" onclick={openAddModal}> Add Student </button>
     </div>
   </div>
+
+  {#if showBulkActions}
+    <div class="mb-2 flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"
+          ><path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          ></path></svg
+        >
+        <span><strong>{selectedStudents.size}</strong> student(s) selected</span>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-sm btn-outline" onclick={selectAll}>Select All</button>
+        <button class="btn btn-sm btn-outline" onclick={deselectAll}>Deselect All</button>
+        <button class="btn btn-sm btn-success" onclick={() => bulkUpdateStatus('new')} disabled={isProcessing}>
+          Mark as New
+        </button>
+        <button class="btn btn-sm btn-info" onclick={() => bulkUpdateStatus('old')} disabled={isProcessing}>
+          Mark as Old
+        </button>
+        <button class="btn btn-sm btn-warning" onclick={() => bulkUpdateStatus('graduated')} disabled={isProcessing}>
+          {isProcessing ? 'Processing...' : 'Mark as Graduated'}
+        </button>
+      </div>
+    </div>
+  {/if}
 
   <div id="studentGrid" class="overflow-x-auto"></div>
 </div>
