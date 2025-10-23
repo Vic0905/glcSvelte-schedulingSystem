@@ -87,7 +87,7 @@
       <summary>Current Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/current/scheduleinput">MTM Input Table</a></li>
-        <li><a href="/#/current/grouptable">GR Input Table</a></li>
+        <li><a href="/#/current/grouptable">GRP Input Table</a></li>
         <li><a href="/#/current/groupview">GRP Room Table</a></li>
         <li><a href="/#/current/studentview">Student Table</a></li>
         <li><a href="/#/current/teacherview">Teacher Table</a></li>

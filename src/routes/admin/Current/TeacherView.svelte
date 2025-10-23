@@ -239,28 +239,13 @@
     </div>
   </div>
 
-  <div class="p-3 bg-base-200 rounded-lg mb-4">
-    <div class="flex flex-wrap gap-4 text-xs">
-      <div class="flex items-center gap-1">
-        <div class="badge badge-primary badge-xs"></div>
-        <span>Subject</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
-        <span>Student</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-success badge-xs"></div>
-        <span>New Student</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-secondary badge-xs"></div>
-        <span>Group Lesson</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-error badge-xs"></div>
-        <span>Room</span>
-      </div>
+  <div class="bg-base-200 rounded-lg m-2 p-2">
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
+      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span> Student</div>
+      <div class="flex gap-1"><span class="badge badge-Success badge-xs"></span> New Student</div>
+      <div class="flex gap-1"><span class="badge badge-secondary badge-xs"></span> Group Lesson</div>
+      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Room</div>
     </div>
   </div>
 
