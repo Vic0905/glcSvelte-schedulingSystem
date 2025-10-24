@@ -71,7 +71,7 @@
         columns: ['Select', 'Name', 'English Name', 'Course', 'Level', 'Status', 'Actions'],
         data,
         className: {
-          table: 'w-full text-sm',
+          table: 'w-full text-xs',
           th: 'bg-base-200 p-3 border text-center font-semibold',
           td: 'p-3 border align-middle text-center',
         },
@@ -361,11 +361,10 @@
 <div class="min-h-screen bg-base-200 py-8 px-4">
   <div class="max-w-7xl mx-auto">
     <!-- Header Section -->
-    <div class="bg-base-100 shadow-xl rounded-2xl p-8 mb-6">
+    <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-base-content mb-2">Student Management</h1>
-          <p class="text-base-content/60 text-sm">Manage and organize your student records efficiently</p>
+          <h1 class="text-3xl font-bold text-primary mb-2">Student Management</h1>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-secondary gap-2" onclick={openCSVModal}>
@@ -473,19 +472,13 @@
               <label class="label">
                 <span class="label-text font-medium">English Name <span class="text-error">*</span></span>
               </label>
-              <input
-                type="text"
-                bind:value={englishName}
-                placeholder="Enter English name"
-                class="input input-bordered w-full"
-                required
-              />
+              <input type="text" bind:value={englishName} class="input input-bordered w-full" required />
             </div>
             <div class="form-control">
               <label class="label">
                 <span class="label-text font-medium">Name (Optional)</span>
               </label>
-              <input type="text" bind:value={name} placeholder="Enter name" class="input input-bordered w-full" />
+              <input type="text" bind:value={name} class="input input-bordered w-full" />
             </div>
           </div>
         </div>
@@ -498,23 +491,13 @@
               <label class="label">
                 <span class="label-text font-medium">Course</span>
               </label>
-              <input
-                type="text"
-                bind:value={course}
-                placeholder="e.g., BSIT, BSCS"
-                class="input input-bordered w-full"
-              />
+              <input type="text" bind:value={course} class="input input-bordered w-full" />
             </div>
             <div class="form-control">
               <label class="label">
                 <span class="label-text font-medium">Level</span>
               </label>
-              <input
-                type="text"
-                bind:value={level}
-                placeholder="e.g., 1, 2, 3, 4"
-                class="input input-bordered w-full"
-              />
+              <input type="text" bind:value={level} class="input input-bordered w-full" />
             </div>
           </div>
         </div>

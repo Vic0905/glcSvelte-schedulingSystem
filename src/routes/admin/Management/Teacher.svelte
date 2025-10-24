@@ -48,7 +48,7 @@
         columns: ['Name', 'Actions'],
         data,
         className: {
-          table: 'w-full text-sm',
+          table: 'w-full text-xs',
           th: 'bg-base-200 p-3 border text-center font-semibold',
           td: 'p-3 border align-middle text-center',
         },
@@ -215,11 +215,10 @@
 <div class="min-h-screen bg-base-200 py-8 px-4">
   <div class="max-w-7xl mx-auto">
     <!-- Header Section -->
-    <div class="bg-base-100 shadow-xl rounded-2xl p-8 mb-6">
+    <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-base-content mb-2">Teacher Management</h1>
-          <p class="text-base-content/60 text-sm">Manage and organize your teaching staff efficiently</p>
+          <h1 class="text-3xl font-bold text-primary mb-2">Teacher Management</h1>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-secondary gap-2" onclick={openCSVModal}>
@@ -275,17 +274,10 @@
             <label class="label">
               <span class="label-text font-medium">Full Name <span class="text-error">*</span></span>
             </label>
-            <input
-              type="text"
-              bind:value={name}
-              placeholder="Enter teacher's full name"
-              class="input input-bordered w-full"
-              required
-            />
+            <input type="text" bind:value={name} class="input input-bordered w-full" required />
             <label class="label">
-              <span class="label-text-alt text-base-content/60">This name will appear in all records and schedules</span
-              >
-            </label>
+              <span class="label-text-alt text-base-content/60">This name will appear in all > </span></label
+            >
           </div>
         </div>
       </div>
@@ -365,6 +357,7 @@
 
         <!-- File Upload -->
         <div class="form-control">
+          <!-- svelte-ignore a11y_label_has_associated_control -->
           <label class="label">
             <span class="label-text font-medium">Select CSV File</span>
           </label>

@@ -84,7 +84,7 @@
           columns: ['Room Name', 'Assigned Teacher', 'Actions'],
           data,
           className: {
-            table: 'w-full text-sm',
+            table: 'w-full text-xs',
             th: 'bg-base-200 p-3 border text-center font-semibold',
             td: 'p-3 border align-middle text-center',
           },
@@ -170,14 +170,13 @@
 <div class="min-h-screen bg-base-200 py-8 px-4">
   <div class="max-w-7xl mx-auto">
     <!-- Header Section -->
-    <div class="bg-base-100 shadow-xl rounded-2xl p-8 mb-6">
+    <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-base-content mb-2">Room Management</h1>
-          <p class="text-base-content/60 text-sm">Manage classrooms and teacher assignments</p>
+          <h1 class="text-3xl font-bold text-primary mb-2">Room Management</h1>
         </div>
         <div class="flex gap-3">
-          <button class="btn btn-primary gap-2" onclick={openAddModal}>
+          <button class="btn btn-primary gap-2" on:click={openAddModal}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-5 w-5"
@@ -211,16 +210,12 @@
         <div class="bg-base-200 p-4 rounded-lg">
           <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Room Information</h4>
           <div class="form-control">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text font-medium">Room Name <span class="text-error">*</span></span>
             </label>
-            <input
-              type="text"
-              bind:value={name}
-              placeholder="Enter room name (e.g., Room 101, Science Lab)"
-              class="input input-bordered w-full"
-              required
-            />
+            <input type="text" bind:value={name} class="input input-bordered w-full" required />
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text-alt text-base-content/60">Unique identifier for this classroom</span>
             </label>
@@ -231,6 +226,7 @@
         <div class="bg-base-200 p-4 rounded-lg">
           <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Teacher Assignment</h4>
           <div class="form-control">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text font-medium">Assigned Teacher</span>
             </label>
@@ -256,6 +252,7 @@
                 </option>
               {/each}
             </select>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text-alt text-base-content/60"
                 >Teachers can only be assigned to one room or grouproom</span
@@ -299,12 +296,12 @@
       </div>
 
       <div class="modal-action mt-8">
-        <button class="btn btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
-        <button class="btn btn-primary" onclick={saveRoom}>
+        <button class="btn btn-ghost" on:click={() => (showModal = false)}>Cancel</button>
+        <button class="btn btn-primary" on:click={saveRoom}>
           {editingId ? 'Update Room' : 'Add Room'}
         </button>
       </div>
     </div>
-    <div class="modal-backdrop" onclick={() => (showModal = false)}></div>
+    <div class="modal-backdrop" on:click={() => (showModal = false)}></div>
   </div>
 {/if}

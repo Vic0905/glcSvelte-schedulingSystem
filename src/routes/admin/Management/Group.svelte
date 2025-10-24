@@ -88,7 +88,7 @@
           columns: ['Group Room Name', 'Assigned Teacher', 'Max Students', 'Actions'],
           data,
           className: {
-            table: 'w-full text-sm',
+            table: 'w-full text-xs',
             th: 'bg-base-200 p-3 border text-center font-semibold',
             td: 'p-3 border align-middle text-center',
           },
@@ -183,13 +183,10 @@
 <div class="min-h-screen bg-base-200 py-8 px-4">
   <div class="max-w-7xl mx-auto">
     <!-- Header Section -->
-    <div class="bg-base-100 shadow-xl rounded-2xl p-8 mb-6">
+    <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-base-content mb-2">Group Room Management</h1>
-          <p class="text-base-content/60 text-sm">
-            Manage group classrooms with capacity limits and teacher assignments
-          </p>
+          <h1 class="text-3xl font-bold text-primary mb-2">Group Room Management</h1>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-primary gap-2" onclick={openAddModal}>
@@ -230,13 +227,7 @@
               <label class="label">
                 <span class="label-text font-medium">Group Room Name <span class="text-error">*</span></span>
               </label>
-              <input
-                type="text"
-                bind:value={name}
-                placeholder="Enter group room name"
-                class="input input-bordered w-full"
-                required
-              />
+              <input type="text" bind:value={name} class="input input-bordered w-full" required />
               <label class="label">
                 <span class="label-text-alt text-base-content/60">Unique identifier for this group room</span>
               </label>
@@ -255,7 +246,7 @@
                 max="200"
               />
               <label class="label">
-                <span class="label-text-alt text-base-content/60">Capacity limit (1-200 students)</span>
+                <span class="label-text-alt text-base-content/60">Capacity limit (1-50 students)</span>
               </label>
             </div>
           </div>
