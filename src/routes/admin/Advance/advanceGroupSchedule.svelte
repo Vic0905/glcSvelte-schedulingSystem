@@ -313,4 +313,4 @@
 </div>
 
 <GroupAdvanceBookingModal bind:show={showAdvanceModal} bind:advanceGroupBooking onSave={loadAdvanceGroupBookings} />
-<GroupGoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} {getWeekDates} />
+<GroupGoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} />

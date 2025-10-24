@@ -44,9 +44,9 @@
         columns: ['Name', 'Actions'],
         data,
         className: {
-          table: 'w-full text-xs relative',
-          th: 'bg-slate-100 p-2 border text-center',
-          td: 'p-2 border align-middle text-center',
+          table: 'w-full text-sm',
+          th: 'bg-base-200 p-3 border text-center font-semibold',
+          td: 'p-3 border align-middle text-center',
         },
         pagination: {
           enabled: true,
@@ -60,17 +60,17 @@
 
   async function saveSubject() {
     if (!name.trim()) {
-      toast.error('Name is required')
+      toast.error('Subject name is required')
       return
     }
 
     try {
       if (editingId) {
         await pb.collection('subject').update(editingId, { name })
-        toast.success('Subject updated!')
+        toast.success('Subject updated successfully!')
       } else {
         await pb.collection('subject').create({ name })
-        toast.success('Subject added!')
+        toast.success('Subject added successfully!')
       }
 
       name = ''
@@ -93,7 +93,7 @@
     if (confirm('Are you sure you want to delete this subject?')) {
       try {
         await pb.collection('subject').delete(id)
-        toast.success('Subject deleted!')
+        toast.success('Subject deleted successfully!')
         await loadSubject()
       } catch (err) {
         console.error(err)
@@ -111,27 +111,76 @@
   onMount(loadSubject)
 </script>
 
-<div class="p-6 max-w-7xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
-  <div class="flex justify-between items-center mb-4">
-    <h2 class="text-2xl font-bold text-primary">Subject Management</h2>
-    <button class="btn btn-outline btn-primary" on:click={openAddModal}>Add Subject</button>
-  </div>
-
-  <div id="subjectGrid"></div>
-</div>
-
-<!-- Modal -->
-{#if showModal}
-  <dialog open class="modal modal-open">
-    <div class="modal-box">
-      <h3 class="font-bold text-lg mb-4">{editingId ? 'Edit' : 'Add'} Subject</h3>
-      <input type="text" bind:value={name} placeholder="Subject Name" class="input w-full mb-4" />
-      <div class="modal-action">
-        <button class="btn btn-outline btn-neutral" on:click={saveSubject}>
-          {editingId ? 'Update' : 'Save'}
-        </button>
-        <button class="btn btn-outline btn-neutral" on:click={() => (showModal = false)}>Cancel</button>
+<div class="min-h-screen bg-base-200 py-8 px-4">
+  <div class="max-w-7xl mx-auto">
+    <!-- Header Section -->
+    <div class="bg-base-100 shadow-xl rounded-2xl p-8 mb-6">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 class="text-3xl font-bold text-base-content mb-2">Subject Management</h1>
+          <p class="text-base-content/60 text-sm">Manage and organize academic subjects and courses</p>
+        </div>
+        <div class="flex gap-3">
+          <button class="btn btn-primary gap-2" on:click={openAddModal}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Subject
+          </button>
+        </div>
       </div>
     </div>
-  </dialog>
+
+    <!-- Data Grid Section -->
+    <div class="bg-base-100 shadow-xl rounded-2xl p-6">
+      <div id="subjectGrid" class="overflow-x-auto"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Modal -->
+{#if showModal}
+  <div class="modal modal-open">
+    <div class="modal-box max-w-lg">
+      <h3 class="font-bold text-2xl mb-6 text-base-content">{editingId ? 'Edit Subject' : 'Add New Subject'}</h3>
+
+      <div class="space-y-6">
+        <div class="bg-base-200 p-4 rounded-lg">
+          <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Subject Information</h4>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Subject Name <span class="text-error">*</span></span>
+            </label>
+            <input
+              type="text"
+              bind:value={name}
+              placeholder="Enter subject name (e.g., Mathematics, English)"
+              class="input input-bordered w-full"
+              required
+            />
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label class="label">
+              <span class="label-text-alt text-base-content/60">This name will appear in all schedules and records</span
+              >
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-action mt-8">
+        <button class="btn btn-ghost" on:click={() => (showModal = false)}>Cancel</button>
+        <button class="btn btn-primary" on:click={saveSubject}>
+          {editingId ? 'Update Subject' : 'Add Subject'}
+        </button>
+      </div>
+    </div>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="modal-backdrop" on:click={() => (showModal = false)}></div>
+  </div>
 {/if}

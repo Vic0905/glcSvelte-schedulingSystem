@@ -114,7 +114,7 @@
     const groupBooking = otherGroupBookings.find((b) => Array.isArray(b.student) && b.student.includes(studentId))
     if (groupBooking?.expand) {
       const studentCount = Array.isArray(groupBooking.student) ? groupBooking.student.length : 0
-      return `Group lesson with ${groupBooking.expand.teacher?.name || 'Unknown Teacher'} (${studentCount} students)`
+      return `Group lesson with ${groupBooking.expand.teacher?.name || 'Unknown Teacher'}`
     }
 
     return 'Already booked'
@@ -374,7 +374,7 @@
                         disabled={isDisabled}
                         onchange={() => toggleStudent(student.id)}
                       />
-                      <span class="label-text {isDisabled ? 'opacity-50 italic' : ''}">
+                      <span class="label-text {isDisabled ? 'italic' : ''}">
                         {student.englishName}
                         {#if student.status === 'graduated'}
                           <span class="text-xs text-gray-400 ml-2">(Graduated)</span>

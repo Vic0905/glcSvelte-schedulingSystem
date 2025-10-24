@@ -2,11 +2,9 @@
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  let { show = $bindable(false), getWeekRange, currentWeekStart, getWeekDates } = $props()
+  let { show = $bindable(false), getWeekRange, currentWeekStart } = $props()
 
-  let targetWeekStart = $state('')
-  let copying = $state(false)
-  let copyMode = $state('current') // 'current' or 'custom'
+  let isGoingLive = $state(false)
 
   // Loading animation states
   let loadingProgress = $state({
@@ -22,37 +20,9 @@
     currentBooking: '',
   })
 
-  // Initialize target week to current week when modal opens
-  $effect(() => {
-    if (show && !targetWeekStart) {
-      targetWeekStart = currentWeekStart
-    }
-  })
-
-  function closeModal() {
-    show = false
-    targetWeekStart = ''
-    copyMode = 'current'
-    loadingProgress.show = false
-  }
-
-  function setTargetToCurrentWeek() {
-    targetWeekStart = currentWeekStart
-    copyMode = 'current'
-  }
-
-  function setCustomWeek() {
-    copyMode = 'custom'
-  }
-
   const goLiveWithGroupBookings = async () => {
-    if (!targetWeekStart) {
-      toast.error('Please select a target week')
-      return
-    }
-
     try {
-      copying = true
+      isGoingLive = true
 
       // Initialize loading progress
       loadingProgress.show = true
@@ -62,12 +32,17 @@
       loadingProgress.skippedSchedules = 0
       loadingProgress.conflicts = []
 
-      // ✅ Force-generate Tuesday–Friday dates for this week
+      // ✅ Generate Tuesday–Friday dates correctly
       const weekDates = []
-      const start = new Date(targetWeekStart)
+      const start = new Date(currentWeekStart)
+      // Get to Sunday of this week (day 0)
+      const sunday = new Date(start)
+      sunday.setDate(start.getDate() - start.getDay())
+
+      // Generate Tuesday (2) through Friday (5)
       for (let i = 2; i <= 5; i++) {
-        const date = new Date(start)
-        date.setDate(start.getDate() + (i - start.getDay()))
+        const date = new Date(sunday)
+        date.setDate(sunday.getDate() + i)
         weekDates.push(date.toISOString().split('T')[0])
       }
 
@@ -214,16 +189,12 @@
       toast.error(`Failed to publish group schedules: ${error.message}`)
       loadingProgress.show = false
     } finally {
-      copying = false
+      isGoingLive = false
     }
   }
 
-  // Helper function to change target week
-  const changeTargetWeek = (weeks) => {
-    const monday = new Date(targetWeekStart)
-    monday.setDate(monday.getDate() + weeks * 7)
-    targetWeekStart = monday.toISOString().split('T')[0]
-    copyMode = 'custom'
+  const closeModal = () => {
+    show = false
   }
 </script>
 
@@ -295,101 +266,27 @@
   </div>
 {/if}
 
-{#if show && !loadingProgress.show}
+{#if show}
   <div class="modal modal-open">
-    <div class="modal-box max-w-2xl w-full space-y-6">
-      <h3 class="text-xl font-bold text-center">🚀 Go Live - Group Schedule Templates</h3>
-
-      <div class="space-y-4">
-        <p class="text-sm text-base-content/80">
-          Copy your advance group schedule templates to create actual schedules for a specific week. This will create
-          group lesson schedules for Tuesday through Friday.
-        </p>
-
-        <!-- Current Week Option -->
-        <div class="form-control">
-          <label class="label cursor-pointer">
-            <span class="label-text font-medium">Current Week ({getWeekRange(currentWeekStart)})</span>
-            <input
-              type="radio"
-              name="copyMode"
-              class="radio radio-primary"
-              checked={copyMode === 'current'}
-              onchange={setTargetToCurrentWeek}
-            />
-          </label>
-        </div>
-
-        <!-- Custom Week Option -->
-        <div class="form-control">
-          <label class="label cursor-pointer">
-            <span class="label-text font-medium">Custom Week</span>
-            <input
-              type="radio"
-              name="copyMode"
-              class="radio radio-primary"
-              checked={copyMode === 'custom'}
-              onchange={setCustomWeek}
-            />
-          </label>
-        </div>
-
-        {#if copyMode === 'custom'}
-          <div class="ml-6 space-y-3">
-            <div class="flex items-center gap-2">
-              <button class="btn btn-outline btn-sm" onclick={() => changeTargetWeek(-1)}>
-                &larr; Previous Week
-              </button>
-              <input
-                type="date"
-                bind:value={targetWeekStart}
-                class="input input-bordered input-sm flex-1"
-                placeholder="Select Monday of target week"
-              />
-              <button class="btn btn-outline btn-sm" onclick={() => changeTargetWeek(1)}> Next Week &rarr; </button>
-            </div>
-            {#if targetWeekStart}
-              <p class="text-sm text-base-content/60">
-                Target week: {getWeekRange(targetWeekStart)}
-              </p>
-            {/if}
-          </div>
-        {/if}
-
-        <!-- Warning -->
-        <div class="alert alert-warning">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="stroke-current shrink-0 h-6 w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.728-.833-2.498 0L4.316 15.5c-.77.833.192 2.5 1.732 2.5z"
-            />
-          </svg>
-          <div>
-            <h4 class="font-medium">Warning</h4>
-            <p class="text-sm">
-              This action will create new group lesson schedules for Tuesday to Friday. Existing schedules for the same
-              time slots will be skipped to preserve your manual changes.
-            </p>
-          </div>
-        </div>
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Publish Week to Live Schedule</h3>
+      <p class="py-4">
+        Publish all complete group bookings for <strong>{getWeekRange(currentWeekStart)}</strong>?
+      </p>
+      <div class="alert alert-warning">
+        <span
+          >⚠️ This will create Tuesday to Friday group schedules for each template and make them visible to students and
+          teachers</span
+        >
       </div>
-
-      <!-- Action Buttons -->
       <div class="modal-action">
-        <button class="btn btn-primary" onclick={goLiveWithGroupBookings} disabled={copying || !targetWeekStart}>
-          {copying ? 'Processing...' : '🚀 Go Live'}
-          {#if copying}
+        <button class="btn" onclick={closeModal}>Cancel</button>
+        <button class="btn btn-primary" onclick={goLiveWithGroupBookings} disabled={isGoingLive}>
+          {#if isGoingLive}
             <span class="loading loading-spinner loading-sm"></span>
           {/if}
+          {isGoingLive ? 'Publishing...' : '🚀 Publish'}
         </button>
-        <button class="btn" onclick={closeModal} disabled={copying}>Cancel</button>
       </div>
     </div>
   </div>

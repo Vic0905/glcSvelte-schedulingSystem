@@ -159,7 +159,7 @@
         })
       }
 
-      // Build table data
+      // Build table data this fucntino wille nablet hef fcuntonality of creaitng a more robut fun
       const data = Object.values(scheduleMap)
         .sort((a, b) => a.student.localeCompare(b.student, undefined, { numeric: true }))
         .map((entry) => [

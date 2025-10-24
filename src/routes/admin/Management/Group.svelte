@@ -7,13 +7,13 @@
 
   let name = ''
   let selectedTeacherId = ''
-  let maxStudents = 30 // Default max students
+  let maxStudents = 30
   let editingId = null
   let showModal = false
   let grid
   let teachers = []
-  let groupRooms = [] // Store all group rooms to check teacher assignments
-  let rooms = [] // Store all regular rooms for cross-collection checking
+  let groupRooms = []
+  let rooms = []
 
   async function loadTeachers() {
     try {
@@ -27,7 +27,6 @@
     }
   }
 
-  // Load regular rooms for cross-collection checking
   async function loadRooms() {
     try {
       const records = await pb.collection('room').getFullList({
@@ -41,19 +40,11 @@
     }
   }
 
-  // Function to check if a teacher is already assigned to another room or grouproom
   function isTeacherAssigned(teacherId) {
     if (!teacherId) return false
-
-    // If we're editing, exclude the current group room from the check
     const groupRoomsToCheck = editingId ? groupRooms.filter((room) => room.id !== editingId) : groupRooms
-
-    // Check if teacher is assigned to any grouproom
     const assignedToGrouproom = groupRoomsToCheck.some((room) => room.teacher === teacherId)
-
-    // Check if teacher is assigned to any regular room
     const assignedToRoom = rooms.some((room) => room.teacher === teacherId)
-
     return assignedToGrouproom || assignedToRoom
   }
 
@@ -61,16 +52,15 @@
     try {
       const records = await pb.collection('grouproom').getFullList({
         sort: '-created',
-        expand: 'teacher', // This will expand the teacher relation
+        expand: 'teacher',
       })
 
-      // Store group rooms for teacher assignment checking
       groupRooms = records
 
       const data = records.map((t) => [
         t.name,
         t.expand?.teacher?.name || 'No teacher assigned',
-        t.maxstudents || 'Not set', // Display max students
+        t.maxstudents || 'Not set',
         h('div', { className: 'flex gap-2 justify-center' }, [
           h(
             'button',
@@ -83,7 +73,7 @@
           h(
             'button',
             {
-              className: 'btn btn-outline btn-sm btn-error ',
+              className: 'btn btn-outline btn-sm btn-error',
               onClick: () => deleteGroupRoom(t.id),
             },
             'Delete'
@@ -98,9 +88,9 @@
           columns: ['Group Room Name', 'Assigned Teacher', 'Max Students', 'Actions'],
           data,
           className: {
-            table: 'w-full text-xs',
-            th: 'bg-slate-100 p-2 border text-center',
-            td: 'p-2 border align-middle text-center',
+            table: 'w-full text-sm',
+            th: 'bg-base-200 p-3 border text-center font-semibold',
+            td: 'p-3 border align-middle text-center',
           },
           pagination: {
             enabled: true,
@@ -130,21 +120,21 @@
     try {
       const groupRoomData = {
         name: name.trim(),
-        teacher: selectedTeacherId || null, // If no teacher selected, set to null
-        maxstudents: maxStudents || null, // Add max students field
+        teacher: selectedTeacherId || null,
+        maxstudents: maxStudents || null,
       }
 
       if (editingId) {
         await pb.collection('grouproom').update(editingId, groupRoomData)
-        toast.success('Group room updated!')
+        toast.success('Group room updated successfully!')
       } else {
         await pb.collection('grouproom').create(groupRoomData)
-        toast.success('Group room added!')
+        toast.success('Group room added successfully!')
       }
 
       name = ''
       selectedTeacherId = ''
-      maxStudents = 30 // Reset to default
+      maxStudents = 30
       editingId = null
       showModal = false
       await loadGroupRoom()
@@ -157,7 +147,7 @@
   function openEdit(groupRoom) {
     name = groupRoom.name
     selectedTeacherId = groupRoom.teacher || ''
-    maxStudents = groupRoom.maxstudents || 30 // Load existing max students or default
+    maxStudents = groupRoom.maxstudents || 30
     editingId = groupRoom.id
     showModal = true
   }
@@ -166,7 +156,7 @@
     if (confirm('Are you sure you want to delete this group room?')) {
       try {
         await pb.collection('grouproom').delete(id)
-        toast.success('Group room deleted!')
+        toast.success('Group room deleted successfully!')
         await loadGroupRoom()
       } catch (err) {
         console.error('Error deleting group room:', err)
@@ -178,7 +168,7 @@
   function openAddModal() {
     name = ''
     selectedTeacherId = ''
-    maxStudents = 30 // Default value
+    maxStudents = 30
     editingId = null
     showModal = true
   }
@@ -190,97 +180,167 @@
   })
 </script>
 
-<div class="p-6 max-w-7xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
-  <div class="flex justify-between items-center mb-4">
-    <h2 class="text-2xl font-bold text-primary">Group Room Management</h2>
-    <button class="btn btn-outline btn-primary" onclick={openAddModal}>Add Room</button>
-  </div>
+<div class="min-h-screen bg-base-200 py-8 px-4">
+  <div class="max-w-7xl mx-auto">
+    <!-- Header Section -->
+    <div class="bg-base-100 shadow-xl rounded-2xl p-8 mb-6">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 class="text-3xl font-bold text-base-content mb-2">Group Room Management</h1>
+          <p class="text-base-content/60 text-sm">
+            Manage group classrooms with capacity limits and teacher assignments
+          </p>
+        </div>
+        <div class="flex gap-3">
+          <button class="btn btn-primary gap-2" onclick={openAddModal}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Group Room
+          </button>
+        </div>
+      </div>
+    </div>
 
-  <div id="groupRoomGrid" class="overflow-x-auto"></div>
+    <!-- Data Grid Section -->
+    <div class="bg-base-100 shadow-xl rounded-2xl p-6">
+      <div id="groupRoomGrid" class="overflow-x-auto"></div>
+    </div>
+  </div>
 </div>
 
 <!-- Add/Edit Group Room Modal -->
 {#if showModal}
   <div class="modal modal-open">
-    <div class="modal-box">
-      <h3 class="font-bold text-lg mb-4">{editingId ? 'Edit' : 'Add'} Group Room</h3>
+    <div class="modal-box max-w-2xl">
+      <h3 class="font-bold text-2xl mb-6 text-base-content">{editingId ? 'Edit Group Room' : 'Add New Group Room'}</h3>
 
-      <div class="form-control mb-4">
-        <!-- svelte-ignore a11y_label_has_associated_control -->
-        <label class="label">
-          <span class="label-text">Group Room Name</span>
-        </label>
-        <input type="text" bind:value={name} placeholder="Enter group room name" class="input input-bordered w-full" />
-      </div>
+      <div class="space-y-6">
+        <!-- Room Information -->
+        <div class="bg-base-200 p-4 rounded-lg">
+          <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Room Information</h4>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Group Room Name <span class="text-error">*</span></span>
+              </label>
+              <input
+                type="text"
+                bind:value={name}
+                placeholder="Enter group room name"
+                class="input input-bordered w-full"
+                required
+              />
+              <label class="label">
+                <span class="label-text-alt text-base-content/60">Unique identifier for this group room</span>
+              </label>
+            </div>
 
-      <div class="form-control mb-4">
-        <!-- svelte-ignore a11y_label_has_associated_control -->
-        <label class="label">
-          <span class="label-text">Maximum Students</span>
-        </label>
-        <input
-          type="number"
-          bind:value={maxStudents}
-          placeholder="Enter maximum number of students"
-          class="input input-bordered w-full"
-          min="1"
-          max="200"
-        />
-      </div>
-
-      <div class="form-control mb-4">
-        <!-- svelte-ignore a11y_label_has_associated_control -->
-        <label class="label">
-          <span class="label-text">Assign Teacher</span>
-        </label>
-        <select bind:value={selectedTeacherId} class="select select-bordered w-full">
-          <option value="">-- No teacher assigned --</option>
-          {#each teachers as teacher}
-            {@const assignedToOtherGrouproom = groupRooms.find(
-              (room) => room.teacher === teacher.id && room.id !== editingId
-            )}
-            {@const assignedToRoom = rooms.find((room) => room.teacher === teacher.id)}
-            {@const isAssigned = assignedToOtherGrouproom || assignedToRoom}
-            <option
-              value={teacher.id}
-              disabled={isAssigned}
-              class={isAssigned ? 'text-gray-400 cursor-not-allowed' : ''}
-            >
-              {teacher.name}
-              {#if assignedToOtherGrouproom}
-                (Already assigned to grouproom: {assignedToOtherGrouproom.name})
-              {:else if assignedToRoom}
-                (Already assigned to room: {assignedToRoom.name})
-              {/if}
-            </option>
-          {/each}
-        </select>
-        {#if selectedTeacherId && isTeacherAssigned(selectedTeacherId)}
-          {@const assignedGrouproom = groupRooms.find(
-            (room) => room.teacher === selectedTeacherId && room.id !== editingId
-          )}
-          {@const assignedRoom = rooms.find((room) => room.teacher === selectedTeacherId)}
-          <div class="label">
-            <span class="label-text-alt text-warning">
-              ⚠️ This teacher is already assigned to
-              {#if assignedGrouproom}
-                grouproom: {assignedGrouproom.name}
-              {:else if assignedRoom}
-                room: {assignedRoom.name}
-              {:else}
-                another room/grouproom
-              {/if}
-            </span>
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Maximum Students</span>
+              </label>
+              <input
+                type="number"
+                bind:value={maxStudents}
+                placeholder="Enter max students"
+                class="input input-bordered w-full"
+                min="1"
+                max="200"
+              />
+              <label class="label">
+                <span class="label-text-alt text-base-content/60">Capacity limit (1-200 students)</span>
+              </label>
+            </div>
           </div>
-        {/if}
+        </div>
+
+        <!-- Teacher Assignment -->
+        <div class="bg-base-200 p-4 rounded-lg">
+          <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Teacher Assignment</h4>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Assigned Teacher</span>
+            </label>
+            <select bind:value={selectedTeacherId} class="select select-bordered w-full">
+              <option value="">-- No teacher assigned --</option>
+              {#each teachers as teacher}
+                {@const assignedToOtherGrouproom = groupRooms.find(
+                  (room) => room.teacher === teacher.id && room.id !== editingId
+                )}
+                {@const assignedToRoom = rooms.find((room) => room.teacher === teacher.id)}
+                {@const isAssigned = assignedToOtherGrouproom || assignedToRoom}
+                <option
+                  value={teacher.id}
+                  disabled={isAssigned}
+                  class={isAssigned ? 'text-gray-400 cursor-not-allowed' : ''}
+                >
+                  {teacher.name}
+                  {#if assignedToOtherGrouproom}
+                    (Already in grouproom: {assignedToOtherGrouproom.name})
+                  {:else if assignedToRoom}
+                    (Already in room: {assignedToRoom.name})
+                  {/if}
+                </option>
+              {/each}
+            </select>
+            <label class="label">
+              <span class="label-text-alt text-base-content/60"
+                >Teachers can only be assigned to one room or grouproom</span
+              >
+            </label>
+          </div>
+
+          {#if selectedTeacherId && isTeacherAssigned(selectedTeacherId)}
+            {@const assignedGrouproom = groupRooms.find(
+              (room) => room.teacher === selectedTeacherId && room.id !== editingId
+            )}
+            {@const assignedRoom = rooms.find((room) => room.teacher === selectedTeacherId)}
+            <div class="alert alert-warning mt-4">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                class="stroke-current shrink-0 w-6 h-6"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <div>
+                <div class="font-semibold">Teacher Already Assigned</div>
+                <div class="text-sm">
+                  This teacher is currently assigned to
+                  {#if assignedGrouproom}
+                    grouproom <strong>{assignedGrouproom.name}</strong>
+                  {:else if assignedRoom}
+                    room <strong>{assignedRoom.name}</strong>
+                  {:else}
+                    another location
+                  {/if}
+                </div>
+              </div>
+            </div>
+          {/if}
+        </div>
       </div>
 
-      <div class="modal-action">
-        <button class="btn btn-outline btn-primary" onclick={saveGroupRoom}>
-          {editingId ? 'Update' : 'Save'}
+      <div class="modal-action mt-8">
+        <button class="btn btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
+        <button class="btn btn-primary" onclick={saveGroupRoom}>
+          {editingId ? 'Update Group Room' : 'Add Group Room'}
         </button>
-        <button class="btn btn-outline btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
       </div>
     </div>
+    <div class="modal-backdrop" onclick={() => (showModal = false)}></div>
   </div>
 {/if}

@@ -71,19 +71,18 @@
         columns: ['Select', 'Name', 'English Name', 'Course', 'Level', 'Status', 'Actions'],
         data,
         className: {
-          table: 'w-full text-xs',
-          th: 'bg-slate-100 p-2 border text-center',
-          td: 'p-2 border align-middle text-center',
+          table: 'w-full text-sm',
+          th: 'bg-base-200 p-3 border text-center font-semibold',
+          td: 'p-3 border align-middle text-center',
         },
         pagination: false,
         sort: true,
         search: {
           enabled: true,
           selector: (cell, rowIndex, cellIndex) => {
-            // This makes search use the actual text for each cell
             if (typeof cell === 'string') return cell
             if (cell && cell.props && cell.props.children) {
-              return cell.props.children // e.g., "new", "old", "graduated"
+              return cell.props.children
             }
             return ''
           },
@@ -105,13 +104,12 @@
 
       if (editingId) {
         await pb.collection('student').update(editingId, payload)
-        toast.success('Student updated!')
+        toast.success('Student updated successfully!')
       } else {
         await pb.collection('student').create(payload)
-        toast.success('Student added!')
+        toast.success('Student added successfully!')
       }
 
-      // Clear form
       name = ''
       englishName = ''
       course = ''
@@ -122,7 +120,7 @@
       await loadStudent()
     } catch (err) {
       console.error(err)
-      toast.error('Error saving Student')
+      toast.error('Error saving student')
     }
   }
 
@@ -140,11 +138,11 @@
     if (confirm('Are you sure you want to delete this student?')) {
       try {
         await pb.collection('student').delete(id)
-        toast.success('Student deleted!')
+        toast.success('Student deleted successfully!')
         await loadStudent()
       } catch (err) {
         console.error(err)
-        toast.error('Failed to delete Student')
+        toast.error('Failed to delete student')
       }
     }
   }
@@ -184,13 +182,11 @@
       const text = e.target.result
       const lines = text.split('\n').filter((line) => line.trim())
 
-      // Skip header row and parse student data
       const students = []
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim()
         if (!line) continue
 
-        // Parse CSV line (handles quoted fields)
         const values = parseCSVLine(line)
 
         if (values.length >= 1) {
@@ -204,7 +200,6 @@
         }
       }
 
-      // Only require English Name to be filled
       csvPreview = students.filter((s) => s.englishName.trim())
     }
     reader.readAsText(file)
@@ -244,7 +239,6 @@
     let errorCount = 0
 
     try {
-      // Get all existing students
       const existingStudents = await pb.collection('student').getFullList()
       const existingEnglishNames = existingStudents
         .map((s) => (s.englishName ? s.englishName.toLowerCase().trim() : ''))
@@ -252,7 +246,6 @@
 
       for (const student of csvPreview) {
         try {
-          // Check if English Name already exists (case-insensitive)
           if (student.englishName && existingEnglishNames.includes(student.englishName.toLowerCase().trim())) {
             console.log(`Skipping duplicate English Name: ${student.englishName}`)
             skippedCount++
@@ -262,7 +255,6 @@
           await pb.collection('student').create(student)
           successCount++
 
-          // Add to existing list to prevent duplicates within the same import
           if (student.englishName) {
             existingEnglishNames.push(student.englishName.toLowerCase().trim())
           }
@@ -366,179 +358,315 @@
   onMount(loadStudent)
 </script>
 
-<div class="p-6 max-w-7xl mx-auto bg-base-100 shadow-lg rounded-xl mt-10">
-  <div class="flex justify-between items-center mb-4">
-    <h2 class="text-2xl font-bold text-primary">Student Management</h2>
-    <div class="flex gap-2">
-      <button class="btn btn-outline btn-secondary" onclick={openCSVModal}> Import CSV </button>
-      <button class="btn btn-outline btn-primary" onclick={openAddModal}> Add Student </button>
+<div class="min-h-screen bg-base-200 py-8 px-4">
+  <div class="max-w-7xl mx-auto">
+    <!-- Header Section -->
+    <div class="bg-base-100 shadow-xl rounded-2xl p-8 mb-6">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 class="text-3xl font-bold text-base-content mb-2">Student Management</h1>
+          <p class="text-base-content/60 text-sm">Manage and organize your student records efficiently</p>
+        </div>
+        <div class="flex gap-3">
+          <button class="btn btn-secondary gap-2" onclick={openCSVModal}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+              />
+            </svg>
+            Import CSV
+          </button>
+          <button class="btn btn-primary gap-2" onclick={openAddModal}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Student
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bulk Actions Bar -->
+    {#if showBulkActions}
+      <div class="bg-base-100 shadow-lg rounded-xl p-4 mb-6 border-l-4 border-primary">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div class="flex items-center gap-3">
+            <div class="bg-primary/10 p-2 rounded-lg">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-6 w-6 text-primary"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </div>
+            <div>
+              <p class="font-semibold text-base-content">
+                <strong>{selectedStudents.size}</strong> student(s) selected
+              </p>
+              <p class="text-sm text-base-content/60">Choose an action to apply to all selected students</p>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button class="btn btn-sm btn-ghost" onclick={selectAll}>Select All</button>
+            <button class="btn btn-sm btn-ghost" onclick={deselectAll}>Clear</button>
+            <div class="divider divider-horizontal"></div>
+            <button class="btn btn-sm btn-success" onclick={() => bulkUpdateStatus('new')} disabled={isProcessing}>
+              Mark as New
+            </button>
+            <button class="btn btn-sm btn-info" onclick={() => bulkUpdateStatus('old')} disabled={isProcessing}>
+              Mark as Old
+            </button>
+            <button
+              class="btn btn-sm btn-warning"
+              onclick={() => bulkUpdateStatus('graduated')}
+              disabled={isProcessing}
+            >
+              {isProcessing ? 'Processing...' : 'Mark as Graduated'}
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Data Grid Section -->
+    <div class="bg-base-100 shadow-xl rounded-2xl p-6">
+      <div id="studentGrid" class="overflow-x-auto"></div>
     </div>
   </div>
-
-  {#if showBulkActions}
-    <div class="mb-2 flex justify-between items-center">
-      <div class="flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"
-          ><path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          ></path></svg
-        >
-        <span><strong>{selectedStudents.size}</strong> student(s) selected</span>
-      </div>
-      <div class="flex gap-2">
-        <button class="btn btn-sm btn-outline" onclick={selectAll}>Select All</button>
-        <button class="btn btn-sm btn-outline" onclick={deselectAll}>Deselect All</button>
-        <button class="btn btn-sm btn-success" onclick={() => bulkUpdateStatus('new')} disabled={isProcessing}>
-          Mark as New
-        </button>
-        <button class="btn btn-sm btn-info" onclick={() => bulkUpdateStatus('old')} disabled={isProcessing}>
-          Mark as Old
-        </button>
-        <button class="btn btn-sm btn-warning" onclick={() => bulkUpdateStatus('graduated')} disabled={isProcessing}>
-          {isProcessing ? 'Processing...' : 'Mark as Graduated'}
-        </button>
-      </div>
-    </div>
-  {/if}
-
-  <div id="studentGrid" class="overflow-x-auto"></div>
 </div>
 
 <!-- Add/Edit Modal -->
 {#if showModal}
-  <div class="modal modal-open modal-middle">
-    <div class="modal-box">
-      <h3 class="font-bold text-lg mb-4">{editingId ? 'Edit' : 'Add'} Student</h3>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="space-y-4">
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">Name (Optional)</legend>
-            <input type="text" bind:value={name} placeholder="Name" class="input input-bordered w-full mb-2" />
-          </fieldset>
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">Course</legend>
-            <input type="text" bind:value={course} placeholder="Course" class="input input-bordered w-full mb-2" />
-          </fieldset>
+  <div class="modal modal-open">
+    <div class="modal-box max-w-2xl">
+      <h3 class="font-bold text-2xl mb-6 text-base-content">{editingId ? 'Edit Student' : 'Add New Student'}</h3>
+
+      <div class="space-y-6">
+        <!-- Primary Information -->
+        <div class="bg-base-200 p-4 rounded-lg">
+          <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Primary Information</h4>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">English Name <span class="text-error">*</span></span>
+              </label>
+              <input
+                type="text"
+                bind:value={englishName}
+                placeholder="Enter English name"
+                class="input input-bordered w-full"
+                required
+              />
+            </div>
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Name (Optional)</span>
+              </label>
+              <input type="text" bind:value={name} placeholder="Enter name" class="input input-bordered w-full" />
+            </div>
+          </div>
         </div>
 
-        <div class="space-y-4">
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">English Name <span class="text-error">*</span></legend>
-            <input
-              type="text"
-              bind:value={englishName}
-              placeholder="English Name (Required)"
-              class="input input-bordered w-full mb-2"
-            />
-          </fieldset>
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">Level</legend>
-            <input type="text" bind:value={level} placeholder="Level" class="input input-bordered w-full mb-4" />
-          </fieldset>
+        <!-- Academic Information -->
+        <div class="bg-base-200 p-4 rounded-lg">
+          <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Academic Information</h4>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Course</span>
+              </label>
+              <input
+                type="text"
+                bind:value={course}
+                placeholder="e.g., BSIT, BSCS"
+                class="input input-bordered w-full"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Level</span>
+              </label>
+              <input
+                type="text"
+                bind:value={level}
+                placeholder="e.g., 1, 2, 3, 4"
+                class="input input-bordered w-full"
+              />
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="space-y-4">
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">Status</legend>
+        <!-- Status -->
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Status</span>
+          </label>
           <select bind:value={status} class="select select-bordered w-full">
             {#each statusOptions as option}
               <option value={option}>{option.charAt(0).toUpperCase() + option.slice(1)}</option>
             {/each}
           </select>
-        </fieldset>
+        </div>
       </div>
 
-      <div class="modal-action">
-        <button class="btn btn-outline btn-primary" onclick={saveStudent}>
-          {editingId ? 'Update' : 'Save'}
+      <div class="modal-action mt-8">
+        <button class="btn btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
+        <button class="btn btn-primary" onclick={saveStudent}>
+          {editingId ? 'Update Student' : 'Add Student'}
         </button>
-        <button class="btn btn-outline btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
       </div>
     </div>
+    <div class="modal-backdrop" onclick={() => (showModal = false)}></div>
   </div>
 {/if}
 
 <!-- CSV Import Modal -->
 {#if showCSVModal}
-  <dialog open class="modal modal-open">
-    <div class="modal-box max-w-3xl">
-      <h3 class="font-bold text-lg mb-4">Import Students from CSV</h3>
+  <dialog open class="modal">
+    <div class="modal-box max-w-4xl">
+      <h3 class="font-bold text-2xl mb-6 text-base-content">Import Students from CSV</h3>
 
-      <div class="mb-4">
-        <p class="text-sm text-gray-600 mb-2">
-          Upload a CSV file with student data. <strong>Required: English Name.</strong> Optional: Name, Course, Level, Status
-          (new/old/graduated)
-        </p>
-        <div class="alert alert-info text-xs mb-2">
+      <div class="space-y-6">
+        <!-- Instructions -->
+        <div class="alert alert-info">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"
-            class="stroke-current shrink-0 w-5 h-5"
-            ><path
+            class="stroke-current shrink-0 w-6 h-6"
+          >
+            <path
               stroke-linecap="round"
               stroke-linejoin="round"
               stroke-width="2"
               d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            ></path></svg
-          >
-          <span>Duplicates are checked by <strong>English Name</strong> only. Same regular names are allowed.</span>
-        </div>
-        <button class="btn btn-sm btn-link" onclick={downloadTemplate}> Download Template </button>
-      </div>
-
-      <input type="file" accept=".csv" onchange={handleFileSelect} class="file-input file-input-bordered w-full mb-4" />
-
-      {#if csvPreview.length > 0}
-        <div class="mb-4">
-          <h4 class="font-semibold mb-2">Preview ({csvPreview.length} students):</h4>
-          <div class="max-h-60 overflow-y-auto border rounded p-2 bg-base-200">
-            <table class="table table-xs">
-              <thead>
-                <tr>
-                  <th>English Name</th>
-                  <th>Name</th>
-                  <th>Course</th>
-                  <th>Level</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each csvPreview as student}
-                  <tr>
-                    <td><strong>{student.englishName}</strong></td>
-                    <td>{student.name || '-'}</td>
-                    <td>{student.course || '-'}</td>
-                    <td>{student.level || '-'}</td>
-                    <td
-                      ><span class={`badge ${statusColors[student.status] || 'badge-neutral'}`}
-                        >{student.status || 'new'}</span
-                      ></td
-                    >
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
+            ></path>
+          </svg>
+          <div>
+            <div class="font-semibold">CSV Format Requirements</div>
+            <div class="text-sm">
+              <strong>Required:</strong> English Name &nbsp;|&nbsp; <strong>Optional:</strong> Name, Course, Level, Status
+              (new/old/graduated)
+            </div>
           </div>
         </div>
-      {/if}
 
-      <div class="modal-action">
-        <button
-          class="btn btn-outline btn-primary"
-          onclick={importCSV}
-          disabled={csvPreview.length === 0 || isProcessing}
-        >
-          {isProcessing ? 'Importing...' : `Import ${csvPreview.length} Students`}
-        </button>
-        <button class="btn btn-outline btn-ghost" onclick={() => (showCSVModal = false)} disabled={isProcessing}>
-          Cancel
+        <div class="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            ></path>
+          </svg>
+          <span class="text-sm"
+            >Duplicates are checked by <strong>English Name</strong> only. Duplicate English Names will be skipped.</span
+          >
+        </div>
+
+        <div class="flex items-center gap-4">
+          <button class="btn btn-outline btn-sm gap-2" onclick={downloadTemplate}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            Download Template
+          </button>
+        </div>
+
+        <!-- File Upload -->
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Select CSV File</span>
+          </label>
+          <input type="file" accept=".csv" onchange={handleFileSelect} class="file-input file-input-bordered w-full" />
+        </div>
+
+        <!-- Preview -->
+        {#if csvPreview.length > 0}
+          <div class="bg-base-200 p-4 rounded-lg">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="font-semibold text-base-content">Preview</h4>
+              <span class="badge badge-primary">{csvPreview.length} students found</span>
+            </div>
+            <div class="max-h-80 overflow-y-auto border rounded-lg bg-base-100">
+              <table class="table table-sm table-pin-rows">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th class="font-semibold">English Name</th>
+                    <th class="font-semibold">Name</th>
+                    <th class="font-semibold">Course</th>
+                    <th class="font-semibold">Level</th>
+                    <th class="font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each csvPreview as student}
+                    <tr class="hover">
+                      <td class="font-medium">{student.englishName}</td>
+                      <td>{student.name || '-'}</td>
+                      <td>{student.course || '-'}</td>
+                      <td>{student.level || '-'}</td>
+                      <td>
+                        <span class={`badge badge-sm ${statusColors[student.status] || 'badge-neutral'}`}>
+                          {student.status || 'new'}
+                        </span>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="modal-action mt-8">
+        <button class="btn btn-ghost" onclick={() => (showCSVModal = false)} disabled={isProcessing}> Cancel </button>
+        <button class="btn btn-primary" onclick={importCSV} disabled={csvPreview.length === 0 || isProcessing}>
+          {#if isProcessing}
+            <span class="loading loading-spinner loading-sm"></span>
+            Importing...
+          {:else}
+            Import {csvPreview.length} Students
+          {/if}
         </button>
       </div>
     </div>
+    <div class="modal-backdrop" onclick={() => !isProcessing && (showCSVModal = false)}></div>
   </dialog>
 {/if}

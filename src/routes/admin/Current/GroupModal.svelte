@@ -486,7 +486,7 @@
                             selectedStudents.length >= maxStudentsAllowed)}
                         onchange={() => toggleStudent(student.id)}
                       />
-                      <span class="label-text {student.status === 'graduated' || isBooked ? 'opacity-50 italic' : ''}">
+                      <span class="label-text {student.status === 'graduated' || isBooked ? 'italic' : ''}">
                         {student.englishName}
                         {#if student.status === 'graduated'}
                           <span class="text-xs text-gray-400">(Graduated)</span>

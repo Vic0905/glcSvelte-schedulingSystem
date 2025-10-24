@@ -32,12 +32,16 @@
       loadingProgress.skippedSchedules = 0
       loadingProgress.conflicts = []
 
-      // ✅ Force-generate Tuesday–Friday dates for this week
       const weekDates = []
       const start = new Date(currentWeekStart)
+      // Get to Sunday of this week (day 0)
+      const sunday = new Date(start)
+      sunday.setDate(start.getDate() - start.getDay())
+
+      // Generate Tuesday (2) through Friday (5)
       for (let i = 2; i <= 5; i++) {
-        const date = new Date(start)
-        date.setDate(start.getDate() + (i - start.getDay()))
+        const date = new Date(sunday)
+        date.setDate(sunday.getDate() + i)
         weekDates.push(date.toISOString().split('T')[0])
       }
 
