@@ -276,7 +276,7 @@
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">Monday Schedule Table (Advance Template)</h2>
+    <h2 class="text-center flex-1">Monday MTM Table (Advance Template)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 

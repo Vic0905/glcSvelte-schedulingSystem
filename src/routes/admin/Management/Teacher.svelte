@@ -199,7 +199,7 @@
   }
 
   function downloadTemplate() {
-    const csv = 'Name\nJohn Doe\nJane Smith\nMike Johnson'
+    const csv = 'Name\nJohn\nJane\nMike'
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -275,9 +275,6 @@
               <span class="label-text font-medium">Full Name <span class="text-error">*</span></span>
             </label>
             <input type="text" bind:value={name} class="input input-bordered w-full" required />
-            <label class="label">
-              <span class="label-text-alt text-base-content/60">This name will appear in all > </span></label
-            >
           </div>
         </div>
       </div>

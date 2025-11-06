@@ -5,40 +5,43 @@
   let { show = $bindable(false), mondaySchedule = $bindable(), onSave } = $props()
 
   let existingSchedules = $state([])
-  let groupLessonSchedules = $state([])
+  let mondayGroupSchedules = $state([])
   let teachers = $state([])
   let students = $state([])
   let subjects = $state([])
+  let timeslots = $state([])
 
   // Load all reference data once
   const loadReferenceData = async () => {
     try {
-      const [teachersData, studentsData, subjectsData] = await Promise.all([
+      const [teachersData, studentsData, subjectsData, timeslotsData] = await Promise.all([
         pb.collection('teacher').getFullList(),
         pb.collection('student').getFullList(),
         pb.collection('subject').getFullList(),
+        pb.collection('timeslot').getFullList({ sort: 'start' }),
       ])
 
       teachers = teachersData.sort((a, b) => a.name.localeCompare(b.name))
       students = studentsData.sort((a, b) => a.englishName.localeCompare(b.englishName))
       subjects = subjectsData.sort((a, b) => a.name.localeCompare(b.name))
+      timeslots = timeslotsData
     } catch (error) {
       console.error('Error loading reference data:', error)
     }
   }
 
-  // Load existing schedules for conflict detection
+  // Load existing schedules for conflict detection - UPDATED TO CHECK BOTH COLLECTIONS
   const loadExistingSchedules = async () => {
     try {
       const date = mondaySchedule.date
       const timeslotId = mondaySchedule.timeslot.id
       if (!date || !timeslotId) {
         existingSchedules = []
-        groupLessonSchedules = []
+        mondayGroupSchedules = []
         return
       }
 
-      // Load Monday schedules
+      // Load individual Monday schedules
       const mondayRecords = await pb.collection('mondayLessonSchedule').getFullList({
         filter: `date = "${date}" && timeslot = "${timeslotId}"${
           mondaySchedule.mode === 'edit' && mondaySchedule.id ? ` && id != "${mondaySchedule.id}"` : ''
@@ -46,41 +49,43 @@
         expand: 'teacher,student,room',
       })
 
-      existingSchedules = mondayRecords
+      // Load group Monday schedules
+      const groupRecords = await pb.collection('mondayGroupLessonSchedule').getFullList({
+        filter: `date = "${date}" && timeslot = "${timeslotId}"${
+          mondaySchedule.mode === 'edit' && mondaySchedule.id ? ` && id != "${mondaySchedule.id}"` : ''
+        }`,
+        expand: 'teacher,student,grouproom,subject',
+      })
 
-      // Load group Monday schedules for the same date and timeslot (if you have this collection)
-      try {
-        const groupRecords = await pb.collection('groupMondayLessonSchedule').getFullList({
-          filter: `date = "${date}" && timeslot = "${timeslotId}"`,
-          expand: 'teacher,student,grouproom',
-        })
-        groupLessonSchedules = groupRecords
-      } catch {
-        // Collection might not exist, that's okay
-        groupLessonSchedules = []
-      }
+      existingSchedules = mondayRecords
+      mondayGroupSchedules = groupRecords
     } catch (error) {
       console.error('Error loading existing schedules:', error)
       existingSchedules = []
-      groupLessonSchedules = []
+      mondayGroupSchedules = []
     }
   }
 
-  // Conflict detection helpers
+  // Conflict detection helpers - UPDATED TO CHECK BOTH COLLECTIONS
   const isResourceBooked = (resourceId, type) => {
     return existingSchedules.some((schedule) => schedule[type] === resourceId)
   }
 
-  const isStudentInGroupLesson = (studentId) => {
-    return groupLessonSchedules.some(
+  const isStudentInMondayGroupLesson = (studentId) => {
+    return mondayGroupSchedules.some(
       (schedule) => Array.isArray(schedule.student) && schedule.student.includes(studentId)
     )
   }
 
-  const isTeacherInGroupLesson = (teacherId) => {
-    return groupLessonSchedules.some((schedule) => schedule.teacher === teacherId)
+  const isTeacherInMondayGroupLesson = (teacherId) => {
+    return mondayGroupSchedules.some((schedule) => schedule.teacher === teacherId)
   }
 
+  const isRoomInMondayGroupLesson = (roomId) => {
+    return mondayGroupSchedules.some((schedule) => schedule.grouproom === roomId)
+  }
+
+  // Get conflict info from individual lessons
   const getConflictInfo = (resourceId, type) => {
     const schedule = existingSchedules.find((s) => s[type] === resourceId)
     if (!schedule?.expand) return ''
@@ -97,30 +102,41 @@
     }
   }
 
-  const getGroupLessonConflictInfo = (studentId) => {
-    const schedule = groupLessonSchedules.find((s) => Array.isArray(s.student) && s.student.includes(studentId))
-    if (!schedule?.expand) return 'Group Lesson'
+  // Get conflict info from group lessons
+  const getMondayGroupLessonConflictInfo = (studentId) => {
+    const schedule = mondayGroupSchedules.find((s) => Array.isArray(s.student) && s.student.includes(studentId))
+    if (!schedule?.expand) return 'Monday Group Lesson'
 
-    return `Group Lesson with ${schedule.expand.teacher?.name || 'Unknown Teacher'}`
+    return `Monday Group Lesson with ${schedule.expand.teacher?.name || 'Unknown Teacher'}`
   }
 
-  const getGroupLessonTeacherConflictInfo = (teacherId) => {
-    const schedule = groupLessonSchedules.find((s) => s.teacher === teacherId)
-    if (!schedule?.expand) return 'Group Lesson'
+  const getMondayGroupLessonTeacherConflictInfo = (teacherId) => {
+    const schedule = mondayGroupSchedules.find((s) => s.teacher === teacherId)
+    if (!schedule?.expand) return 'Monday Group Lesson'
 
     const studentCount = Array.isArray(schedule.student) ? schedule.student.length : 0
-    return `Group Lesson (${studentCount} students)`
+    return `Monday Group Lesson (${studentCount} students)`
   }
 
-  // Validation and conflict checking
+  const getMondayGroupLessonRoomConflictInfo = (roomId) => {
+    const schedule = mondayGroupSchedules.find((s) => s.grouproom === roomId)
+    if (!schedule?.expand) return 'Monday Group Lesson'
+
+    const teacherName = schedule.expand.teacher?.name || 'Unknown Teacher'
+    const studentCount = Array.isArray(schedule.student) ? schedule.student.length : 0
+    return `Monday Group Lesson - ${teacherName} (${studentCount} students)`
+  }
+
+  // Validation and conflict checking - UPDATED TO CHECK BOTH COLLECTIONS
   const validateAndCheckConflicts = async () => {
     const data = mondaySchedule
 
     // Required field validation
     const requiredFields = [
-      { field: data.teacher.id, message: 'Please select Teacher' },
-      { field: data.student.id, message: 'Please select Student' },
-      { field: data.subject.id, message: 'Please select Subject' },
+      { field: data.teacher?.id, message: 'Please select Teacher' },
+      { field: data.student?.id, message: 'Please select Student' },
+      { field: data.subject?.id, message: 'Please select Subject' },
+      { field: data.room?.id, message: 'Please select Room' },
     ]
 
     for (const { field, message } of requiredFields) {
@@ -130,30 +146,87 @@
       }
     }
 
-    // Conflict checking with database queries
+    // Check conflicts in both collections
     const date = data.date
     const timeslotId = data.timeslot.id
     const excludeFilter = data.mode === 'edit' && data.id ? ` && id != "${data.id}"` : ''
 
     try {
-      // Check teacher conflict
+      // Check teacher conflict in individual lessons
       await pb
         .collection('mondayLessonSchedule')
         .getFirstListItem(
           `date = "${date}" && teacher = "${data.teacher.id}" && timeslot = "${timeslotId}"${excludeFilter}`
         )
-      toast.error('Teacher is already scheduled at this timeslot')
+      toast.error('Teacher is already scheduled in individual Monday lesson at this timeslot')
       return false
     } catch {
       // No conflict - this is expected
     }
 
     try {
-      // Check room conflict
+      // Check teacher conflict in group lessons
+      await pb
+        .collection('mondayGroupLessonSchedule')
+        .getFirstListItem(
+          `date = "${date}" && teacher = "${data.teacher.id}" && timeslot = "${timeslotId}"${excludeFilter}`
+        )
+      toast.error('Teacher is already scheduled in Monday group lesson at this timeslot')
+      return false
+    } catch {
+      // No conflict - this is expected
+    }
+
+    try {
+      // Check student conflict in individual lessons
+      await pb
+        .collection('mondayLessonSchedule')
+        .getFirstListItem(
+          `date = "${date}" && student = "${data.student.id}" && timeslot = "${timeslotId}"${excludeFilter}`
+        )
+      toast.error('Student is already scheduled in individual Monday lesson at this timeslot')
+      return false
+    } catch {
+      // No conflict - this is expected
+    }
+
+    try {
+      // Check student conflict in group lessons
+      const groupSchedules = await pb.collection('mondayGroupLessonSchedule').getFullList({
+        filter: `date = "${date}" && timeslot = "${timeslotId}"${excludeFilter}`,
+      })
+
+      const isStudentInGroup = groupSchedules.some(
+        (schedule) => Array.isArray(schedule.student) && schedule.student.includes(data.student.id)
+      )
+
+      if (isStudentInGroup) {
+        toast.error('Student is already scheduled in Monday group lesson at this timeslot')
+        return false
+      }
+    } catch {
+      // No conflict - this is expected
+    }
+
+    try {
+      // Check room conflict in individual lessons
       await pb
         .collection('mondayLessonSchedule')
         .getFirstListItem(`date = "${date}" && room = "${data.room.id}" && timeslot = "${timeslotId}"${excludeFilter}`)
-      toast.error('Room is already occupied at this timeslot')
+      toast.error('Room is already occupied in individual Monday lesson at this timeslot')
+      return false
+    } catch {
+      // No conflict - this is expected
+    }
+
+    try {
+      // Check room conflict in group lessons
+      await pb
+        .collection('mondayGroupLessonSchedule')
+        .getFirstListItem(
+          `date = "${date}" && grouproom = "${data.room.id}" && timeslot = "${timeslotId}"${excludeFilter}`
+        )
+      toast.error('Room is already occupied in Monday group lesson at this timeslot')
       return false
     } catch {
       // No conflict - this is expected
@@ -200,10 +273,10 @@
     const confirmMessage =
       `Are you sure you want to delete this Monday schedule?\n\n` +
       `Date: ${mondaySchedule.date}\n` +
-      `Subject: ${mondaySchedule.subject.name}\n` +
-      `Teacher: ${mondaySchedule.teacher.name}\n` +
-      `Student: ${mondaySchedule.student.englishName}\n` +
-      `Room: ${mondaySchedule.room.name}\n` +
+      `Subject: ${mondaySchedule.subject?.name || 'N/A'}\n` +
+      `Teacher: ${mondaySchedule.teacher?.name || 'N/A'}\n` +
+      `Student: ${mondaySchedule.student?.englishName || 'N/A'}\n` +
+      `Room: ${mondaySchedule.room?.name || 'N/A'}\n` +
       `Time: ${mondaySchedule.timeslot.start} - ${mondaySchedule.timeslot.end}\n\n` +
       `This action cannot be undone.`
 
@@ -274,20 +347,30 @@
             <legend class="fieldset-legend font-semibold text-gray-700">Student</legend>
             <select class="select select-bordered w-full" bind:value={mondaySchedule.student.id} required>
               <option value="">Select Student</option>
-              {#each students as student}
-                {@const isBooked = isResourceBooked(student.id, 'student')}
-                {@const isInGroupLesson = isStudentInGroupLesson(student.id)}
-                {@const conflictInfo = isBooked
-                  ? getConflictInfo(student.id, 'student')
-                  : getGroupLessonConflictInfo(student.id)}
-                {@const hasConflict = isBooked || isInGroupLesson}
-                <option value={student.id} disabled={hasConflict} class={hasConflict ? 'text-gray-400' : ''}>
-                  {student.englishName}
-                  {#if hasConflict}({conflictInfo}){/if}
-                </option>
+              {#each students as student (student.id)}
+                {#if student.status !== 'graduated' || student.id === mondaySchedule.student.id}
+                  {@const isBooked = isResourceBooked(student.id, 'student')}
+                  {@const isInGroupLesson = isStudentInMondayGroupLesson(student.id)}
+                  {@const conflictInfo = isBooked
+                    ? getConflictInfo(student.id, 'student')
+                    : getMondayGroupLessonConflictInfo(student.id)}
+                  {@const hasConflict = isBooked || isInGroupLesson}
+                  <option
+                    value={student.id}
+                    disabled={student.status === 'graduated' || hasConflict}
+                    class={student.status === 'graduated' ? 'text-gray-400 italic' : hasConflict ? 'text-gray-400' : ''}
+                  >
+                    {student.englishName}
+                    {#if student.status === 'graduated'}
+                      (Graduated)
+                    {:else if hasConflict}
+                      ({conflictInfo})
+                    {/if}
+                  </option>
+                {/if}
               {/each}
             </select>
-            {#if mondaySchedule.student.id && (isResourceBooked(mondaySchedule.student.id, 'student') || isStudentInGroupLesson(mondaySchedule.student.id))}
+            {#if mondaySchedule.student.id && (isResourceBooked(mondaySchedule.student.id, 'student') || isStudentInMondayGroupLesson(mondaySchedule.student.id))}
               <div class="label">
                 <span class="label-text-alt text-warning">⚠️ This student is already scheduled for this timeslot</span>
               </div>
@@ -296,12 +379,12 @@
 
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
-            <input
-              type="text"
-              value="{mondaySchedule.timeslot.start} - {mondaySchedule.timeslot.end}"
-              class="input input-bordered w-full"
-              readonly
-            />
+            <select class="select select-bordered w-full" bind:value={mondaySchedule.timeslot.id} required>
+              <option value="">Select Time Slot</option>
+              {#each timeslots as timeslot}
+                <option value={timeslot.id}>{timeslot.start} - {timeslot.end}</option>
+              {/each}
+            </select>
           </fieldset>
         </div>
 
@@ -313,10 +396,10 @@
               <option value="">Select Teacher</option>
               {#each teachers as teacher}
                 {@const isBooked = isResourceBooked(teacher.id, 'teacher')}
-                {@const isInGroupLesson = isTeacherInGroupLesson(teacher.id)}
+                {@const isInGroupLesson = isTeacherInMondayGroupLesson(teacher.id)}
                 {@const conflictInfo = isBooked
                   ? getConflictInfo(teacher.id, 'teacher')
-                  : getGroupLessonTeacherConflictInfo(teacher.id)}
+                  : getMondayGroupLessonTeacherConflictInfo(teacher.id)}
                 {@const hasConflict = isBooked || isInGroupLesson}
                 <option value={teacher.id} disabled={hasConflict} class={hasConflict ? 'text-gray-400' : ''}>
                   {teacher.name}
@@ -324,7 +407,7 @@
                 </option>
               {/each}
             </select>
-            {#if mondaySchedule.teacher.id && (isResourceBooked(mondaySchedule.teacher.id, 'teacher') || isTeacherInGroupLesson(mondaySchedule.teacher.id))}
+            {#if mondaySchedule.teacher.id && (isResourceBooked(mondaySchedule.teacher.id, 'teacher') || isTeacherInMondayGroupLesson(mondaySchedule.teacher.id))}
               <div class="label">
                 <span class="label-text-alt text-warning">⚠️ This teacher is already scheduled for this timeslot</span>
               </div>
@@ -334,7 +417,7 @@
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Room</legend>
             <input type="text" value={mondaySchedule.room.name} class="input input-bordered w-full" readonly />
-            {#if mondaySchedule.room.id && isResourceBooked(mondaySchedule.room.id, 'room')}
+            {#if mondaySchedule.room.id && (isResourceBooked(mondaySchedule.room.id, 'room') || isRoomInMondayGroupLesson(mondaySchedule.room.id))}
               <div class="label">
                 <span class="label-text-alt text-warning">⚠️ This room is already occupied for this timeslot</span>
               </div>

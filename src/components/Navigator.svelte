@@ -122,7 +122,11 @@
     <details>
       <summary>Advance Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/advance/mondayadvanceschedule">Advance Monday Table</a></li>
+        <li><a href="/#/advance/mondayadvanceschedule">MTM Input Table</a></li>
+        <li><a href="/#/advance/mondayadvancegroup">GRP Input Table</a></li>
+        <li><a href="/#/advance/mondaygrouptemplate">Group Room Table</a></li>
+        <li><a href="/#/advance/mondaystudentview">Student Table</a></li>
+        <li><a href="/#/advance/mondayteacherview">Teacher Table</a></li>
       </ul>
     </details>
   </li>
@@ -130,7 +134,11 @@
     <details>
       <summary>Current Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/current/mondayscheduleinput">Monday Table</a></li>
+        <li><a href="/#/current/mondayscheduleinput">MTM Input Table</a></li>
+        <li><a href="/#/current/mondaygrouptable">GRP Input Table</a></li>
+        <li><a href="/#/current/mondaygroupview">Group Room Table</a></li>
+        <li><a href="/#/current/mondaystudentview">Student Table</a></li>
+        <li><a href="/#/current/mondayteacherview">Teacher Table</a></li>
       </ul>
     </details>
   </li>

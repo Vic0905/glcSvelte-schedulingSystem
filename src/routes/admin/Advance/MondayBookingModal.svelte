@@ -9,19 +9,22 @@
   let teachers = $state([])
   let students = $state([])
   let subjects = $state([])
+  let timeslots = $state([])
 
   // Load all reference data once
   const loadReferenceData = async () => {
     try {
-      const [teachersData, studentsData, subjectsData] = await Promise.all([
+      const [teachersData, studentsData, subjectsData, timeslotsData] = await Promise.all([
         pb.collection('teacher').getFullList(),
         pb.collection('student').getFullList(),
         pb.collection('subject').getFullList(),
+        pb.collection('timeslot').getFullList({ sort: 'start' }),
       ])
 
       teachers = teachersData.sort((a, b) => a.name.localeCompare(b.name))
       students = studentsData.sort((a, b) => a.englishName.localeCompare(b.englishName))
       subjects = subjectsData.sort((a, b) => a.name.localeCompare(b.name))
+      timeslots = timeslotsData
     } catch (error) {
       console.error('Error loading reference data:', error)
     }
@@ -47,9 +50,9 @@
 
       existingBookings = mondayRecords
 
-      // Load group Monday bookings for the same timeslot (if you have this collection)
+      // Load group Monday bookings for the same timeslot
       try {
-        const groupRecords = await pb.collection('groupMondayAdvanceBooking').getFullList({
+        const groupRecords = await pb.collection('mondayAdvanceGroupBooking').getFullList({
           filter: `timeslot = "${timeslotId}"`,
           expand: 'teacher,student,grouproom',
         })
@@ -259,17 +262,27 @@
             <legend class="fieldset-legend font-semibold text-gray-700">Student</legend>
             <select class="select select-bordered w-full" bind:value={mondayBooking.student.id} required>
               <option value="">Select Student</option>
-              {#each students as student}
-                {@const isBooked = isResourceBooked(student.id, 'student')}
-                {@const isInGroupLesson = isStudentInGroupLesson(student.id)}
-                {@const conflictInfo = isBooked
-                  ? getConflictInfo(student.id, 'student')
-                  : getGroupLessonConflictInfo(student.id)}
-                {@const hasConflict = isBooked || isInGroupLesson}
-                <option value={student.id} disabled={hasConflict} class={hasConflict ? 'text-gray-400' : ''}>
-                  {student.englishName}
-                  {#if hasConflict}({conflictInfo}){/if}
-                </option>
+              {#each students as student (student.id)}
+                {#if student.status !== 'graduated' || student.id === mondayBooking.student.id}
+                  {@const isBooked = isResourceBooked(student.id, 'student')}
+                  {@const isInGroupLesson = isStudentInGroupLesson(student.id)}
+                  {@const conflictInfo = isBooked
+                    ? getConflictInfo(student.id, 'student')
+                    : getGroupLessonConflictInfo(student.id)}
+                  {@const hasConflict = isBooked || isInGroupLesson}
+                  <option
+                    value={student.id}
+                    disabled={student.status === 'graduated' || hasConflict}
+                    class={student.status === 'graduated' ? 'text-gray-400 italic' : hasConflict ? 'text-gray-400' : ''}
+                  >
+                    {student.englishName}
+                    {#if student.status === 'graduated'}
+                      (Graduated)
+                    {:else if hasConflict}
+                      ({conflictInfo})
+                    {/if}
+                  </option>
+                {/if}
               {/each}
             </select>
             {#if mondayBooking.student.id && (isResourceBooked(mondayBooking.student.id, 'student') || isStudentInGroupLesson(mondayBooking.student.id))}
@@ -281,12 +294,12 @@
 
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
-            <input
-              type="text"
-              value="{mondayBooking.timeslot.start} - {mondayBooking.timeslot.end}"
-              class="input input-bordered w-full"
-              readonly
-            />
+            <select class="select select-bordered w-full" bind:value={mondayBooking.timeslot.id} required>
+              <option value="">Select Time Slot</option>
+              {#each timeslots as timeslot}
+                <option value={timeslot.id}>{timeslot.start} - {timeslot.end}</option>
+              {/each}
+            </select>
           </fieldset>
         </div>
 
