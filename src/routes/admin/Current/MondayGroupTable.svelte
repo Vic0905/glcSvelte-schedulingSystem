@@ -308,7 +308,7 @@
   let reloadTimeout
   const debouncedReload = () => {
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadMondayGroupSchedules, 150)
+    reloadTimeout = setTimeout(loadMondayGroupSchedules, 50)
   }
 
   onMount(() => {

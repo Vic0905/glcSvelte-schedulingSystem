@@ -56,11 +56,12 @@
     })
   }
 
-  const changeWeek = (weeks) => {
+  const changeWeek = async (weeks) => {
+    if (isLoading) return
     const monday = new Date(currentMonday)
     monday.setDate(monday.getDate() + weeks * 7)
     currentMonday = monday.toISOString().split('T')[0]
-    loadMondaySchedules()
+    await loadMondaySchedules()
   }
 
   const copyToMondayAdvance = async () => {
@@ -162,17 +163,26 @@
     isLoading = true
 
     try {
-      const [timeslotsData, roomsData, schedules] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        rooms.length ? rooms : pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
-        pb.collection('mondayLessonSchedule').getList(1, 200, {
-          filter: `date = "${currentMonday}"`,
-          expand: 'teacher,student,subject,room,timeslot',
-        }),
-      ])
+      // Fetch only schedules, use cached timeslots/rooms after first load
+      const schedulesPromise = pb.collection('mondayLessonSchedule').getList(1, 200, {
+        filter: `date = "${currentMonday}"`,
+        expand: 'teacher,student,subject,room,timeslot',
+      })
 
-      timeslots = timeslotsData
-      rooms = roomsData
+      const promises = [schedulesPromise]
+
+      if (!timeslots.length) {
+        promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
+      }
+      if (!rooms.length) {
+        promises.push(pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }))
+      }
+
+      const results = await Promise.all(promises)
+      const schedules = results[0]
+
+      if (results.length > 1 && !timeslots.length) timeslots = results[1]
+      if (results.length > 2 && !rooms.length) rooms = results[2]
 
       // Build schedule map
       const scheduleMap = {}
@@ -228,31 +238,12 @@
         return row
       })
 
-      const columns = [
-        {
-          name: 'Teacher',
-          width: '120px',
-          formatter: (cell) =>
-            cell.disabled
-              ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-              : cell.value,
-        },
-        {
-          name: 'Room',
-          width: '120px',
-          formatter: (cell) =>
-            cell.disabled
-              ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-              : cell.value,
-        },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
-      ]
-
       if (mondayCurrentGrid) {
+        // Only update data when grid exists, not columns
         const wrapper = document.querySelector('#monday-current-grid .gridjs-wrapper')
         const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
 
-        mondayCurrentGrid.updateConfig({ columns, data }).forceRender()
+        mondayCurrentGrid.updateConfig({ data }).forceRender()
 
         requestAnimationFrame(() => {
           const w = document.querySelector('#monday-current-grid .gridjs-wrapper')
@@ -262,6 +253,27 @@
           }
         })
       } else {
+        // Initial grid creation with columns
+        const columns = [
+          {
+            name: 'Teacher',
+            width: '120px',
+            formatter: (cell) =>
+              cell.disabled
+                ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
+                : cell.value,
+          },
+          {
+            name: 'Room',
+            width: '120px',
+            formatter: (cell) =>
+              cell.disabled
+                ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
+                : cell.value,
+          },
+          ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
+        ]
+
         mondayCurrentGrid = new Grid({
           columns,
           data,
@@ -309,7 +321,7 @@
   let reloadTimeout
   const debouncedReload = () => {
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadMondaySchedules, 150)
+    reloadTimeout = setTimeout(loadMondaySchedules, 50)
   }
 
   onMount(() => {
