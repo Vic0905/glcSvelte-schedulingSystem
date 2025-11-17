@@ -47,7 +47,14 @@
 
   const formatCell = (cellData) => {
     if (!cellData?.schedule) return h('span', {}, '—')
-    const { schedule, studentName } = cellData
+
+    const { schedule, studentName, hiddenDetails } = cellData
+
+    // Show "Scheduled" if hiddenDetails is true
+    if (hiddenDetails) {
+      return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
+    }
+
     return h('div', { class: 'text-xs flex flex-col gap-1 items-center' }, [
       h('span', { class: 'badge badge-primary badge-xs p-3' }, schedule.subject?.name ?? 'No Subject'),
       h('span', { class: 'badge badge-info badge-xs' }, schedule.teacher?.name ?? 'No Teacher'),
@@ -88,6 +95,7 @@
             subject: s.expand?.subject,
             teacher: s.expand?.teacher,
             students,
+            hiddenDetails: s.hiddenDetails || false,
           }
         }
       }
@@ -104,7 +112,13 @@
             ...timeslots.map((ts) => {
               const schedule = roomSchedule[ts.id]
               const student = schedule?.students?.[i]
-              return student ? { schedule, studentName: student.englishName || 'Unknown' } : null
+              return student
+                ? {
+                    schedule,
+                    studentName: student.englishName || 'Unknown',
+                    hiddenDetails: schedule.hiddenDetails || false,
+                  }
+                : null
             }),
           ]
         })

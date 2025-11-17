@@ -1,6 +1,6 @@
 import PocketBase from 'pocketbase'
 
-export const domain = 'http://172.168.1.181:8090'
+export const domain = 'http://172.168.15.38:8090'
 
 export const pb = new PocketBase(domain)
 

@@ -40,15 +40,26 @@
     const d = new Date(selectedMonday)
     d.setDate(d.getDate() + weeks * 7)
     selectedMonday = d.toISOString().split('T')[0]
-    loadMondayTeacherSchedule()
   }
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
+
+    // check if all items have hiddenDetails
+    const allHidden = cell.every((item) => item.hiddenDetails)
+    if (allHidden) {
+      return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
+    }
+
     return h(
       'div',
       { class: 'text-xs flex flex-col gap-1 items-center' },
       cell.map((item) => {
+        // Shoe "Scheduled" for individual hidden items
+        if (item.hiddenDetails) {
+          return h('div', { class: 'badge badge-success badge-sm mb-1' }, 'Scheduled')
+        }
+
         const badges = [h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject')]
 
         if (item.isGroup) {
@@ -104,6 +115,7 @@
           student: s.expand?.student,
           room: s.expand?.room,
           isGroup: false,
+          hiddenDetails: s.hiddenDetails || false,
         }
       }
 
@@ -124,6 +136,7 @@
           student: null,
           room: s.expand?.grouproom,
           isGroup: true,
+          hiddenDetails: s.hiddenDetails || false,
         }
       }
 
@@ -218,7 +231,6 @@
         id="filterDate"
         bind:value={selectedMonday}
         class="input input-bordered input-sm w-40"
-        onchange={loadMondayTeacherSchedule}
         disabled={isLoading}
       />
     </div>

@@ -34,7 +34,6 @@
 
       const weekDates = []
       const start = new Date(currentWeekStart)
-      // Get to Sunday of this week (day 0)
       const sunday = new Date(start)
       sunday.setDate(start.getDate() - start.getDay())
 
@@ -47,7 +46,7 @@
 
       // Step 1: Load advance bookings
       loadingProgress.currentStep = 'Loading advance bookings...'
-      await new Promise((resolve) => setTimeout(resolve, 500)) // Small delay for UI
+      await new Promise((resolve) => setTimeout(resolve, 500))
 
       const advanceBookings = await pb.collection('advanceBooking').getFullList({
         filter: `teacher != "" && student != "" && subject != ""`,
@@ -62,96 +61,95 @@
 
       loadingProgress.totalBookings = advanceBookings.length
       loadingProgress.totalSchedules = advanceBookings.length * weekDates.length
-      loadingProgress.currentStep = `Processing ${advanceBookings.length} bookings for ${weekDates.length} days (Tuesday to Friday)...`
+      loadingProgress.currentStep = 'Checking for conflicts...'
 
-      let publishedCount = 0
+      // Step 2: Fetch all existing schedules for the week at once
+      const dateFilters = weekDates.map((d) => `date = "${d}"`).join(' || ')
+      const existingSchedules = await pb.collection('lessonSchedule').getFullList({
+        filter: dateFilters,
+      })
+
+      // Create a Set for quick conflict checking
+      const existingScheduleKeys = new Set(existingSchedules.map((s) => `${s.date}_${s.room}_${s.timeslot}`))
+      const studentConflicts = new Set(existingSchedules.map((s) => `${s.date}_${s.student}_${s.timeslot}`))
+      const teacherConflicts = new Set(existingSchedules.map((s) => `${s.date}_${s.teacher}_${s.timeslot}`))
+      const roomConflicts = new Set(existingSchedules.map((s) => `${s.date}_${s.room}_${s.timeslot}`))
+
+      // Step 3: Build batch of schedules to create
+      const schedulesToCreate = []
       let skippedCount = 0
       const conflicts = []
 
       for (let bookingIndex = 0; bookingIndex < advanceBookings.length; bookingIndex++) {
         const booking = advanceBookings[bookingIndex]
 
-        // Update current booking info
         loadingProgress.currentBooking = `${booking.expand?.teacher?.name} - ${booking.expand?.student?.name} (${booking.expand?.subject?.name})`
         loadingProgress.processedBookings = bookingIndex + 1
 
-        for (let dateIndex = 0; dateIndex < weekDates.length; dateIndex++) {
-          const date = weekDates[dateIndex]
-          loadingProgress.currentDate = new Date(date).toLocaleDateString('en-US', {
-            weekday: 'long',
-            month: 'short',
-            day: 'numeric',
-          })
-          loadingProgress.currentStep = `Processing ${loadingProgress.currentBooking} for ${loadingProgress.currentDate}`
+        for (const date of weekDates) {
+          const scheduleKey = `${date}_${booking.room}_${booking.timeslot}`
+          const studentKey = `${date}_${booking.student}_${booking.timeslot}`
+          const teacherKey = `${date}_${booking.teacher}_${booking.timeslot}`
+          const roomKey = `${date}_${booking.room}_${booking.timeslot}`
 
-          // Small delay to show progress
-          if ((bookingIndex * weekDates.length + dateIndex) % 3 === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 100))
+          // Check for conflicts
+          if (existingScheduleKeys.has(scheduleKey)) {
+            skippedCount++
+            continue
           }
 
-          try {
-            const existingSchedule = await pb.collection('lessonSchedule').getFullList({
-              filter: `date = "${date}" && room = "${booking.room}" && timeslot = "${booking.timeslot}"`,
-            })
+          let hasConflict = false
+          if (studentConflicts.has(studentKey)) {
+            conflicts.push(`${date} - Student conflict`)
+            hasConflict = true
+          } else if (teacherConflicts.has(teacherKey)) {
+            conflicts.push(`${date} - Teacher conflict`)
+            hasConflict = true
+          } else if (roomConflicts.has(roomKey)) {
+            conflicts.push(`${date} - Room conflict`)
+            hasConflict = true
+          }
 
-            if (existingSchedule.length > 0) {
-              skippedCount++
-              loadingProgress.skippedSchedules = skippedCount
-              continue
-            }
-
-            const conflictChecks = [
-              {
-                filter: `student = "${booking.student}" && date = "${date}" && timeslot = "${booking.timeslot}"`,
-                type: 'Student',
-              },
-              {
-                filter: `teacher = "${booking.teacher}" && date = "${date}" && timeslot = "${booking.timeslot}"`,
-                type: 'Teacher',
-              },
-              {
-                filter: `room = "${booking.room}" && date = "${date}" && timeslot = "${booking.timeslot}"`,
-                type: 'Room',
-              },
-            ]
-
-            let hasConflict = false
-            for (const { filter, type } of conflictChecks) {
-              try {
-                await pb.collection('lessonSchedule').getFirstListItem(filter)
-                const conflictMsg = `${loadingProgress.currentDate} - ${type} conflict`
-                conflicts.push(conflictMsg)
-                loadingProgress.conflicts = [...conflicts]
-                hasConflict = true
-                skippedCount++
-                loadingProgress.skippedSchedules = skippedCount
-                break
-              } catch {
-                // No conflict found, continue
-              }
-            }
-
-            if (!hasConflict) {
-              const liveSchedule = {
-                date: date,
-                teacher: booking.teacher,
-                student: booking.student,
-                subject: booking.subject,
-                room: booking.room,
-                timeslot: booking.timeslot,
-                status: 'scheduled',
-              }
-
-              await pb.collection('lessonSchedule').create(liveSchedule)
-              publishedCount++
-              loadingProgress.createdSchedules = publishedCount
-            }
-          } catch (error) {
-            console.error(`Error processing booking for ${date}:`, error)
+          if (hasConflict) {
             skippedCount++
             loadingProgress.skippedSchedules = skippedCount
+            loadingProgress.conflicts = [...conflicts]
+            continue
           }
+
+          // Add to batch
+          schedulesToCreate.push({
+            date: date,
+            teacher: booking.teacher,
+            student: booking.student,
+            subject: booking.subject,
+            room: booking.room,
+            timeslot: booking.timeslot,
+            status: 'scheduled',
+          })
         }
+      }
+
+      loadingProgress.currentStep = `Creating ${schedulesToCreate.length} schedules...`
+
+      // Step 4: Batch create schedules (in chunks to avoid overwhelming the server)
+      const BATCH_SIZE = 50 // Adjust based on your server capacity
+      let createdCount = 0
+
+      for (let i = 0; i < schedulesToCreate.length; i += BATCH_SIZE) {
+        const batch = schedulesToCreate.slice(i, i + BATCH_SIZE)
+
+        // Create promises for batch
+        const batchPromises = batch.map((schedule) => pb.collection('lessonSchedule').create(schedule))
+
+        await Promise.all(batchPromises)
+
+        createdCount += batch.length
+        loadingProgress.createdSchedules = createdCount
+        loadingProgress.currentStep = `Created ${createdCount} / ${schedulesToCreate.length} schedules...`
+
+        // Small delay to update UI
+        await new Promise((resolve) => setTimeout(resolve, 100))
       }
 
       // Final step
@@ -160,7 +158,7 @@
 
       const conflictSummary = conflicts.length > 0 ? ` ${conflicts.length} conflicts were skipped.` : ''
       toast.success(
-        `Published ${publishedCount} schedules to live system. ${skippedCount > 0 ? `Skipped ${skippedCount} existing/conflicting schedules.` : ''}${conflictSummary}`
+        `Published ${createdCount} schedules to live system. ${skippedCount > 0 ? `Skipped ${skippedCount} existing/conflicting schedules.` : ''}${conflictSummary}`
       )
 
       closeModal()

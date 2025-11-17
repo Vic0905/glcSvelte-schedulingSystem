@@ -132,6 +132,12 @@
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
+
+    // show "Scheduled" if hiddenDetails is true
+    if (cell.hiddenDetails) {
+      return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
+    }
+
     return h('div', { class: 'flex flex-col gap-1 items-center' }, [
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
       h('div', { class: 'badge badge-info badge-xs' }, cell.teacher.name || 'No Teacher'),
@@ -190,6 +196,7 @@
               groupRoom: { name: gr.name, id: gr.id, maxstudents: gr.maxstudents || 0 },
               timeslot: { id: ts.id, start: ts.start, end: ts.end },
               assignedTeacher: teacher,
+              hiddenDetails: false,
             })
           } else {
             const s = Object.values(schedules)[0]
@@ -214,6 +221,7 @@
               groupRoom: { name: gr.name, id: gr.id, maxstudents: gr.maxstudents || 0 },
               timeslot: { id: ts.id, start: ts.start, end: ts.end },
               assignedTeacher: teacher,
+              hiddenDetails: s.hiddenDetails || false,
             })
           }
         })

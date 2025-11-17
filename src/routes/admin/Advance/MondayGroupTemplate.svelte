@@ -43,12 +43,17 @@
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getMondayWeekStart(d)
-    loadMondayGroupSchedule()
   }
 
   const formatCell = (cellData) => {
     if (!cellData?.schedule) return h('span', {}, '—')
-    const { schedule, studentName } = cellData
+    const { schedule, studentName, hiddenDetails } = cellData
+
+    //show "Scheduled" if hiddenDetails is true
+    if (hiddenDetails) {
+      return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
+    }
+
     return h('div', { class: 'text-xs flex flex-col gap-1 items-center' }, [
       h('span', { class: 'badge badge-primary badge-xs p-3' }, schedule.subject?.name ?? 'No Subject'),
       h('span', { class: 'badge badge-info badge-xs' }, schedule.teacher?.name ?? 'No Teacher'),
@@ -88,6 +93,7 @@
           subject: b.expand?.subject,
           teacher: b.expand?.teacher,
           students,
+          hiddenDetails: b.hiddenDetails || false,
         }
       }
 
@@ -104,7 +110,13 @@
             ...timeslots.map((ts) => {
               const schedule = roomSchedule[ts.id]
               const student = schedule?.students?.[i]
-              return student ? { schedule, studentName: student.englishName || student.name || 'Unknown' } : null
+              return student
+                ? {
+                    schedule,
+                    studentName: student.englishName || 'Unknown',
+                    hiddenDetails: schedule.hiddenDetails || false,
+                  }
+                : null
             }),
           ]
         })
@@ -208,7 +220,6 @@
         id="filterDate"
         bind:value={weekStart}
         class="input input-bordered input-sm w-40"
-        onchange={loadMondayGroupSchedule}
         disabled={isLoading}
       />
     </div>

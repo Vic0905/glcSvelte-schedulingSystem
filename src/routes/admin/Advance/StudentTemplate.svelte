@@ -29,15 +29,6 @@
     return d.toISOString().split('T')[0]
   }
 
-  function getWeekDays(startDate) {
-    const start = new Date(startDate)
-    return Array.from({ length: 4 }, (_, i) => {
-      const day = new Date(start)
-      day.setDate(start.getDate() + i)
-      return day.toISOString().split('T')[0]
-    })
-  }
-
   function getWeekRangeDisplay(startDate) {
     const start = new Date(startDate)
     const end = new Date(start)
@@ -49,7 +40,6 @@
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-    loadStudentSchedule()
   }
 
   const formatCell = (cell) => {
@@ -77,9 +67,6 @@
     isLoading = true
 
     try {
-      const weekDays = getWeekDays(weekStart)
-      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
-
       const [timeslotsData, allStudents, individualBookings, groupBookings] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
         pb.collection('student').getFullList({ sort: 'name' }),
@@ -214,20 +201,13 @@
     }
   }
 
-  let reloadTimeout
-  const debouncedReload = () => {
-    clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadStudentSchedule, 150)
-  }
-
   onMount(() => {
     loadStudentSchedule()
-    pb.collection('advanceBooking').subscribe('*', debouncedReload)
-    pb.collection('groupAdvanceBooking').subscribe('*', debouncedReload)
+    pb.collection('advanceBooking').subscribe('*', loadStudentSchedule)
+    pb.collection('groupAdvanceBooking').subscribe('*', loadStudentSchedule)
   })
 
   onDestroy(() => {
-    clearTimeout(reloadTimeout)
     studentGrid?.destroy()
     studentGrid = null
     pb.collection('advanceBooking').unsubscribe()
@@ -245,20 +225,8 @@
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
-  <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
-      <label for="filterDate" class="text-sm font-semibold">Week Starting:</label>
-      <input
-        type="date"
-        id="filterDate"
-        bind:value={weekStart}
-        class="input input-bordered input-sm w-40"
-        onchange={loadStudentSchedule}
-        disabled={isLoading}
-      />
-    </div>
-
-    <h3 class="text-xl font-semibold text-primary text-center mr-50">{getWeekRangeDisplay(weekStart)}</h3>
+  <div class="mb-2 flex items-center justify-between gap-4 ml-20">
+    <h3 class="text-xl font-semibold text-primary flex-1 text-center">{getWeekRangeDisplay(weekStart)}</h3>
 
     <div class="flex items-center gap-2">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>

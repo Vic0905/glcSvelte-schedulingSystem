@@ -55,11 +55,16 @@
     const monday = new Date(currentMonday)
     monday.setDate(monday.getDate() + weeks * 7)
     currentMonday = monday.toISOString().split('T')[0]
-    loadAdvanceGroupBookings()
   }
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
+
+    // Show "Scheduled" if hiddenDetails is true
+    if (cell.hiddenDetails) {
+      return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
+    }
+
     return h('div', { class: 'flex flex-col gap-1 items-center' }, [
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
       h('div', { class: 'badge badge-info badge-xs' }, cell.teacher.name || 'No Teacher'),
@@ -116,6 +121,7 @@
               groupRoom: { name: groupRoom.name, id: groupRoom.id, maxstudents: groupRoom.maxstudents || 0 },
               timeslot: { id: t.id, start: t.start, end: t.end },
               assignedTeacher,
+              hiddenDetails: false,
             })
           } else {
             let studentsData = []
@@ -140,6 +146,7 @@
               groupRoom: { name: groupRoom.name, id: groupRoom.id, maxstudents: groupRoom.maxstudents || 0 },
               timeslot: { id: t.id, start: t.start, end: t.end },
               assignedTeacher,
+              hiddenDetails: item.hiddenDetails || false,
             })
           }
         })
@@ -233,7 +240,7 @@
   let reloadTimeout
   const debouncedReload = () => {
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadAdvanceGroupBookings, 150)
+    reloadTimeout = setTimeout(loadAdvanceGroupBookings, 100)
   }
 
   async function copyFromAdvanceBooking() {
@@ -263,7 +270,7 @@
         }
       }
 
-      // Copy each advance booking to mondayAdvanceBooking
+      // Copy each advance booking to mondayAdvanceGroupBooking
       for (const booking of advanceBookings) {
         await pb.collection('mondayAdvanceGroupBooking').create({
           grouproom: booking.grouproom || booking.expand?.grouproom?.id,
@@ -271,6 +278,7 @@
           teacher: booking.teacher || booking.expand?.teacher?.id,
           student: booking.student || booking.expand?.student?.id,
           subject: booking.subject || booking.expand?.subject?.id,
+          hiddenDetails: true,
         })
       }
 

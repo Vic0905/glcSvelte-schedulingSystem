@@ -67,7 +67,6 @@
     const monday = new Date(currentWeekStart)
     monday.setDate(monday.getDate() + weeks * 7)
     currentWeekStart = monday.toISOString().split('T')[0]
-    loadAdvanceGroupBookings()
   }
 
   const formatCell = (cell) => {

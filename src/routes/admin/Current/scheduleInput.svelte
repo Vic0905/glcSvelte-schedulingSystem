@@ -21,6 +21,7 @@
   let rooms = []
   let isCopying = $state(false)
   let isLoading = $state(false)
+  let abortController = null
 
   function getWeekStart(date) {
     const d = new Date(date)
@@ -45,11 +46,18 @@
     return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }
 
-  const changeWeek = (weeks) => {
+  const changeWeek = async (weeks) => {
+    if (isLoading) return
+
+    // Cancel any pending requests
+    if (abortController) {
+      abortController.abort()
+    }
+
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-    loadSchedules()
+    await loadSchedules()
   }
 
   const copyToAdvanceBooking = async () => {
@@ -141,6 +149,7 @@
     }
   }
 
+  //
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
     return h('div', { class: 'flex flex-col gap-1 items-center' }, [
@@ -153,27 +162,69 @@
 
   async function loadSchedules() {
     if (isLoading) return
+
+    // Cancel previous request if still pending
+    if (abortController) {
+      abortController.abort()
+    }
+
+    // Create new abort controller
+    abortController = new AbortController()
+    const signal = abortController.signal
+
     isLoading = true
 
     try {
       const weekDays = getWeekDays(weekStart)
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-      const [timeslotsData, roomsData, schedules] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        rooms.length ? rooms : pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
-        pb.collection('lessonSchedule').getList(1, 200, {
+      // Build promises array conditionally for better performance
+      const promises = []
+
+      // Only fetch timeslots if not cached
+      if (!timeslots.length) {
+        promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
+      }
+
+      // Only fetch rooms if not cached
+      if (!rooms.length) {
+        promises.push(pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }))
+      }
+
+      // Always fetch schedules (use getFullList for all records)
+      promises.push(
+        pb.collection('lessonSchedule').getFullList({
           filter: dateFilter,
           expand: 'teacher,student,subject,room,timeslot',
-        }),
-      ])
+        })
+      )
 
-      timeslots = timeslotsData
-      rooms = roomsData
+      const results = await Promise.all(promises)
+
+      // Check if request was cancelled
+      if (signal.aborted) {
+        return
+      }
+
+      // Parse results based on what was fetched
+      let schedules
+      if (!timeslots.length && !rooms.length) {
+        timeslots = results[0]
+        rooms = results[1]
+        schedules = results[2]
+      } else if (!timeslots.length) {
+        timeslots = results[0]
+        schedules = results[1]
+      } else if (!rooms.length) {
+        rooms = results[0]
+        schedules = results[1]
+      } else {
+        schedules = results[0]
+      }
 
       // Build schedule map
       const scheduleMap = {}
-      for (const s of schedules.items) {
+      for (const s of schedules) {
         const rId = s.expand?.room?.id
         const tId = s.expand?.timeslot?.id
         const sId = s.expand?.student?.id
@@ -225,31 +276,17 @@
         return row
       })
 
-      const columns = [
-        {
-          name: 'Teacher',
-          width: '120px',
-          formatter: (cell) =>
-            cell.disabled
-              ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-              : cell.value,
-        },
-        {
-          name: 'Room',
-          width: '120px',
-          formatter: (cell) =>
-            cell.disabled
-              ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-              : cell.value,
-        },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
-      ]
+      // Check again if cancelled before updating UI
+      if (signal.aborted) {
+        return
+      }
 
       if (grid.schedule) {
+        // OPTIMIZATION: Only update data, not columns (columns never change)
         const wrapper = document.querySelector('#grid .gridjs-wrapper')
         const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
 
-        grid.schedule.updateConfig({ columns, data }).forceRender()
+        grid.schedule.updateConfig({ data }).forceRender()
 
         requestAnimationFrame(() => {
           const w = document.querySelector('#grid .gridjs-wrapper')
@@ -259,6 +296,32 @@
           }
         })
       } else {
+        // Initial grid creation - only happens once
+        const columns = [
+          {
+            name: 'Teacher',
+            width: '120px',
+            formatter: (cell) =>
+              cell.disabled
+                ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
+                : cell.value,
+          },
+          {
+            name: 'Room',
+            width: '120px',
+            formatter: (cell) =>
+              cell.disabled
+                ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
+                : cell.value,
+          },
+          ...timeslots.map((t) => ({
+            name: `${t.start} - ${t.end}`,
+            id: t.id,
+            width: '160px',
+            formatter: formatCell,
+          })),
+        ]
+
         grid.schedule = new Grid({
           columns,
           data,
@@ -306,7 +369,6 @@
             booking.data.originalRoomId = cellData.room?.id || ''
           }
 
-          // Open the modal using the native dialog showModal method
           const modal = document.getElementById('editModal')
           if (modal) {
             modal.showModal()
@@ -314,28 +376,40 @@
         })
       }
     } catch (error) {
+      // Don't show error if request was cancelled
+      if (error.name === 'AbortError' || signal.aborted) {
+        console.log('Request cancelled')
+        return
+      }
+
       console.error('Error loading schedules:', error)
       toast.error('Failed to load schedules')
     } finally {
       isLoading = false
+      abortController = null
     }
   }
 
   let reloadTimeout
   const debouncedReload = () => {
+    if (isLoading) return
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadSchedules, 150)
+    reloadTimeout = setTimeout(loadSchedules, 50)
   }
 
   onMount(() => {
-    grid.schedule?.destroy()
-    grid.schedule = null
-    loadSchedules()
+    // Don't destroy grid on mount - let it persist
+    if (!grid.schedule) {
+      loadSchedules()
+    }
     pb.collection('lessonSchedule').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
     clearTimeout(reloadTimeout)
+    if (abortController) {
+      abortController.abort()
+    }
     grid.schedule?.destroy()
     grid.schedule = null
     pb.collection('lessonSchedule').unsubscribe()

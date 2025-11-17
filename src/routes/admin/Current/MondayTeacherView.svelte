@@ -45,10 +45,22 @@
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
+
+    // Check if all items have hiddenDetails
+    const allHidden = cell.every((item) => item.hiddenDetails)
+    if (allHidden) {
+      return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
+    }
+
     return h(
       'div',
       { class: 'text-xs flex flex-col gap-1 items-center' },
       cell.map((item) => {
+        // Show "Scheduled" for individual hidden items
+        if (item.hiddenDetails) {
+          return h('div', { class: 'badge badge-success badge-sm mb-1' }, 'Scheduled')
+        }
+
         const badges = [h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject')]
 
         if (item.isGroup) {
@@ -106,6 +118,7 @@
           student: s.expand?.student,
           room: s.expand?.room,
           isGroup: false,
+          hiddenDetails: s.hiddenDetails || false,
         }
       }
 
@@ -126,6 +139,7 @@
           student: null,
           room: s.expand?.grouproom,
           isGroup: true,
+          hiddenDetails: s.hiddenDetails || false,
         }
       }
 

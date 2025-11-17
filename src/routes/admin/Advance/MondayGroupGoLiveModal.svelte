@@ -18,7 +18,7 @@
     result = { success: 0, failed: 0, errors: [] }
 
     try {
-      // 🔹 Get all Monday advance group bookings
+      // Step 1: Get all Monday advance group bookings
       const mondayGroupBookings = await pb.collection('mondayAdvanceGroupBooking').getFullList({
         expand: 'teacher,student,subject,grouproom,timeslot',
       })
@@ -29,55 +29,134 @@
         return
       }
 
-      // 🔹 Process each booking
+      // Step 2: Fetch all existing group schedules for this Monday at once
+      let existingSchedules = []
+      try {
+        existingSchedules = await pb.collection('mondayGroupLessonSchedule').getFullList({
+          filter: `date = "${mondayDate}"`,
+        })
+      } catch (err) {
+        if (err.status !== 404) throw err
+        // No existing schedules, that's fine
+      }
+
+      // Create a Map for quick lookup: "grouproom_timeslot" -> existing schedule
+      const existingMap = new Map(existingSchedules.map((s) => [`${s.grouproom}_${s.timeslot}`, s]))
+
+      // Step 3: Prepare batch operations
+      const schedulesToCreate = []
+      const schedulesToUpdate = []
+
       for (const booking of mondayGroupBookings) {
-        try {
-          const scheduleData = {
-            date: mondayDate,
-            grouproom: booking.grouproom,
-            timeslot: booking.timeslot,
-            teacher: booking.teacher,
-            student: booking.student,
-            subject: booking.subject,
-            status: 'scheduled',
-          }
+        const scheduleData = {
+          date: mondayDate,
+          grouproom: booking.grouproom,
+          timeslot: booking.timeslot,
+          teacher: booking.teacher,
+          student: booking.student, // Array of student IDs
+          subject: booking.subject,
+          status: 'scheduled',
+          hiddenDetails: booking.hiddenDetails || false,
+        }
 
-          // 🔹 Check if schedule already exists (404-safe)
-          let existing = []
-          try {
-            existing = await pb.collection('mondayGroupLessonSchedule').getFullList({
-              filter: `date = "${mondayDate}" && grouproom = "${booking.grouproom}" && timeslot = "${booking.timeslot}"`,
-            })
-          } catch (err) {
-            if (err.status !== 404) throw err
-          }
+        const key = `${booking.grouproom}_${booking.timeslot}`
+        const existing = existingMap.get(key)
 
-          if (existing.length > 0) {
-            // 🟡 Update existing
-            await pb.collection('mondayGroupLessonSchedule').update(existing[0].id, scheduleData)
-          } else {
-            // 🟢 Create new
-            await pb.collection('mondayGroupLessonSchedule').create(scheduleData)
-          }
-
-          result.success++
-        } catch (error) {
-          result.failed++
-          result.errors.push({
-            groupRoom: booking.expand?.grouproom?.name || 'Unknown',
-            timeslot: `${booking.expand?.timeslot?.start || ''} - ${booking.expand?.timeslot?.end || ''}`,
-            error: error.message,
-          })
+        if (existing) {
+          // Schedule to update
+          schedulesToUpdate.push({ id: existing.id, data: scheduleData, booking })
+        } else {
+          // Schedule to create
+          schedulesToCreate.push({ data: scheduleData, booking })
         }
       }
 
-      // ✅ Show results
-      if (result.failed === 0) {
-        alert(`✅ Success! Published ${result.success} Monday group bookings to live schedule.`)
+      // Step 4: Batch create new schedules
+      const BATCH_SIZE = 50
+      let successCount = 0
+      let failedCount = 0
+      const errors = []
+
+      // Create in batches
+      for (let i = 0; i < schedulesToCreate.length; i += BATCH_SIZE) {
+        const batch = schedulesToCreate.slice(i, i + BATCH_SIZE)
+
+        const createPromises = batch.map(({ data, booking }) =>
+          pb
+            .collection('mondayGroupLessonSchedule')
+            .create(data)
+            .then(() => ({ success: true }))
+            .catch((error) => ({
+              success: false,
+              booking,
+              error: error.message,
+            }))
+        )
+
+        const results = await Promise.all(createPromises)
+
+        results.forEach((result, idx) => {
+          if (result.success) {
+            successCount++
+          } else {
+            failedCount++
+            const booking = batch[idx].booking
+            errors.push({
+              groupRoom: booking.expand?.grouproom?.name || 'Unknown',
+              timeslot: `${booking.expand?.timeslot?.start || ''} - ${booking.expand?.timeslot?.end || ''}`,
+              error: result.error,
+            })
+          }
+        })
+      }
+
+      // Step 5: Batch update existing schedules
+      for (let i = 0; i < schedulesToUpdate.length; i += BATCH_SIZE) {
+        const batch = schedulesToUpdate.slice(i, i + BATCH_SIZE)
+
+        const updatePromises = batch.map(({ id, data, booking }) =>
+          pb
+            .collection('mondayGroupLessonSchedule')
+            .update(id, data)
+            .then(() => ({ success: true }))
+            .catch((error) => ({
+              success: false,
+              booking,
+              error: error.message,
+            }))
+        )
+
+        const results = await Promise.all(updatePromises)
+
+        results.forEach((result, idx) => {
+          if (result.success) {
+            successCount++
+          } else {
+            failedCount++
+            const booking = batch[idx].booking
+            errors.push({
+              groupRoom: booking.expand?.grouproom?.name || 'Unknown',
+              timeslot: `${booking.expand?.timeslot?.start || ''} - ${booking.expand?.timeslot?.end || ''}`,
+              error: result.error,
+            })
+          }
+        })
+      }
+
+      // Update result state
+      result = {
+        success: successCount,
+        failed: failedCount,
+        errors,
+      }
+
+      // Show results
+      if (failedCount === 0) {
+        alert(`✅ Success! Published ${successCount} Monday group bookings to live schedule.`)
         show = false
       } else {
         alert(
-          `⚠️ Partially completed:\n✅ Success: ${result.success}\n❌ Failed: ${result.failed}\n\nCheck the modal for error details.`
+          `⚠️ Partially completed:\n✅ Success: ${successCount}\n❌ Failed: ${failedCount}\n\nCheck the modal for error details.`
         )
       }
     } catch (error) {

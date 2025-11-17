@@ -48,11 +48,23 @@
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
+
+    // Check if all items have hiddenDetails
+    const allHidden = cell.every((item) => item.hiddenDetails)
+    if (allHidden) {
+      return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
+    }
+
     return h(
       'div',
       { class: 'text-xs' },
-      cell.map((item) =>
-        h(
+      cell.map((item) => {
+        // Show "Scheduled" for individual hidden items
+        if (item.hiddenDetails) {
+          return h('div', { class: 'badge badge-success badge-sm mb-1' }, 'Scheduled')
+        }
+
+        return h(
           'div',
           { class: 'flex flex-col gap-1 items-center' },
           [
@@ -62,7 +74,7 @@
             h('span', { class: 'badge badge-error badge-xs' }, item.room?.name || ''),
           ].filter(Boolean)
         )
-      )
+      })
     )
   }
 
@@ -130,6 +142,7 @@
           teacher: s.expand?.teacher,
           room: s.expand?.room,
           isGroup: false,
+          hiddenDetails: s.hiddenDetails || false,
         }
       }
 
@@ -146,6 +159,7 @@
             teacher: s.expand?.teacher,
             room: s.expand?.grouproom,
             isGroup: true,
+            hiddenDetails: s.hiddenDetails || false,
           }
         })
       }

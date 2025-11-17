@@ -46,7 +46,6 @@
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-    loadGroupSchedule()
   }
 
   const formatCell = (cellData) => {
@@ -212,7 +211,6 @@
         id="filterDate"
         bind:value={weekStart}
         class="input input-bordered input-sm w-40"
-        onchange={loadGroupSchedule}
         disabled={isLoading}
       />
     </div>

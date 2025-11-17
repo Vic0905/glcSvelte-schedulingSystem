@@ -32,14 +32,12 @@
       loadingProgress.skippedSchedules = 0
       loadingProgress.conflicts = []
 
-      // ✅ Generate Tuesday–Friday dates correctly
+      // Generate Tuesday–Friday dates
       const weekDates = []
       const start = new Date(currentWeekStart)
-      // Get to Sunday of this week (day 0)
       const sunday = new Date(start)
       sunday.setDate(start.getDate() - start.getDay())
 
-      // Generate Tuesday (2) through Friday (5)
       for (let i = 2; i <= 5; i++) {
         const date = new Date(sunday)
         date.setDate(sunday.getDate() + i)
@@ -48,7 +46,7 @@
 
       // Step 1: Load advance group bookings
       loadingProgress.currentStep = 'Loading advance group bookings...'
-      await new Promise((resolve) => setTimeout(resolve, 500)) // Small delay for UI
+      await new Promise((resolve) => setTimeout(resolve, 500))
 
       const advanceBookings = await pb.collection('groupAdvanceBooking').getFullList({
         filter: `teacher != "" && student != "" && subject != "" && grouproom != "" && timeslot != ""`,
@@ -63,16 +61,27 @@
 
       loadingProgress.totalBookings = advanceBookings.length
       loadingProgress.totalSchedules = advanceBookings.length * weekDates.length
-      loadingProgress.currentStep = `Processing ${advanceBookings.length} group bookings for ${weekDates.length} days (Tuesday to Friday)...`
+      loadingProgress.currentStep = 'Checking for conflicts...'
 
-      let createdCount = 0
+      // Step 2: Fetch all existing group schedules for the week at once
+      const dateFilters = weekDates.map((d) => `date = "${d}"`).join(' || ')
+      const existingSchedules = await pb.collection('groupLessonSchedule').getFullList({
+        filter: dateFilters,
+      })
+
+      // Create Sets for quick conflict checking
+      const existingScheduleKeys = new Set(existingSchedules.map((s) => `${s.date}_${s.grouproom}_${s.timeslot}`))
+      const teacherConflicts = new Set(existingSchedules.map((s) => `${s.date}_${s.teacher}_${s.timeslot}`))
+      const roomConflicts = new Set(existingSchedules.map((s) => `${s.date}_${s.grouproom}_${s.timeslot}`))
+
+      // Step 3: Build batch of schedules to create
+      const schedulesToCreate = []
       let skippedCount = 0
       const conflicts = []
 
       for (let bookingIndex = 0; bookingIndex < advanceBookings.length; bookingIndex++) {
         const booking = advanceBookings[bookingIndex]
 
-        // Update current booking info
         const teacherName = booking.expand?.teacher?.name || 'Unknown Teacher'
         const subjectName = booking.expand?.subject?.name || 'Unknown Subject'
         const studentNames = Array.isArray(booking.expand?.student)
@@ -82,89 +91,69 @@
         loadingProgress.currentBooking = `${teacherName} - ${subjectName} (${studentNames})`
         loadingProgress.processedBookings = bookingIndex + 1
 
-        for (let dateIndex = 0; dateIndex < weekDates.length; dateIndex++) {
-          const date = weekDates[dateIndex]
-          loadingProgress.currentDate = new Date(date).toLocaleDateString('en-US', {
-            weekday: 'long',
-            month: 'short',
-            day: 'numeric',
-          })
-          loadingProgress.currentStep = `Processing ${loadingProgress.currentBooking} for ${loadingProgress.currentDate}`
+        for (const date of weekDates) {
+          const scheduleKey = `${date}_${booking.grouproom}_${booking.timeslot}`
+          const teacherKey = `${date}_${booking.teacher}_${booking.timeslot}`
+          const roomKey = `${date}_${booking.grouproom}_${booking.timeslot}`
 
-          // Small delay to show progress
-          if ((bookingIndex * weekDates.length + dateIndex) % 3 === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 100))
+          // Check if schedule already exists
+          if (existingScheduleKeys.has(scheduleKey)) {
+            const skipMsg = `${date} - Schedule already exists for ${subjectName}`
+            conflicts.push(skipMsg)
+            skippedCount++
+            continue
           }
 
-          try {
-            // Check if a schedule already exists for this date/room/timeslot
-            const existingSchedules = await pb.collection('groupLessonSchedule').getFullList({
-              filter: `date = "${date}" && grouproom = "${booking.grouproom}" && timeslot = "${booking.timeslot}"`,
-            })
+          // Check for conflicts
+          let hasConflict = false
+          if (teacherConflicts.has(teacherKey)) {
+            conflicts.push(`${date} - Teacher conflict for ${subjectName}`)
+            hasConflict = true
+          } else if (roomConflicts.has(roomKey)) {
+            conflicts.push(`${date} - Room conflict for ${subjectName}`)
+            hasConflict = true
+          }
 
-            // If schedule already exists, skip it
-            if (existingSchedules.length > 0) {
-              const skipMsg = `${loadingProgress.currentDate} - Schedule already exists for ${subjectName}`
-              conflicts.push(skipMsg)
-              loadingProgress.conflicts = [...conflicts]
-              skippedCount++
-              loadingProgress.skippedSchedules = skippedCount
-              continue
-            }
-
-            const scheduleData = {
-              date: date,
-              grouproom: booking.grouproom,
-              timeslot: booking.timeslot,
-              subject: booking.subject,
-              teacher: booking.teacher,
-              student: booking.student, // This should be an array of student IDs
-              status: 'scheduled',
-            }
-
-            // Check for potential conflicts (teacher/room conflicts)
-            const conflictChecks = [
-              {
-                filter: `teacher = "${booking.teacher}" && date = "${date}" && timeslot = "${booking.timeslot}"`,
-                type: 'Teacher',
-              },
-              {
-                filter: `grouproom = "${booking.grouproom}" && date = "${date}" && timeslot = "${booking.timeslot}"`,
-                type: 'Room',
-              },
-            ]
-
-            let hasConflict = false
-            for (const { filter, type } of conflictChecks) {
-              try {
-                await pb.collection('groupLessonSchedule').getFirstListItem(filter)
-                const conflictMsg = `${loadingProgress.currentDate} - ${type} conflict for ${subjectName}`
-                conflicts.push(conflictMsg)
-                loadingProgress.conflicts = [...conflicts]
-                hasConflict = true
-                skippedCount++
-                loadingProgress.skippedSchedules = skippedCount
-                break
-              } catch {
-                // No conflict found, continue
-              }
-            }
-
-            if (!hasConflict) {
-              // Create new schedule
-              await pb.collection('groupLessonSchedule').create(scheduleData)
-              createdCount++
-              loadingProgress.createdSchedules = createdCount
-            }
-          } catch (error) {
-            console.error(`Error processing group booking for ${date}:`, error)
-            const errorMsg = `${loadingProgress.currentDate} - Processing error for ${subjectName}`
-            conflicts.push(errorMsg)
-            loadingProgress.conflicts = [...conflicts]
+          if (hasConflict) {
             skippedCount++
             loadingProgress.skippedSchedules = skippedCount
+            loadingProgress.conflicts = [...conflicts]
+            continue
           }
+
+          // Add to batch
+          schedulesToCreate.push({
+            date: date,
+            grouproom: booking.grouproom,
+            timeslot: booking.timeslot,
+            subject: booking.subject,
+            teacher: booking.teacher,
+            student: booking.student, // Array of student IDs
+            status: 'scheduled',
+          })
         }
+      }
+
+      loadingProgress.currentStep = `Creating ${schedulesToCreate.length} group schedules...`
+
+      // Step 4: Batch create schedules
+      const BATCH_SIZE = 50 // Adjust based on server capacity
+      let createdCount = 0
+
+      for (let i = 0; i < schedulesToCreate.length; i += BATCH_SIZE) {
+        const batch = schedulesToCreate.slice(i, i + BATCH_SIZE)
+
+        // Create promises for batch
+        const batchPromises = batch.map((schedule) => pb.collection('groupLessonSchedule').create(schedule))
+
+        await Promise.all(batchPromises)
+
+        createdCount += batch.length
+        loadingProgress.createdSchedules = createdCount
+        loadingProgress.currentStep = `Created ${createdCount} / ${schedulesToCreate.length} schedules...`
+
+        // Small delay to update UI
+        await new Promise((resolve) => setTimeout(resolve, 100))
       }
 
       // Final step

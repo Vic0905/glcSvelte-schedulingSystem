@@ -127,6 +127,7 @@
             student: schedule.student,
             subject: schedule.subject,
             room: schedule.room,
+            hiddenDetails: true,
           })
         )
       )
@@ -150,6 +151,9 @@
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
+    if (cell.hiddenDetails) {
+      return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
+    }
     return h('div', { class: 'flex flex-col gap-1 items-center' }, [
       h('span', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name),
       h('span', { class: 'badge badge-info badge-xs' }, cell.teacher.name),
@@ -231,6 +235,7 @@
               room: { name: room.name, id: room.id },
               timeslot: { id: ts.id, start: ts.start, end: ts.end },
               assignedTeacher: teacher,
+              hiddenDetails: s.hiddenDetails || false,
             })
           }
         })
