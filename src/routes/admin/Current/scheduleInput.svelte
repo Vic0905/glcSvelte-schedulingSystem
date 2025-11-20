@@ -23,6 +23,7 @@
   let isLoading = $state(false)
   let abortController = null
 
+  // Utility functions
   function getWeekStart(date) {
     const d = new Date(date)
     const diff = d.getDay() === 0 ? -5 : d.getDay() === 1 ? 1 : 2 - d.getDay()
@@ -43,16 +44,18 @@
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
-    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+    const opts = { month: 'long', day: 'numeric' }
+    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
   }
 
+  function getDateFilter(weekDays) {
+    return weekDays.map((d) => `date = "${d}"`).join(' || ')
+  }
+
+  // Week navigation
   const changeWeek = async (weeks) => {
     if (isLoading) return
-
-    // Cancel any pending requests
-    if (abortController) {
-      abortController.abort()
-    }
+    abortController?.abort()
 
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
@@ -60,46 +63,46 @@
     await loadSchedules()
   }
 
+  // Copy to advance booking
   const copyToAdvanceBooking = async () => {
     try {
       const weekDays = getWeekDays(weekStart)
-      const dateFilter = `(${weekDays.map((d) => `date = "${d}"`).join(' || ')})`
+      const dateFilter = getDateFilter(weekDays)
 
-      const schedules = await pb.collection('lessonSchedule').getFullList({
-        filter: dateFilter,
-        expand: 'teacher,student,subject,room,timeslot',
-      })
+      const [schedules, existingBookings] = await Promise.all([
+        pb.collection('lessonSchedule').getFullList({
+          filter: dateFilter,
+          expand: 'teacher,student,subject,room,timeslot',
+        }),
+        pb
+          .collection('advanceBooking')
+          .getFullList({ filter: dateFilter })
+          .catch(() => []),
+      ])
 
-      if (schedules.length === 0) {
+      if (!schedules.length) {
         toast.info('No schedules found for this week', { position: 'bottom-right', duration: 3000 })
         return
       }
 
-      // Get unique schedules
-      const uniqueSchedulesMap = {}
-      schedules.forEach((schedule) => {
-        const key = `${schedule.student}-${schedule.timeslot}-${schedule.room}`
-        uniqueSchedulesMap[key] ??= schedule
-      })
-      const uniqueSchedules = Object.values(uniqueSchedulesMap)
+      // Deduplicate schedules
+      const uniqueSchedules = Object.values(
+        schedules.reduce((acc, s) => {
+          const key = `${s.student}-${s.timeslot}-${s.room}`
+          acc[key] ??= s
+          return acc
+        }, {})
+      )
 
-      const existingBookings = await pb
-        .collection('advanceBooking')
-        .getFullList({ filter: dateFilter })
-        .catch(() => [])
-
+      // Filter out existing bookings
       const schedulesToCopy = uniqueSchedules.filter(
-        (schedule) =>
+        (s) =>
           !existingBookings.some(
-            (booking) =>
-              booking.timeslot === schedule.timeslot &&
-              booking.teacher === schedule.teacher &&
-              booking.student === schedule.student &&
-              booking.room === schedule.room
+            (b) => b.timeslot === s.timeslot && b.teacher === s.teacher && b.student === s.student && b.room === s.room
           )
       )
 
-      if (schedulesToCopy.length === 0) {
+      if (!schedulesToCopy.length) {
         toast.info('All schedules already copied!', {
           position: 'bottom-right',
           duration: 3000,
@@ -108,25 +111,28 @@
         return
       }
 
-      const confirmMessage =
-        `Copy ${schedulesToCopy.length} unique schedule(s) to Advance Booking?\n\n` +
-        `Week: ${getWeekRangeDisplay(weekStart)}\n` +
-        (existingBookings.length > 0 ? `(${existingBookings.length} already exist, skipping duplicates)\n` : '') +
-        `This will create ${schedulesToCopy.length} advance booking record(s).`
+      const confirmMsg = [
+        `Copy ${schedulesToCopy.length} unique schedule(s) to Advance Booking?`,
+        `Week: ${getWeekRangeDisplay(weekStart)}`,
+        existingBookings.length > 0 ? `(${existingBookings.length} already exist, skipping duplicates)` : '',
+        `This will create ${schedulesToCopy.length} advance booking record(s).`,
+      ]
+        .filter(Boolean)
+        .join('\n\n')
 
-      if (!confirm(confirmMessage)) return
+      if (!confirm(confirmMsg)) return
 
       isCopying = true
 
       await Promise.all(
-        schedulesToCopy.map((schedule) =>
+        schedulesToCopy.map((s) =>
           pb.collection('advanceBooking').create({
-            date: schedule.date,
-            timeslot: schedule.timeslot,
-            teacher: schedule.teacher,
-            student: schedule.student,
-            subject: schedule.subject,
-            room: schedule.room,
+            date: s.date,
+            timeslot: s.timeslot,
+            teacher: s.teacher,
+            student: s.student,
+            subject: s.subject,
+            room: s.room,
             status: 'pending',
           })
         )
@@ -149,7 +155,7 @@
     }
   }
 
-  //
+  // Cell formatter
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
     return h('div', { class: 'flex flex-col gap-1 items-center' }, [
@@ -160,38 +166,52 @@
     ])
   }
 
-  async function loadSchedules() {
-    if (isLoading) return
-
-    // Cancel previous request if still pending
-    if (abortController) {
-      abortController.abort()
+  // Build cell data
+  function buildCellData(schedule, room, timeslot, teacher, weekStart) {
+    const base = {
+      date: weekStart,
+      room: { name: room.name, id: room.id },
+      timeslot: { id: timeslot.id, start: timeslot.start, end: timeslot.end },
+      assignedTeacher: teacher,
     }
 
-    // Create new abort controller
+    if (!schedule) {
+      return {
+        ...base,
+        label: 'Empty',
+        subject: { name: '', id: '' },
+        teacher: { name: '', id: '' },
+        student: { englishName: '', id: '' },
+      }
+    }
+
+    return {
+      ...base,
+      label: 'Schedule',
+      id: schedule.id,
+      subject: { name: schedule.expand?.subject?.name || '', id: schedule.expand?.subject?.id || '' },
+      teacher: { name: schedule.expand?.teacher?.name || '', id: schedule.expand?.teacher?.id || '' },
+      student: { englishName: schedule.expand?.student?.englishName || '', id: schedule.expand?.student?.id || '' },
+    }
+  }
+
+  // Load schedules
+  async function loadSchedules() {
+    if (isLoading) return
+    abortController?.abort()
     abortController = new AbortController()
-    const signal = abortController.signal
+    const { signal } = abortController
 
     isLoading = true
 
     try {
       const weekDays = getWeekDays(weekStart)
-      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
+      const dateFilter = getDateFilter(weekDays)
 
-      // Build promises array conditionally for better performance
+      // Fetch data from the database
       const promises = []
-
-      // Only fetch timeslots if not cached
-      if (!timeslots.length) {
-        promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
-      }
-
-      // Only fetch rooms if not cached
-      if (!rooms.length) {
-        promises.push(pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }))
-      }
-
-      // Always fetch schedules (use getFullList for all records)
+      if (!timeslots.length) promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
+      if (!rooms.length) promises.push(pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }))
       promises.push(
         pb.collection('lessonSchedule').getFullList({
           filter: dateFilter,
@@ -200,40 +220,26 @@
       )
 
       const results = await Promise.all(promises)
+      if (signal.aborted) return
 
-      // Check if request was cancelled
-      if (signal.aborted) {
-        return
-      }
-
-      // Parse results based on what was fetched
-      let schedules
-      if (!timeslots.length && !rooms.length) {
-        timeslots = results[0]
-        rooms = results[1]
-        schedules = results[2]
-      } else if (!timeslots.length) {
-        timeslots = results[0]
-        schedules = results[1]
-      } else if (!rooms.length) {
-        rooms = results[0]
-        schedules = results[1]
-      } else {
-        schedules = results[0]
-      }
+      // Parse results
+      let idx = 0
+      if (!timeslots.length) timeslots = results[idx++]
+      if (!rooms.length) rooms = results[idx++]
+      const schedules = results[idx]
 
       // Build schedule map
-      const scheduleMap = {}
-      for (const s of schedules) {
+      const scheduleMap = schedules.reduce((acc, s) => {
         const rId = s.expand?.room?.id
         const tId = s.expand?.timeslot?.id
         const sId = s.expand?.student?.id
-        if (!rId || !tId || !sId) continue
-
-        scheduleMap[rId] ??= {}
-        scheduleMap[rId][tId] ??= {}
-        scheduleMap[rId][tId][sId] = s
-      }
+        if (rId && tId && sId) {
+          acc[rId] ??= {}
+          acc[rId][tId] ??= {}
+          acc[rId][tId][sId] = s
+        }
+        return acc
+      }, {})
 
       // Build table data
       const data = rooms.map((room) => {
@@ -245,44 +251,17 @@
 
         timeslots.forEach((ts) => {
           const students = scheduleMap[room.id]?.[ts.id]
-
-          if (!students || Object.keys(students).length === 0) {
-            row.push({
-              label: 'Empty',
-              date: weekStart,
-              subject: { name: '', id: '' },
-              teacher: { name: '', id: '' },
-              student: { englishName: '', id: '' },
-              room: { name: room.name, id: room.id },
-              timeslot: { id: ts.id, start: ts.start, end: ts.end },
-              assignedTeacher: teacher,
-            })
-          } else {
-            const s = Object.values(students)[0]
-            row.push({
-              label: 'Schedule',
-              id: s.id,
-              date: weekStart,
-              subject: { name: s.expand?.subject?.name || '', id: s.expand?.subject?.id || '' },
-              teacher: { name: s.expand?.teacher?.name || '', id: s.expand?.teacher?.id || '' },
-              student: { englishName: s.expand?.student?.englishName || '', id: s.expand?.student?.id || '' },
-              room: { name: room.name, id: room.id },
-              timeslot: { id: ts.id, start: ts.start, end: ts.end },
-              assignedTeacher: teacher,
-            })
-          }
+          const schedule = students ? Object.values(students)[0] : null
+          row.push(buildCellData(schedule, room, ts, teacher, weekStart))
         })
 
         return row
       })
 
-      // Check again if cancelled before updating UI
-      if (signal.aborted) {
-        return
-      }
+      if (signal.aborted) return
 
+      // Update or create grid
       if (grid.schedule) {
-        // OPTIMIZATION: Only update data, not columns (columns never change)
         const wrapper = document.querySelector('#grid .gridjs-wrapper')
         const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
 
@@ -296,7 +275,6 @@
           }
         })
       } else {
-        // Initial grid creation - only happens once
         const columns = [
           {
             name: 'Teacher',
@@ -344,13 +322,7 @@
           endDate.setDate(endDate.getDate() + 3)
 
           booking.data = {
-            ...booking.data,
             ...cellData,
-            subject: cellData.subject ?? { name: '', id: '' },
-            teacher: cellData.teacher ?? { name: '', id: '' },
-            student: cellData.student ?? { englishName: '', id: '' },
-            room: cellData.room ?? { name: '', id: '' },
-            timeslot: cellData.timeslot ?? { id: '', start: '', end: '' },
             startDate: weekStart,
             endDate: endDate.toISOString().split('T')[0],
             mode: cellData.label === 'Empty' ? 'create' : 'edit',
@@ -369,19 +341,14 @@
             booking.data.originalRoomId = cellData.room?.id || ''
           }
 
-          const modal = document.getElementById('editModal')
-          if (modal) {
-            modal.showModal()
-          }
+          document.getElementById('editModal')?.showModal()
         })
       }
     } catch (error) {
-      // Don't show error if request was cancelled
       if (error.name === 'AbortError' || signal.aborted) {
         console.log('Request cancelled')
         return
       }
-
       console.error('Error loading schedules:', error)
       toast.error('Failed to load schedules')
     } finally {
@@ -390,6 +357,7 @@
     }
   }
 
+  // Debounced reload
   let reloadTimeout
   const debouncedReload = () => {
     if (isLoading) return
@@ -398,18 +366,13 @@
   }
 
   onMount(() => {
-    // Don't destroy grid on mount - let it persist
-    if (!grid.schedule) {
-      loadSchedules()
-    }
+    if (!grid.schedule) loadSchedules()
     pb.collection('lessonSchedule').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
     clearTimeout(reloadTimeout)
-    if (abortController) {
-      abortController.abort()
-    }
+    abortController?.abort()
     grid.schedule?.destroy()
     grid.schedule = null
     pb.collection('lessonSchedule').unsubscribe()
@@ -427,28 +390,22 @@
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
-      <button
-        class="btn btn-success btn-sm flex items-center gap-2"
-        onclick={copyToAdvanceBooking}
-        disabled={isCopying}
-      >
-        {#if isCopying}
-          <span class="loading loading-spinner loading-sm"></span>
-          Copying...
-        {:else}
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-            />
-          </svg>
-          Copy to Advance Booking
-        {/if}
-      </button>
-    </div>
+    <button class="btn btn-success btn-sm flex items-center gap-2" onclick={copyToAdvanceBooking} disabled={isCopying}>
+      {#if isCopying}
+        <span class="loading loading-spinner loading-sm"></span>
+        Copying...
+      {:else}
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+          />
+        </svg>
+        Copy to Advance Booking
+      {/if}
+    </button>
 
     <h3 class="text-xl font-semibold text-primary text-center mr-20">{getWeekRangeDisplay(weekStart)}</h3>
 

@@ -6,25 +6,38 @@
 
   const dispatch = createEventDispatcher()
 
-  let show = false
-  let subjects = []
-  let students = []
-  let teachers = []
-  let groupRooms = []
-  let timeslots = []
-  let saving = false
-  let deleting = false
-  let selectedStudents = []
-  let maxStudentsAllowed = 0
-  let searchTerm = ''
-  let existingSchedules = []
+  let show = $state(false)
+  let subjects = $state([])
+  let students = $state([])
+  let teachers = $state([])
+  let groupRooms = $state([])
+  let timeslots = $state([])
+  let saving = $state(false)
+  let deleting = $state(false)
+  let selectedStudents = $state([])
+  let maxStudentsAllowed = $state(0)
+  let searchTerm = $state('')
+  let existingSchedules = $state([])
+
+  // Consolidated conflict detection using $derived
+  const conflicts = $derived({
+    teacher: existingSchedules.find((s) => s.teacher === booking.mondayData?.teacher?.id),
+    grouproom: existingSchedules.find(
+      (s) => s.room === booking.mondayData?.groupRoom?.id || s.grouproom === booking.mondayData?.groupRoom?.id
+    ),
+    students: selectedStudents.filter((studentId) =>
+      existingSchedules.some(
+        (s) => s.student === studentId || (Array.isArray(s.student) && s.student.includes(studentId))
+      )
+    ),
+  })
 
   // Show modal method (called from parent)
   export function showModal() {
     show = true
-    loadDropdowns()
+    loadAllData()
 
-    // Initialize selected students from booking data with null safety
+    // Initialize selected students from booking data
     if (booking?.mondayData?.mode === 'edit' && Array.isArray(booking.mondayData.students)) {
       selectedStudents = booking.mondayData.students.map((student) => student.id || student)
     } else {
@@ -33,7 +46,7 @@
 
     setMaxStudentsAllowed()
 
-    // Always reload existing schedules when modal opens with null safety
+    // Reload existing schedules when modal opens
     if (booking?.mondayData?.selectedDate && booking?.mondayData?.timeslot?.id) {
       loadExistingSchedules()
     }
@@ -47,13 +60,21 @@
     existingSchedules = []
   }
 
-  async function loadDropdowns() {
+  const loadAllData = async () => {
     try {
-      subjects = await pb.collection('subject').getFullList({ sort: 'name' })
-      students = await pb.collection('student').getFullList({ sort: 'englishName' })
-      teachers = await pb.collection('teacher').getFullList({ sort: 'name' })
-      groupRooms = await pb.collection('groupRoom').getFullList({ sort: 'name' })
-      timeslots = await pb.collection('timeslot').getFullList({ sort: 'start' })
+      const [subjectsData, studentsData, teachersData, groupRoomsData, timeslotsData] = await Promise.all([
+        pb.collection('subject').getFullList({ sort: 'name' }),
+        pb.collection('student').getFullList({ sort: 'englishName' }),
+        pb.collection('teacher').getFullList({ sort: 'name' }),
+        pb.collection('groupRoom').getFullList({ sort: 'name' }),
+        pb.collection('timeslot').getFullList({ sort: 'start' }),
+      ])
+
+      subjects = subjectsData
+      students = studentsData
+      teachers = teachersData
+      groupRooms = groupRoomsData
+      timeslots = timeslotsData
 
       setMaxStudentsAllowed()
     } catch (err) {
@@ -62,7 +83,6 @@
     }
   }
 
-  // Load existing schedules for conflict detection - UPDATED TO INCLUDE MONDAY LESSONS
   const loadExistingSchedules = async () => {
     try {
       const selectedDate = booking?.mondayData?.selectedDate
@@ -92,7 +112,6 @@
         }
       }
 
-      // UPDATED: Include both Monday individual and group lessons
       const [mondayLessonRecords, mondayGroupRecords] = await Promise.all([
         pb.collection('mondayLessonSchedule').getFullList({
           filter: `date = "${selectedDate}" && timeslot = "${timeslotId}"`,
@@ -111,65 +130,45 @@
     }
   }
 
-  const isTeacherBooked = (teacherId) => {
-    return existingSchedules.some((s) => s.teacher === teacherId)
+  const getConflictLabel = (schedule, type) => {
+    if (!schedule?.expand) return 'Unknown'
+
+    const isGroupLesson = Array.isArray(schedule.student)
+
+    switch (type) {
+      case 'teacher':
+        if (isGroupLesson) return 'Group Class'
+        return schedule.expand.student?.englishName || 'Unknown Student'
+
+      case 'student':
+        return schedule.expand.teacher?.name || 'Unknown Teacher'
+
+      case 'grouproom':
+        const teacherName = schedule.expand.teacher?.name || 'Unknown Teacher'
+        if (isGroupLesson) {
+          const studentNames = schedule.expand.student?.map((st) => st.englishName).join(', ') || 'Group Students'
+          return `${teacherName} & ${studentNames}`
+        }
+        const studentName = schedule.expand.student?.englishName || 'Unknown Student'
+        return `${teacherName} & ${studentName}`
+
+      default:
+        return 'Unknown'
+    }
   }
 
-  const isStudentBooked = (studentId) => {
-    return existingSchedules.some(
+  const getStudentConflict = (studentId) => {
+    return existingSchedules.find(
       (s) => s.student === studentId || (Array.isArray(s.student) && s.student.includes(studentId))
     )
   }
 
-  const isGroupRoomBooked = (roomId) => {
-    return existingSchedules.some((s) => s.room === roomId || s.grouproom === roomId)
-  }
-
-  const getConflictInfo = (resourceId, type) => {
-    const schedule = existingSchedules.find((s) => {
-      if (type === 'student') {
-        return s.student === resourceId || (Array.isArray(s.student) && s.student.includes(resourceId))
-      } else if (type === 'grouproom') {
-        return s.room === resourceId || s.grouproom === resourceId
-      }
-      return s[type] === resourceId
-    })
-
-    if (!schedule) return ''
-
-    switch (type) {
-      case 'teacher':
-        if (Array.isArray(schedule.expand?.student)) {
-          return 'Group Class'
-        }
-        return schedule.expand?.student?.englishName || 'Unknown Student'
-
-      case 'student':
-        return schedule.expand?.teacher?.name || 'Unknown Teacher'
-
-      case 'grouproom':
-        const teacherName = schedule.expand?.teacher?.name || 'Unknown Teacher'
-        let studentNames = ''
-
-        if (schedule.expand?.student?.englishName) {
-          studentNames = schedule.expand.student.englishName
-        } else if (Array.isArray(schedule.expand?.student)) {
-          studentNames = schedule.expand.student.map((st) => st.englishName).join(', ')
-        } else {
-          studentNames = 'Group Students'
-        }
-
-        return `${teacherName} & ${studentNames}`
-
-      default:
-        return ''
+  // Reload schedules when date/timeslot changes
+  $effect(() => {
+    if (booking?.mondayData?.selectedDate && booking?.mondayData?.timeslot?.id) {
+      loadExistingSchedules()
     }
-  }
-
-  // Reload schedules when date/timeslot changes - with null safety
-  $: if (booking?.mondayData?.selectedDate && booking?.mondayData?.timeslot?.id) {
-    loadExistingSchedules()
-  }
+  })
 
   function setMaxStudentsAllowed() {
     if (booking?.mondayData?.groupRoom?.id && groupRooms.length > 0) {
@@ -201,13 +200,15 @@
   }
 
   function selectAllStudents() {
+    const availableStudents = students.filter((s) => s.status !== 'graduated' && !getStudentConflict(s.id))
+
     if (maxStudentsAllowed > 0) {
-      selectedStudents = students.slice(0, maxStudentsAllowed).map((s) => s.id)
-      if (students.length > maxStudentsAllowed) {
+      selectedStudents = availableStudents.slice(0, maxStudentsAllowed).map((s) => s.id)
+      if (availableStudents.length > maxStudentsAllowed) {
         toast.info(`Selected first ${maxStudentsAllowed} students due to room limit`)
       }
     } else {
-      selectedStudents = students.map((s) => s.id)
+      selectedStudents = availableStudents.map((s) => s.id)
     }
   }
 
@@ -215,7 +216,6 @@
     selectedStudents = []
   }
 
-  // Validation
   const validateSchedule = () => {
     if (!booking?.mondayData?.subject?.id) {
       toast.error('Please select a subject')
@@ -238,28 +238,27 @@
       return false
     }
 
-    // Check conflicts
-    if (isTeacherBooked(booking.mondayData.teacher.id)) {
-      const conflictInfo = getConflictInfo(booking.mondayData.teacher.id, 'teacher')
+    // In-memory conflict checks
+    if (conflicts.teacher) {
+      const conflictInfo = getConflictLabel(conflicts.teacher, 'teacher')
       toast.error('Teacher conflict', {
         description: `${booking.mondayData.teacher.name || 'Teacher'} is already booked with ${conflictInfo}`,
       })
       return false
     }
 
-    for (const studentId of selectedStudents) {
-      if (isStudentBooked(studentId)) {
-        const student = students.find((s) => s.id === studentId)
-        const conflictInfo = getConflictInfo(studentId, 'student')
-        toast.error('Student conflict', {
-          description: `${student?.englishName || 'Student'} is already booked with ${conflictInfo}`,
-        })
-        return false
-      }
+    if (conflicts.students.length > 0) {
+      const student = students.find((s) => s.id === conflicts.students[0])
+      const conflictSchedule = getStudentConflict(conflicts.students[0])
+      const conflictInfo = getConflictLabel(conflictSchedule, 'student')
+      toast.error('Student conflict', {
+        description: `${student?.englishName || 'Student'} is already booked with ${conflictInfo}`,
+      })
+      return false
     }
 
-    if (isGroupRoomBooked(booking.mondayData.groupRoom.id)) {
-      const conflictInfo = getConflictInfo(booking.mondayData.groupRoom.id, 'grouproom')
+    if (conflicts.grouproom) {
+      const conflictInfo = getConflictLabel(conflicts.grouproom, 'grouproom')
       toast.error('Room conflict', {
         description: `${booking.mondayData.groupRoom.name || 'Room'} is already occupied by ${conflictInfo}`,
       })
@@ -344,14 +343,16 @@
     }
   }
 
-  $: filteredStudents = students.filter((s) => s.englishName.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredStudents = $derived(
+    students.filter((s) => s.englishName.toLowerCase().includes(searchTerm.toLowerCase()))
+  )
 </script>
 
 {#if show}
   <div class="modal modal-open">
     <div class="modal-box max-w-4xl w-full space-y-6 rounded-xl">
       <h3 class="text-xl font-bold text-center">
-        {booking.mondayData.mode === 'edit' ? 'Edit Monday Group Schedule' : 'Create Monday Group Schedule'}
+        {booking.mondayData?.mode === 'edit' ? 'Edit' : 'Create'} Monday Group Schedule
       </h3>
 
       <div class="alert alert-info text-sm">
@@ -363,9 +364,9 @@
             d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
           ></path>
         </svg>
-        <span
-          >This will {booking.mondayData.mode === 'edit' ? 'update' : 'create'} a group schedule for Monday only</span
-        >
+        <span>
+          This will {booking.mondayData?.mode === 'edit' ? 'update' : 'create'} a group schedule for Monday only
+        </span>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -392,14 +393,7 @@
                 {/if})
               </span>
               <div class="space-x-2">
-                <button
-                  type="button"
-                  class="btn btn-xs btn-outline"
-                  onclick={selectAllStudents}
-                  disabled={maxStudentsAllowed > 0 && selectedStudents.length >= maxStudentsAllowed}
-                >
-                  Select All
-                </button>
+                <button type="button" class="btn btn-xs btn-outline" onclick={selectAllStudents}> Select All </button>
                 <button type="button" class="btn btn-xs btn-outline" onclick={clearAllStudents}> Clear All </button>
               </div>
             </label>
@@ -416,27 +410,31 @@
             <div class="border border-base-300 rounded-lg p-4 max-h-80 overflow-y-auto bg-base-100">
               {#each filteredStudents as student (student.id)}
                 {#if student.status !== 'graduated' || selectedStudents.includes(student.id)}
-                  {@const isBooked = isStudentBooked(student.id)}
-                  {@const conflictInfo = getConflictInfo(student.id, 'student')}
+                  {@const conflictSchedule = getStudentConflict(student.id)}
+                  {@const isGraduated = student.status === 'graduated'}
+                  {@const isBooked = !!conflictSchedule}
+
                   <div class="form-control">
                     <label class="label cursor-pointer justify-start gap-3">
                       <input
                         type="checkbox"
                         class="checkbox checkbox-sm"
                         checked={selectedStudents.includes(student.id)}
-                        disabled={student.status === 'graduated' ||
+                        disabled={isGraduated ||
                           isBooked ||
                           (maxStudentsAllowed > 0 &&
                             !selectedStudents.includes(student.id) &&
                             selectedStudents.length >= maxStudentsAllowed)}
                         onchange={() => toggleStudent(student.id)}
                       />
-                      <span class="label-text {student.status === 'graduated' || isBooked ? 'italic' : ''}">
+                      <span class="label-text" class:italic={isGraduated || isBooked}>
                         {student.englishName}
-                        {#if student.status === 'graduated'}
+                        {#if isGraduated}
                           <span class="text-xs text-gray-400">(Graduated)</span>
                         {:else if isBooked}
-                          <span class="text-warning text-xs">(Booked with {conflictInfo})</span>
+                          <span class="text-warning text-xs">
+                            (Booked with {getConflictLabel(conflictSchedule, 'student')})
+                          </span>
                         {/if}
                       </span>
                     </label>
@@ -459,19 +457,18 @@
             <select bind:value={booking.mondayData.teacher.id} class="select select-bordered w-full" required>
               <option value="">-- Select Teacher --</option>
               {#each teachers as teacher}
-                {@const isBooked = isTeacherBooked(teacher.id)}
-                {@const conflictInfo = getConflictInfo(teacher.id, 'teacher')}
-                <option value={teacher.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
+                {@const conflictSchedule = existingSchedules.find((s) => s.teacher === teacher.id)}
+                <option value={teacher.id} disabled={!!conflictSchedule} class:text-gray-400={conflictSchedule}>
                   {teacher.name}
-                  {#if isBooked}
-                    (Booked with {conflictInfo})
+                  {#if conflictSchedule}
+                    (Booked with {getConflictLabel(conflictSchedule, 'teacher')})
                   {/if}
                 </option>
               {/each}
             </select>
-            {#if booking.mondayData.teacher.id && isTeacherBooked(booking.mondayData.teacher.id)}
+            {#if conflicts.teacher}
               <div class="label">
-                <span class="label-text-alt text-warning"> ⚠️ This teacher is already booked </span>
+                <span class="label-text-alt text-warning">⚠️ This teacher is already booked</span>
               </div>
             {/if}
           </div>
@@ -487,19 +484,18 @@
             >
               <option value="">-- Select Group Room --</option>
               {#each groupRooms as room}
-                {@const isBooked = isGroupRoomBooked(room.id)}
-                {@const conflictInfo = getConflictInfo(room.id, 'grouproom')}
-                <option value={room.id} disabled={isBooked} class={isBooked ? 'text-gray-400' : ''}>
+                {@const conflictSchedule = existingSchedules.find((s) => s.room === room.id || s.grouproom === room.id)}
+                <option value={room.id} disabled={!!conflictSchedule} class:text-gray-400={conflictSchedule}>
                   {room.name} (Max: {room.maxstudents} students)
-                  {#if isBooked}
-                    - (Occupied by {conflictInfo})
+                  {#if conflictSchedule}
+                    - (Occupied by {getConflictLabel(conflictSchedule, 'grouproom')})
                   {/if}
                 </option>
               {/each}
             </select>
-            {#if booking.mondayData.groupRoom.id && isGroupRoomBooked(booking.mondayData.groupRoom.id)}
+            {#if conflicts.grouproom}
               <div class="label">
-                <span class="label-text-alt text-warning"> ⚠️ This room is already occupied </span>
+                <span class="label-text-alt text-warning">⚠️ This room is already occupied</span>
               </div>
             {/if}
           </div>
@@ -521,7 +517,7 @@
             <div class="bg-base-200 rounded-lg p-4 space-y-2">
               <div class="text-sm">
                 <span class="font-medium">Date:</span>
-                {booking.mondayData.selectedDate
+                {booking.mondayData?.selectedDate
                   ? new Date(booking.mondayData.selectedDate).toLocaleDateString('en-US', {
                       weekday: 'long',
                       month: 'long',
@@ -532,11 +528,11 @@
               </div>
               <div class="text-sm">
                 <span class="font-medium">Room:</span>
-                {booking.mondayData.groupRoom.name || 'Not selected'}
+                {booking.mondayData?.groupRoom?.name || 'Not selected'}
               </div>
               <div class="text-sm">
                 <span class="font-medium">Timeslot:</span>
-                {booking.mondayData.timeslot.start && booking.mondayData.timeslot.end
+                {booking.mondayData?.timeslot?.start && booking.mondayData?.timeslot?.end
                   ? `${booking.mondayData.timeslot.start} - ${booking.mondayData.timeslot.end}`
                   : 'Not selected'}
               </div>
@@ -554,7 +550,7 @@
 
       <!-- Buttons -->
       <div class="modal-action">
-        {#if booking.mondayData.mode === 'edit'}
+        {#if booking.mondayData?.mode === 'edit'}
           <button class="btn btn-error mr-auto" onclick={deleteSchedule} disabled={deleting || saving}>
             {#if deleting}
               <span class="loading loading-spinner loading-sm"></span>
@@ -570,7 +566,7 @@
             <span class="loading loading-spinner loading-sm"></span>
             Saving...
           {:else}
-            {booking.mondayData.mode === 'edit' ? 'Update Schedule' : 'Save Schedule'}
+            {booking.mondayData?.mode === 'edit' ? 'Update' : 'Save'} Schedule
           {/if}
         </button>
 
