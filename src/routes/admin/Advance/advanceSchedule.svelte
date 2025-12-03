@@ -21,7 +21,6 @@
   let advanceGrid = null
   let showAdvanceModal = $state(false)
   let showGoLiveModal = $state(false)
-  let isLoading = $state(false)
 
   let advanceBooking = $state({
     id: '',
@@ -73,16 +72,13 @@
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
     return h('div', { class: 'flex flex-col gap-1 text-xs items-center' }, [
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name),
-      h('div', { class: 'badge badge-info badge-xs' }, cell.teacher.name),
       h('div', { class: 'badge badge-neutral badge-xs' }, cell.student.englishName),
-      h('div', { class: 'badge badge-error badge-xs' }, cell.room.name),
+      h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name),
+      // h('div', { class: 'badge badge-error badge-xs' }, cell.room.name),
     ])
   }
 
   async function loadAdvanceBookings() {
-    if (isLoading) return
-    isLoading = true
-
     try {
       const [timeslotsData, roomsData, bookings] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
@@ -184,8 +180,6 @@
       }
     } catch (error) {
       console.error('Error loading advance bookings:', error)
-    } finally {
-      isLoading = false
     }
   }
 
@@ -233,9 +227,8 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">MTM Schedule Table (Advance Template)</h2>
-    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
+  <div class="mb-4 text-2xl font-bold text-primary text-center">
+    <h2>MTM Schedule Table (Advance Template)</h2>
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
@@ -245,8 +238,8 @@
     </h3>
 
     <div class="flex items-center gap-2 ml-auto">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
       <button class="btn btn-primary btn-sm" onclick={() => (showGoLiveModal = true)}>🚀 Go Live</button>
     </div>
   </div>
@@ -258,17 +251,17 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-info badge-xs"></div>
-        <span>Teacher</span>
-      </div>
-      <div class="flex items-center gap-1">
         <div class="badge badge-neutral badge-xs"></div>
         <span>Student</span>
       </div>
       <div class="flex items-center gap-1">
         <div class="badge badge-error badge-xs"></div>
-        <span>Room</span>
+        <span>Teacher</span>
       </div>
+      <!-- <div class="flex items-center gap-1">
+        <div class="badge badge-error badge-xs"></div>
+        <span>Room</span>
+      </div> -->
     </div>
   </div>
 

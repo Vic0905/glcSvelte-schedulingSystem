@@ -132,19 +132,25 @@
 
       loadingProgress.currentStep = `Creating ${schedulesToCreate.length} schedules...`
 
-      // Step 4: Batch create schedules (in chunks to avoid overwhelming the server)
-      const BATCH_SIZE = 50 // Adjust based on your server capacity
+      // Step 4: Batch create schedules using PocketBase batch API (in chunks)
+      const BATCH_SIZE = 50 // PocketBase batch API limit per request
       let createdCount = 0
 
       for (let i = 0; i < schedulesToCreate.length; i += BATCH_SIZE) {
-        const batch = schedulesToCreate.slice(i, i + BATCH_SIZE)
+        const chunk = schedulesToCreate.slice(i, i + BATCH_SIZE)
 
-        // Create promises for batch
-        const batchPromises = batch.map((schedule) => pb.collection('lessonSchedule').create(schedule))
+        // Create a batch instance
+        const batch = pb.createBatch()
 
-        await Promise.all(batchPromises)
+        // Add all create operations to the batch
+        for (const schedule of chunk) {
+          batch.collection('lessonSchedule').create(schedule)
+        }
 
-        createdCount += batch.length
+        // Send all operations in a single HTTP request
+        await batch.send()
+
+        createdCount += chunk.length
         loadingProgress.createdSchedules = createdCount
         loadingProgress.currentStep = `Created ${createdCount} / ${schedulesToCreate.length} schedules...`
 

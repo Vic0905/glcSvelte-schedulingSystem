@@ -16,6 +16,10 @@
   let advanceBookings = $state([])
   let otherGroupBookings = $state([])
 
+  // Track previous values to prevent infinite loops
+  let prevShow = $state(false)
+  let prevTimeslotId = $state(null)
+
   // Consolidated conflict detection using $derived
   const conflicts = $derived({
     teacher:
@@ -28,9 +32,9 @@
     ),
   })
 
-  // Load data when modal opens
+  // Load data when modal opens - FIXED: Only run when show changes from false to true
   $effect(() => {
-    if (show) {
+    if (show && !prevShow) {
       loadAllData()
       // Initialize selected students from booking data
       if (advanceGroupBooking.mode === 'edit' && advanceGroupBooking.students) {
@@ -40,12 +44,20 @@
       }
       setMaxStudentsAllowed()
     }
+    prevShow = show
   })
 
-  // Load conflict data when timeslot changes
+  // Load conflict data when timeslot changes - FIXED: Only run when timeslot ID actually changes
   $effect(() => {
-    if (advanceGroupBooking.timeslot?.id) {
+    const currentTimeslotId = advanceGroupBooking.timeslot?.id
+    if (currentTimeslotId && currentTimeslotId !== prevTimeslotId) {
       loadConflictData()
+      prevTimeslotId = currentTimeslotId
+    } else if (!currentTimeslotId && prevTimeslotId !== null) {
+      // Clear conflicts when timeslot is deselected
+      advanceBookings = []
+      otherGroupBookings = []
+      prevTimeslotId = null
     }
   })
 
@@ -56,6 +68,7 @@
     searchTerm = ''
     advanceBookings = []
     otherGroupBookings = []
+    prevTimeslotId = null
   }
 
   const loadAllData = async () => {

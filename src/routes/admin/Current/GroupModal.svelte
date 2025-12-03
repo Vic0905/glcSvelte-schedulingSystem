@@ -312,27 +312,59 @@
           filter: `teacher = "${originalTeacherId}" && timeslot = "${originalTimeslotId}" && grouproom = "${originalGroupRoomId}" && (${weekDays.map((d) => `date = "${d}"`).join(' || ')})`,
         })
 
-        await Promise.all(
-          existingWeekSchedules.map((schedule) =>
-            pb.collection('groupLessonSchedule').update(schedule.id, {
+        // Use Batch API for updates
+        try {
+          const batch = pb.createBatch()
+
+          existingWeekSchedules.forEach((schedule) => {
+            batch.collection('groupLessonSchedule').update(schedule.id, {
               ...scheduleData,
               date: schedule.date,
             })
+          })
+
+          await batch.send()
+        } catch (error) {
+          // Fallback to individual updates if batch fails
+          console.warn('Batch update failed, falling back to individual updates:', error)
+          await Promise.all(
+            existingWeekSchedules.map((schedule) =>
+              pb.collection('groupLessonSchedule').update(schedule.id, {
+                ...scheduleData,
+                date: schedule.date,
+              })
+            )
           )
-        )
+        }
 
         toast.success('Weekly group schedule updated!', {
           description: `Updated ${existingWeekSchedules.length} group lesson(s)`,
         })
       } else {
-        await Promise.all(
-          weekDays.map((date) =>
-            pb.collection('groupLessonSchedule').create({
+        // Use Batch API for creates
+        try {
+          const batch = pb.createBatch()
+
+          weekDays.forEach((date) => {
+            batch.collection('groupLessonSchedule').create({
               ...scheduleData,
               date,
             })
+          })
+
+          await batch.send()
+        } catch (error) {
+          // Fallback to individual creates if batch fails
+          console.warn('Batch create failed, falling back to individual creates:', error)
+          await Promise.all(
+            weekDays.map((date) =>
+              pb.collection('groupLessonSchedule').create({
+                ...scheduleData,
+                date,
+              })
+            )
           )
-        )
+        }
 
         toast.success('Weekly group schedule created!', {
           description: `Created ${weekDays.length} group lessons (Tue-Fri)`,
@@ -382,7 +414,20 @@
         filter: `teacher = "${originalTeacherId}" && timeslot = "${originalTimeslotId}" && grouproom = "${originalGroupRoomId}" && (${weekDays.map((d) => `date = "${d}"`).join(' || ')})`,
       })
 
-      await Promise.all(schedulesToDelete.map((schedule) => pb.collection('groupLessonSchedule').delete(schedule.id)))
+      // Use Batch API for deletes
+      try {
+        const batch = pb.createBatch()
+
+        schedulesToDelete.forEach((schedule) => {
+          batch.collection('groupLessonSchedule').delete(schedule.id)
+        })
+
+        await batch.send()
+      } catch (error) {
+        // Fallback to individual deletes if batch fails
+        console.warn('Batch delete failed, falling back to individual deletes:', error)
+        await Promise.all(schedulesToDelete.map((schedule) => pb.collection('groupLessonSchedule').delete(schedule.id)))
+      }
 
       toast.success('Weekly group schedule deleted!', {
         description: `Deleted ${schedulesToDelete.length} group lesson(s) successfully`,

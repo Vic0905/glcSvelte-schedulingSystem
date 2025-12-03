@@ -54,28 +54,32 @@
 
       rooms = records
 
-      const data = records.map((t) => [
-        t.name,
-        t.expand?.teacher?.name || 'No teacher assigned',
-        h('div', { className: 'flex gap-2 justify-center' }, [
-          h(
-            'button',
-            {
-              className: 'btn btn-outline btn-sm btn-accent',
-              onClick: () => openEdit(t),
-            },
-            'Edit'
-          ),
-          h(
-            'button',
-            {
-              className: 'btn btn-outline btn-sm btn-error',
-              onClick: () => deleteRoom(t.id),
-            },
-            'Delete'
-          ),
-        ]),
-      ])
+      // Ensure we always have valid data structure
+      const data = records.map((t) => {
+        const teacherName = t.expand?.teacher?.name || 'No teacher assigned'
+        return [
+          t.name || '',
+          teacherName,
+          h('div', { className: 'flex gap-2 justify-center' }, [
+            h(
+              'button',
+              {
+                className: 'btn btn-outline btn-sm btn-accent',
+                onClick: () => openEdit(t),
+              },
+              'Edit'
+            ),
+            h(
+              'button',
+              {
+                className: 'btn btn-outline btn-sm btn-error',
+                onClick: () => deleteRoom(t.id),
+              },
+              'Delete'
+            ),
+          ]),
+        ]
+      })
 
       if (grid) {
         grid.updateConfig({ data }).forceRender()
@@ -90,7 +94,7 @@
           },
           pagination: {
             enabled: true,
-            limit: 10,
+            limit: 150,
           },
           search: true,
           sort: true,
@@ -126,6 +130,9 @@
       selectedTeacherId = ''
       editingId = null
       showModal = false
+
+      // Small delay to ensure PocketBase expand is ready
+      await new Promise((resolve) => setTimeout(resolve, 100))
       await loadRoom()
     } catch (err) {
       console.error('Error saving room:', err)
@@ -145,6 +152,7 @@
       try {
         await pb.collection('room').delete(id)
         toast.success('Room deleted successfully!')
+        await new Promise((resolve) => setTimeout(resolve, 100))
         await loadRoom()
       } catch (err) {
         console.error('Error deleting room:', err)
