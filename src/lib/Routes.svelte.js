@@ -179,7 +179,7 @@ export const staffRoutes = {
 
 export const teacherRoutes = {
   '/': wrap({
-    asyncComponent: () => import('../routes/admin/Dashboard/teacherdash.svelte'),
+    asyncComponent: () => import('../routes/admin/Dashboard/TeacherDash.svelte'),
   }),
   '/current/teacherview': wrap({
     asyncComponent: () => import('../routes/admin/Current/TeacherView.svelte'),
