@@ -8,5 +8,5 @@ export default defineConfig({
   build: {
     outDir: "dist",
   },
-  base: "/", // ensures correct path resolution for SPA
+  base: "./", // ensures correct path resolution for SPA
 });
