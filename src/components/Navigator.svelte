@@ -74,8 +74,8 @@
     <details>
       <summary>Advance Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="#/advance/advanceschedule">MTM Input Table</a></li>
-        <li><a href="#/advance/advancegroupschedule">GRP Input Table</a></li>
+        <li><a href="/#/advance/advanceschedule">MTM Input Table</a></li>
+        <li><a href="/#/advance/advancegroupschedule">GRP Input Table</a></li>
         <li><a href="/#/advance/grouptemplate">GRP Room Template</a></li>
         <li><a href="/#/advance/studenttemplate">Student Template</a></li>
         <li><a href="/#/advance/teachertemplate">Teacher Template</a></li>
