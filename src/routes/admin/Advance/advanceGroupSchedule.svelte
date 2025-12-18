@@ -90,8 +90,8 @@
 
     const elements = [
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
-      h('div', { class: 'badge badge-info badge-xs' }, cell.teacher.name || 'No Teacher'),
-      h('div', { class: 'badge badge-error badge-xs' }, cell.groupRoom.name || 'No Room'),
+      h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name || 'No Teacher'),
+      // h('div', { class: 'badge badge-neutral badge-xs' }, cell.groupRoom.name || 'No Room'),
     ]
 
     if (studentCount > 0) {
@@ -418,10 +418,6 @@
       <div class="flex items-center gap-1">
         <div class="badge badge-neutral badge-xs"></div>
         <span>Students</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-warning badge-xs"></div>
-        <span>Additional Count</span>
       </div>
     </div>
   </div>

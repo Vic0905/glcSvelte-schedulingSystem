@@ -198,9 +198,8 @@
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
     return h('div', { class: 'flex flex-col gap-1 items-center' }, [
       h('span', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name),
-      h('span', { class: 'badge badge-info badge-xs' }, cell.teacher.name),
       h('span', { class: 'badge badge-neutral badge-xs' }, cell.student.englishName),
-      h('span', { class: 'badge badge-error badge-xs' }, cell.room.name),
+      h('span', { class: 'badge badge-error badge-xs' }, cell.teacher.name),
     ])
   }
 
@@ -489,9 +488,8 @@
   <div class="bg-base-200 rounded lg m-2 p-2">
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span>Subject</div>
-      <div class="flex gap-1"><span class="badge badge-info badge-xs"></span>Teacher</div>
       <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span>Student</div>
-      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span>Room</div>
+      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span>Teacher</div>
     </div>
   </div>
 
