@@ -21,6 +21,8 @@
   let advanceGrid = null
   let showAdvanceModal = $state(false)
   let showGoLiveModal = $state(false)
+  let scrollPositions = $state({ top: 0, left: 0 })
+  let isLoading = $state(false)
 
   let advanceBooking = $state({
     id: '',
@@ -74,54 +76,130 @@
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name),
       h('div', { class: 'badge badge-neutral badge-xs' }, cell.student.englishName),
       h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name),
-      // h('div', { class: 'badge badge-error badge-xs' }, cell.room.name),
     ])
   }
 
-  async function loadAdvanceBookings() {
+  // Save scroll position before any updates
+  const saveScrollPosition = () => {
+    const wrapper = document.querySelector('#advance-grid .gridjs-wrapper')
+    if (wrapper) {
+      scrollPositions = {
+        top: wrapper.scrollTop,
+        left: wrapper.scrollLeft,
+      }
+    }
+  }
+
+  // Restore scroll position after updates
+  const restoreScrollPosition = () => {
+    requestAnimationFrame(() => {
+      const wrapper = document.querySelector('#advance-grid .gridjs-wrapper')
+      if (wrapper) {
+        wrapper.scrollTop = scrollPositions.top
+        wrapper.scrollLeft = scrollPositions.left
+      }
+    })
+  }
+
+  // Cache for frequently accessed data
+  const cache = {
+    bookings: null,
+    lastFetch: 0,
+    cacheDuration: 30000, // 30 seconds
+    isValid: () => cache.bookings && Date.now() - cache.lastFetch < cache.cacheDuration,
+  }
+
+  async function loadAdvanceBookings(forceRefresh = false) {
+    if (isLoading) return
+
+    // Save scroll position before loading new data
+    saveScrollPosition()
+
+    isLoading = true
     try {
-      const [timeslotsData, roomsData, bookings] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        rooms.length ? rooms : pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
-        pb.collection('advanceBooking').getList(1, 500, {
-          expand: 'teacher,student,subject,room,timeslot',
-        }),
-      ])
+      // Use cache if available and not forcing refresh
+      let bookings
+      if (!forceRefresh && cache.isValid()) {
+        bookings = cache.bookings
+      } else {
+        // Parallel fetching with caching
+        const [timeslotsData, roomsData, bookingsData] = await Promise.all([
+          timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
+          rooms.length ? rooms : pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
+          pb.collection('advanceBooking').getFullList({
+            expand: 'teacher,student,subject,room,timeslot',
+            $autoCancel: false,
+          }),
+        ])
 
-      timeslots = timeslotsData
-      rooms = roomsData
+        timeslots = timeslotsData
+        rooms = roomsData
+        bookings = bookingsData
 
-      // Build schedule map
-      const scheduledRooms = {}
-      for (const booking of bookings.items) {
-        const roomId = booking.expand?.room?.id || booking.room
-        const slotId = booking.expand?.timeslot?.id || booking.timeslot
-        scheduledRooms[roomId] ??= {}
-        scheduledRooms[roomId][slotId] = booking
+        // Update cache
+        cache.bookings = bookings
+        cache.lastFetch = Date.now()
       }
 
-      // Build table data
+      // Build schedule map using Map for better performance
+      const scheduledRooms = new Map()
+      for (const booking of bookings) {
+        const roomId = booking.expand?.room?.id || booking.room
+        const slotId = booking.expand?.timeslot?.id || booking.timeslot
+
+        if (!scheduledRooms.has(roomId)) {
+          scheduledRooms.set(roomId, new Map())
+        }
+        scheduledRooms.get(roomId).set(slotId, booking)
+      }
+
+      // Build table data more efficiently
       const data = rooms.map((room) => {
-        const slotMap = scheduledRooms[room.id] || {}
+        const slotMap = scheduledRooms.get(room.id) || new Map()
         const assignedTeacher = room.expand?.teacher
         const row = [
           { value: assignedTeacher?.name || '-', disabled: true },
           { value: room.name, disabled: true },
         ]
 
-        timeslots.forEach((timeslot) => {
-          const item = slotMap[timeslot.id]
-          row.push({
-            label: item ? 'Schedule' : 'Empty',
-            id: item?.id || '',
-            subject: { name: item?.expand?.subject?.name || '', id: item?.expand?.subject?.id || '' },
-            teacher: { name: item?.expand?.teacher?.name || '', id: item?.expand?.teacher?.id || '' },
-            student: { englishName: item?.expand?.student?.englishName || '', id: item?.expand?.student?.id || '' },
-            room: { name: room.name, id: room.id },
-            timeslot: { id: timeslot.id, start: timeslot.start, end: timeslot.end },
-            assignedTeacher,
-          })
-        })
+        // Use for loop instead of forEach for better performance
+        for (let i = 0; i < timeslots.length; i++) {
+          const timeslot = timeslots[i]
+          const item = slotMap.get(timeslot.id)
+
+          row.push(
+            item
+              ? {
+                  label: 'Schedule',
+                  id: item.id,
+                  subject: {
+                    name: item.expand?.subject?.name || '',
+                    id: item.expand?.subject?.id || '',
+                  },
+                  teacher: {
+                    name: item.expand?.teacher?.name || '',
+                    id: item.expand?.teacher?.id || '',
+                  },
+                  student: {
+                    englishName: item.expand?.student?.englishName || '',
+                    id: item.expand?.student?.id || '',
+                  },
+                  room: { name: room.name, id: room.id },
+                  timeslot: { id: timeslot.id, start: timeslot.start, end: timeslot.end },
+                  assignedTeacher,
+                }
+              : {
+                  label: 'Empty',
+                  id: '',
+                  subject: { name: '', id: '' },
+                  teacher: { name: '', id: '' },
+                  student: { englishName: '', id: '' },
+                  room: { name: room.name, id: room.id },
+                  timeslot: { id: timeslot.id, start: timeslot.start, end: timeslot.end },
+                  assignedTeacher,
+                }
+          )
+        }
 
         return row
       })
@@ -132,23 +210,30 @@
           width: '120px',
           formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
         },
-        { name: 'Room', width: '120px', formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value) },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
+        {
+          name: 'Room',
+          width: '120px',
+          formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
+        },
+        ...timeslots.map((t) => ({
+          name: `${t.start} - ${t.end}`,
+          id: t.id,
+          width: '160px',
+          formatter: formatCell,
+        })),
       ]
 
       if (advanceGrid) {
-        const wrapper = document.querySelector('#advance-grid .gridjs-wrapper')
-        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+        // Update grid data without full re-render
+        advanceGrid
+          .updateConfig({
+            columns,
+            data,
+          })
+          .forceRender()
 
-        advanceGrid.updateConfig({ columns, data }).forceRender()
-
-        requestAnimationFrame(() => {
-          const w = document.querySelector('#advance-grid .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = scroll.top
-            w.scrollLeft = scroll.left
-          }
-        })
+        // Restore scroll position after DOM update
+        restoreScrollPosition()
       } else {
         advanceGrid = new Grid({
           columns,
@@ -161,7 +246,12 @@
             th: 'bg-base-200 p-1 border text-center',
             td: 'border p-2 align-middle text-center',
           },
-          style: { table: { 'border-collapse': 'collapse' } },
+          style: {
+            table: {
+              'border-collapse': 'collapse',
+              'table-layout': 'fixed', // Prevents layout shifts
+            },
+          },
         }).render(document.getElementById('advance-grid'))
 
         advanceGrid.on('cellClick', (_, cell) => {
@@ -180,6 +270,8 @@
       }
     } catch (error) {
       console.error('Error loading advance bookings:', error)
+    } finally {
+      isLoading = false
     }
   }
 
@@ -193,9 +285,20 @@
         return
       }
 
-      await Promise.all(allBookings.map((b) => pb.collection('advanceBooking').delete(b.id)))
+      saveScrollPosition() // Save before deletion
+
+      // Batch delete for better performance
+      const batchSize = 10
+      for (let i = 0; i < allBookings.length; i += batchSize) {
+        const batch = allBookings.slice(i, i + batchSize)
+        await Promise.all(batch.map((b) => pb.collection('advanceBooking').delete(b.id)))
+      }
+
+      // Invalidate cache
+      cache.bookings = null
+
       alert(`✅ Successfully deleted ${allBookings.length} advance bookings.`)
-      loadAdvanceBookings()
+      loadAdvanceBookings(true) // Force refresh
     } catch (error) {
       console.error('Error deleting advance bookings:', error)
       alert('❌ Failed to delete advance bookings. Check console for details.')
@@ -205,12 +308,17 @@
   let reloadTimeout
   const debouncedReload = () => {
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadAdvanceBookings, 150)
+    reloadTimeout = setTimeout(() => {
+      cache.bookings = null // Invalidate cache on updates
+      loadAdvanceBookings(true)
+    }, 150)
   }
 
   onMount(() => {
     initializeWeek()
     loadAdvanceBookings()
+
+    // Subscribe to changes with debouncing
     pb.collection('advanceBooking').subscribe('*', debouncedReload)
   })
 
@@ -258,15 +366,18 @@
         <div class="badge badge-error badge-xs"></div>
         <span>Teacher</span>
       </div>
-      <!-- <div class="flex items-center gap-1">
-        <div class="badge badge-error badge-xs"></div>
-        <span>Room</span>
-      </div> -->
     </div>
   </div>
 
   <div id="advance-grid" class="border rounded-lg"></div>
 </div>
 
-<AdvanceBookingModal bind:show={showAdvanceModal} bind:advanceBooking onSave={loadAdvanceBookings} />
+<AdvanceBookingModal
+  bind:show={showAdvanceModal}
+  bind:advanceBooking
+  onSave={() => {
+    saveScrollPosition()
+    loadAdvanceBookings(true)
+  }}
+/>
 <GoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} {getWeekDates} />

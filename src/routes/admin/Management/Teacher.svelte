@@ -6,6 +6,7 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
 
   let name = ''
+  let status = 'enabled'
   let editingId = null
   let showModal = false
   let showCSVModal = false
@@ -13,6 +14,14 @@
   let csvPreview = []
   let isProcessing = false
   let grid
+  let selectedTeachers = new Set()
+  let showBulkActions = false
+
+  const statusOptions = ['enabled', 'disabled']
+  const statusColors = {
+    enabled: 'badge-success',
+    disabled: 'badge-error',
+  }
 
   async function loadTeachers() {
     const records = await pb.collection('teacher').getFullList({
@@ -20,7 +29,14 @@
     })
 
     const data = records.map((t) => [
+      h('input', {
+        type: 'checkbox',
+        className: 'checkbox checkbox-primary',
+        checked: selectedTeachers.has(t.id),
+        onChange: (e) => toggleTeacherSelection(t.id, e.target.checked),
+      }),
       t.name,
+      h('span', { className: `badge ${statusColors[t.status] || 'badge-neutral'}` }, t.status || 'enabled'),
       h('div', { className: 'flex gap-2 justify-center' }, [
         h(
           'button',
@@ -45,7 +61,12 @@
       grid.updateConfig({ data }).forceRender()
     } else {
       grid = new Grid({
-        columns: ['Name', 'Actions'],
+        columns: [
+          { name: 'Select', width: '120px' },
+          { name: 'Name', width: '150px' },
+          { name: 'Status', width: '120px' },
+          { name: 'Actions', width: '120px' },
+        ],
         data,
         className: {
           table: 'w-full text-xs',
@@ -56,10 +77,21 @@
           enabled: true,
           limit: 10,
         },
-        search: true,
         sort: true,
+        search: {
+          enabled: true,
+          selector: (cell, rowIndex, cellIndex) => {
+            if (typeof cell === 'string') return cell
+            if (cell && cell.props && cell.props.children) {
+              return cell.props.children
+            }
+            return ''
+          },
+        },
       }).render(document.getElementById('teacherGrid'))
     }
+
+    showBulkActions = selectedTeachers.size > 0
   }
 
   async function saveTeacher() {
@@ -69,15 +101,18 @@
     }
 
     try {
+      const payload = { name, status }
+
       if (editingId) {
-        await pb.collection('teacher').update(editingId, { name })
+        await pb.collection('teacher').update(editingId, payload)
         toast.success('Teacher updated successfully!')
       } else {
-        await pb.collection('teacher').create({ name })
+        await pb.collection('teacher').create(payload)
         toast.success('Teacher added successfully!')
       }
 
       name = ''
+      status = 'enabled'
       editingId = null
       showModal = false
       await loadTeachers()
@@ -89,6 +124,7 @@
 
   function openEdit(teacher) {
     name = teacher.name
+    status = teacher.status || 'enabled'
     editingId = teacher.id
     showModal = true
   }
@@ -108,6 +144,7 @@
 
   function openAddModal() {
     name = ''
+    status = 'enabled'
     editingId = null
     showModal = true
   }
@@ -137,17 +174,46 @@
       const text = e.target.result
       const lines = text.split('\n').filter((line) => line.trim())
 
-      const teachers = lines
-        .slice(1)
-        .map((line) => {
-          const match = line.match(/^"?([^",]+)"?/)
-          return match ? match[1].trim() : line.split(',')[0].trim()
-        })
-        .filter((name) => name.length > 0)
+      const teachers = []
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim()
+        if (!line) continue
 
-      csvPreview = teachers
+        const values = parseCSVLine(line)
+
+        if (values.length >= 1) {
+          teachers.push({
+            name: values[0] || '',
+            status: values[1] || 'enabled',
+          })
+        }
+      }
+
+      csvPreview = teachers.filter((t) => t.name.trim())
     }
     reader.readAsText(file)
+  }
+
+  function parseCSVLine(line) {
+    const result = []
+    let current = ''
+    let inQuotes = false
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i]
+
+      if (char === '"') {
+        inQuotes = !inQuotes
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim())
+        current = ''
+      } else {
+        current += char
+      }
+    }
+    result.push(current.trim())
+
+    return result
   }
 
   async function importCSV() {
@@ -165,20 +231,20 @@
       const existingTeachers = await pb.collection('teacher').getFullList()
       const existingNames = existingTeachers.map((t) => t.name.toLowerCase().trim())
 
-      for (const teacherName of csvPreview) {
+      for (const teacher of csvPreview) {
         try {
-          if (existingNames.includes(teacherName.toLowerCase().trim())) {
-            console.log(`Skipping duplicate: ${teacherName}`)
+          if (existingNames.includes(teacher.name.toLowerCase().trim())) {
+            console.log(`Skipping duplicate: ${teacher.name}`)
             skippedCount++
             continue
           }
 
-          await pb.collection('teacher').create({ name: teacherName })
+          await pb.collection('teacher').create(teacher)
           successCount++
 
-          existingNames.push(teacherName.toLowerCase().trim())
+          existingNames.push(teacher.name.toLowerCase().trim())
         } catch (err) {
-          console.error(`Error adding ${teacherName}:`, err)
+          console.error(`Error adding ${teacher.name}:`, err)
           errorCount++
         }
       }
@@ -199,7 +265,7 @@
   }
 
   function downloadTemplate() {
-    const csv = 'Name\nJohn\nJane\nMike'
+    const csv = 'Name,Status\nJohn,enabled\nJane,disabled\nMike,enabled'
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -207,6 +273,70 @@
     a.download = 'teacher_template.csv'
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  function toggleTeacherSelection(id, checked) {
+    if (checked) {
+      selectedTeachers.add(id)
+    } else {
+      selectedTeachers.delete(id)
+    }
+    selectedTeachers = selectedTeachers
+    showBulkActions = selectedTeachers.size > 0
+  }
+
+  function selectAll() {
+    pb.collection('teacher')
+      .getFullList()
+      .then((records) => {
+        selectedTeachers = new Set(records.map((r) => r.id))
+        loadTeachers()
+      })
+  }
+
+  function deselectAll() {
+    selectedTeachers = new Set()
+    loadTeachers()
+  }
+
+  async function bulkUpdateStatus(newStatus) {
+    if (selectedTeachers.size === 0) {
+      toast.error('No teachers selected')
+      return
+    }
+
+    const statusLabel = newStatus.charAt(0).toUpperCase() + newStatus.slice(1)
+    if (!confirm(`Are you sure you want to change ${selectedTeachers.size} teacher(s) to ${statusLabel}?`)) {
+      return
+    }
+
+    isProcessing = true
+    let successCount = 0
+    let errorCount = 0
+
+    try {
+      for (const teacherId of selectedTeachers) {
+        try {
+          await pb.collection('teacher').update(teacherId, { status: newStatus })
+          successCount++
+        } catch (err) {
+          console.error(`Error updating teacher ${teacherId}:`, err)
+          errorCount++
+        }
+      }
+
+      const message = `${successCount} teacher(s) updated to ${statusLabel}!${errorCount > 0 ? ` ${errorCount} failed.` : ''}`
+      toast.success(message)
+
+      selectedTeachers = new Set()
+      showBulkActions = false
+      await loadTeachers()
+    } catch (err) {
+      console.error(err)
+      toast.error('Error updating teachers')
+    } finally {
+      isProcessing = false
+    }
   }
 
   onMount(loadTeachers)
@@ -254,6 +384,49 @@
       </div>
     </div>
 
+    <!-- Bulk Actions Bar -->
+    {#if showBulkActions}
+      <div class="bg-base-100 shadow-lg rounded-xl p-4 mb-6 border-l-4 border-primary">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div class="flex items-center gap-3">
+            <div class="bg-primary/10 p-2 rounded-lg">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-6 w-6 text-primary"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </div>
+            <div>
+              <p class="font-semibold text-base-content">
+                <strong>{selectedTeachers.size}</strong> teacher(s) selected
+              </p>
+              <p class="text-sm text-base-content/60">Choose an action to apply to all selected teachers</p>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button class="btn btn-sm btn-ghost" onclick={selectAll}>Select All</button>
+            <button class="btn btn-sm btn-ghost" onclick={deselectAll}>Clear</button>
+            <div class="divider divider-horizontal"></div>
+            <button class="btn btn-sm btn-success" onclick={() => bulkUpdateStatus('enabled')} disabled={isProcessing}>
+              Mark as Enabled
+            </button>
+            <button class="btn btn-sm btn-error" onclick={() => bulkUpdateStatus('disabled')} disabled={isProcessing}>
+              {isProcessing ? 'Processing...' : 'Mark as Disabled'}
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
     <!-- Data Grid Section -->
     <div class="bg-base-100 shadow-xl rounded-2xl p-6">
       <div id="teacherGrid" class="overflow-x-auto"></div>
@@ -276,6 +449,18 @@
             </label>
             <input type="text" bind:value={name} class="input input-bordered w-full" required />
           </div>
+        </div>
+
+        <!-- Status -->
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Status</span>
+          </label>
+          <select bind:value={status} class="select select-bordered w-full">
+            {#each statusOptions as option}
+              <option value={option}>{option.charAt(0).toUpperCase() + option.slice(1)}</option>
+            {/each}
+          </select>
         </div>
       </div>
 
@@ -315,7 +500,7 @@
           <div>
             <div class="font-semibold">CSV Format Requirements</div>
             <div class="text-sm">
-              Upload a CSV file with teacher names. The first row should be a header (e.g., "Name").
+              <strong>Required:</strong> Name &nbsp;|&nbsp; <strong>Optional:</strong> Status (enabled/disabled)
             </div>
           </div>
         </div>
@@ -354,7 +539,6 @@
 
         <!-- File Upload -->
         <div class="form-control">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
           <label class="label">
             <span class="label-text font-medium">Select CSV File</span>
           </label>
@@ -368,28 +552,27 @@
               <h4 class="font-semibold text-base-content">Preview</h4>
               <span class="badge badge-primary">{csvPreview.length} teachers found</span>
             </div>
-            <div class="max-h-80 overflow-y-auto border rounded-lg bg-base-100 p-4">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {#each csvPreview as teacher}
-                  <div class="flex items-center gap-2 p-2 rounded hover:bg-base-200 transition-colors">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="h-5 w-5 text-primary"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                      />
-                    </svg>
-                    <span class="text-sm font-medium">{teacher}</span>
-                  </div>
-                {/each}
-              </div>
+            <div class="max-h-80 overflow-y-auto border rounded-lg bg-base-100">
+              <table class="table table-sm table-pin-rows">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th class="font-semibold">Name</th>
+                    <th class="font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each csvPreview as teacher}
+                    <tr class="hover">
+                      <td class="font-medium">{teacher.name}</td>
+                      <td>
+                        <span class={`badge badge-sm ${statusColors[teacher.status] || 'badge-neutral'}`}>
+                          {teacher.status || 'enabled'}
+                        </span>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
             </div>
           </div>
         {/if}

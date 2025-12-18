@@ -14,7 +14,6 @@
   let weekStart = $state(getWeekStart(new Date()))
   let teacherGrid = null
   let timeslots = []
-  let teachers = []
   let isLoading = $state(false)
 
   function getWeekStart(date) {
@@ -68,9 +67,9 @@
     isLoading = true
 
     try {
-      const [timeslotsData, teachersData, individualBookings, groupBookings] = await Promise.all([
+      const [timeslotsData, allTeachers, individualBookings, groupBookings] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        teachers.length ? teachers : pb.collection('teacher').getFullList({ sort: 'name' }),
+        pb.collection('teacher').getFullList({ sort: 'name' }),
         pb.collection('advanceBooking').getList(1, 500, {
           expand: 'teacher,student,subject,room,timeslot',
         }),
@@ -79,8 +78,28 @@
         }),
       ])
 
+      // Track which teachers have bookings
+      const teachersWithBookings = new Set()
+
       timeslots = timeslotsData
-      teachers = teachersData
+
+      // Process individual bookings to track teachers with bookings
+      for (const b of individualBookings.items) {
+        const teacherId = b.expand?.teacher?.id
+        if (teacherId) teachersWithBookings.add(teacherId)
+      }
+
+      // Process group bookings to track teachers with bookings
+      for (const b of groupBookings.items) {
+        const teacherId = b.expand?.teacher?.id
+        if (teacherId) teachersWithBookings.add(teacherId)
+      }
+
+      // Filter teachers: include enabled OR disabled teachers WITH bookings
+      const teachers = allTeachers.filter((t) => {
+        if (t.status !== 'disabled') return true
+        return teachersWithBookings.has(t.id)
+      })
 
       // Build schedule map
       const scheduleMap = {}

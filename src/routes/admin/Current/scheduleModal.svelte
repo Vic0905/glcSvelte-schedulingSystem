@@ -9,11 +9,19 @@
   let isDeleting = $state(false)
   let isSaving = $state(false)
   let existingSchedules = $state([])
+
+  // Cache reference data globally (shared across all modal instances)
   let teachers = $state([])
   let students = $state([])
   let subjects = $state([])
   let rooms = $state([])
   let timeslots = $state([])
+  let dataLoaded = $state(false)
+
+  // Enhanced cache with smart invalidation
+  let schedulesCache = new Map()
+  let isLoading = $state(false)
+  let lastCacheKey = null // Track last loaded cache key
 
   // Consolidated computed conflicts
   const conflicts = $derived({
@@ -53,39 +61,83 @@
     return days
   }
 
-  // Load all data on mount
+  // Generate cache key from date range and timeslot
+  const getCacheKey = (startDate, endDate, timeslotId) => {
+    return `${startDate}_${endDate}_${timeslotId}`
+  }
+
+  // Load all data ONCE globally
   $effect(() => {
-    if (!teachers.length) loadAllData()
+    if (!dataLoaded && !teachers.length) {
+      loadAllData()
+    }
   })
 
-  // Load schedules when dependencies change
+  // OPTIMIZED: Only load schedules when cache key CHANGES
   $effect(() => {
     if (booking.data?.startDate && booking.data?.endDate && booking.data?.timeslot?.id) {
-      loadExistingSchedules()
+      const cacheKey = getCacheKey(booking.data.startDate, booking.data.endDate, booking.data.timeslot.id)
+      if (cacheKey !== lastCacheKey) {
+        lastCacheKey = cacheKey
+        loadExistingSchedulesOptimized(cacheKey)
+      }
     }
   })
 
   const loadAllData = async () => {
+    if (dataLoaded) return
+
     try {
       const [teachersData, studentsData, subjectsData, roomsData, timeslotsData] = await Promise.all([
-        pb.collection('teacher').getFullList(),
-        pb.collection('student').getFullList(),
-        pb.collection('subject').getFullList(),
-        pb.collection('room').getFullList(),
-        pb.collection('timeSlot').getFullList(),
+        pb.collection('teacher').getFullList({
+          sort: 'name',
+          fields: 'id,name,status',
+        }),
+        pb.collection('student').getFullList({
+          sort: 'englishName',
+          fields: 'id,englishName,status',
+        }),
+        pb.collection('subject').getFullList({
+          sort: 'name',
+          fields: 'id,name',
+        }),
+        pb.collection('room').getFullList({
+          sort: 'name',
+          fields: 'id,name',
+        }),
+        pb.collection('timeSlot').getFullList({
+          sort: 'start',
+          fields: 'id,start,end',
+        }),
       ])
 
-      teachers = teachersData.sort((a, b) => a.name.localeCompare(b.name))
-      students = studentsData.sort((a, b) => a.englishName.localeCompare(b.englishName))
-      subjects = subjectsData.sort((a, b) => a.name.localeCompare(b.name))
+      teachers = teachersData
+      students = studentsData
+      subjects = subjectsData
       rooms = roomsData
       timeslots = timeslotsData
+      dataLoaded = true
     } catch (error) {
       console.error('Error loading reference data:', error)
     }
   }
 
-  const loadExistingSchedules = async () => {
+  // OPTIMIZED: Use cache more aggressively, only reload if stale
+  const loadExistingSchedulesOptimized = async (cacheKey) => {
+    if (!cacheKey) return
+
+    const cached = schedulesCache.get(cacheKey)
+    const cacheAge = cached ? Date.now() - cached.timestamp : Infinity
+    const cacheStale = cacheAge > 30000 // 30 seconds
+
+    // Use cache if fresh
+    if (cached && !cacheStale) {
+      existingSchedules = cached.schedules
+      return
+    }
+
+    // Load in background, don't block UI
+    isLoading = true
     try {
       const { startDate, endDate, timeslot, mode, student, room } = booking.data
       const weekDays = getWeekDays(startDate, endDate)
@@ -95,23 +147,50 @@
         pb.collection('lessonSchedule').getFullList({
           filter: `(${dateFilter}) && timeslot = "${timeslot.id}"`,
           expand: 'teacher,student,room',
+          fields: 'id,teacher,student,room,timeslot,date,expand',
+          $autoCancel: false,
         }),
         pb
           .collection('groupLessonSchedule')
           .getFullList({
             filter: `(${dateFilter}) && timeslot = "${timeslot.id}"`,
             expand: 'teacher,student,grouproom,subject',
+            fields: 'id,teacher,student,grouproom,timeslot,date,expand',
+            $autoCancel: false,
           })
           .catch(() => []),
       ])
 
-      existingSchedules =
+      const allSchedules =
         mode === 'edit'
           ? [...lessonRecords, ...groupRecords].filter((s) => !(s.student === student?.id && s.room === room?.id))
           : [...lessonRecords, ...groupRecords]
+
+      existingSchedules = allSchedules
+
+      // Cache with timestamp
+      schedulesCache.set(cacheKey, {
+        schedules: allSchedules,
+        timestamp: Date.now(),
+      })
+
+      cleanupCache()
     } catch (error) {
       console.error('Error loading schedules:', error)
       existingSchedules = []
+    } finally {
+      isLoading = false
+    }
+  }
+
+  const cleanupCache = () => {
+    const now = Date.now()
+    const fiveMinutes = 5 * 60 * 1000
+
+    for (const [key, value] of schedulesCache.entries()) {
+      if (now - value.timestamp > fiveMinutes) {
+        schedulesCache.delete(key)
+      }
     }
   }
 
@@ -258,6 +337,16 @@
         })
       }
 
+      // OPTIMIZED: Invalidate only affected cache entries
+      const affectedCacheKey = getCacheKey(startDate, endDate, timeslot.id)
+      schedulesCache.delete(affectedCacheKey)
+
+      // Also invalidate original timeslot cache if editing
+      if (mode === 'edit' && booking.data.originalTimeslotId !== timeslot.id) {
+        const originalCacheKey = getCacheKey(startDate, endDate, booking.data.originalTimeslotId)
+        schedulesCache.delete(originalCacheKey)
+      }
+
       dispatch('refresh')
       document.getElementById('editModal').close()
     } catch (error) {
@@ -325,6 +414,11 @@
         duration: 3000,
         description: `Deleted ${schedulesToDelete.length} lesson(s)`,
       })
+
+      // OPTIMIZED: Invalidate cache
+      const affectedCacheKey = getCacheKey(startDate, endDate, timeslot.id)
+      schedulesCache.delete(affectedCacheKey)
+
       dispatch('refresh')
       document.getElementById('editModal').close()
     } catch (error) {
@@ -363,7 +457,12 @@
         <div class="space-y-4">
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Subject</legend>
-            <select class="select select-bordered w-full" bind:value={booking.data.subject.id} required>
+            <select
+              class="select select-bordered w-full"
+              bind:value={booking.data.subject.id}
+              disabled={!dataLoaded}
+              required
+            >
               <option value="">Select Subject</option>
               {#each subjects as subject}
                 <option value={subject.id}>{subject.name}</option>
@@ -373,7 +472,12 @@
 
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Student</legend>
-            <select class="select select-bordered w-full" bind:value={booking.data.student.id} required>
+            <select
+              class="select select-bordered w-full"
+              bind:value={booking.data.student.id}
+              disabled={!dataLoaded}
+              required
+            >
               <option value="">Select Student</option>
               {#each students as student (student.id)}
                 {@const isGraduated = student.status === 'graduated'}
@@ -435,7 +539,12 @@
         <div class="space-y-4">
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Teacher</legend>
-            <select class="select select-bordered w-full" bind:value={booking.data.teacher.id} required>
+            <select
+              class="select select-bordered w-full"
+              bind:value={booking.data.teacher.id}
+              disabled={!dataLoaded}
+              required
+            >
               <option value="">Select Teacher</option>
               {#each teachers as teacher}
                 {@const conflictSchedule = existingSchedules.find((s) => s.teacher === teacher.id)}
@@ -454,7 +563,12 @@
 
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Room</legend>
-            <select class="select select-bordered w-full" bind:value={booking.data.room.id} required>
+            <select
+              class="select select-bordered w-full"
+              bind:value={booking.data.room.id}
+              disabled={!dataLoaded}
+              required
+            >
               <option value="">Select Room</option>
               {#each rooms as room}
                 {@const conflictSchedule = existingSchedules.find((s) => s.room === room.id || s.grouproom === room.id)}
@@ -473,7 +587,12 @@
 
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
-            <select class="select select-bordered w-full" bind:value={booking.data.timeslot.id} required>
+            <select
+              class="select select-bordered w-full"
+              bind:value={booking.data.timeslot.id}
+              disabled={!dataLoaded}
+              required
+            >
               <option value="">Select Timeslot</option>
               {#each timeslots as slot}
                 <option value={slot.id}>{slot.start} - {slot.end}</option>

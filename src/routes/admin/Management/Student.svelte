@@ -68,14 +68,25 @@
       grid.updateConfig({ data }).forceRender()
     } else {
       grid = new Grid({
-        columns: ['Select', 'Name', 'English Name', 'Course', 'Level', 'Status', 'Actions'],
+        columns: [
+          { name: 'Select', width: '120px' },
+          { name: 'Name', width: '150px' },
+          { name: 'Engish Name', width: '150px' },
+          { name: 'Course', width: '120px' },
+          { name: 'Level', width: '120px' },
+          { name: 'Status', width: '120px' },
+          { name: 'Actions', width: '120px' },
+        ],
         data,
         className: {
           table: 'w-full text-xs',
           th: 'bg-base-200 p-3 border text-center font-semibold',
           td: 'p-3 border align-middle text-center',
         },
-        pagination: false,
+        pagination: {
+          enabled: true,
+          limit: 10,
+        },
         sort: true,
         search: {
           enabled: true,

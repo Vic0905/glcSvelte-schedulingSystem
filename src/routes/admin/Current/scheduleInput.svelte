@@ -22,6 +22,15 @@
   let isCopying = $state(false)
   let isLoading = $state(false)
   let abortController = null
+  let scrollPositions = $state({ top: 0, left: 0 })
+
+  // Cache for frequently accessed data
+  const cache = {
+    schedules: null,
+    lastFetch: 0,
+    cacheDuration: 30000, // 30 seconds
+    isValid: () => cache.schedules && Date.now() - cache.lastFetch < cache.cacheDuration,
+  }
 
   // Utility functions
   function getWeekStart(date) {
@@ -52,6 +61,28 @@
     return weekDays.map((d) => `date = "${d}"`).join(' || ')
   }
 
+  // Save scroll position before any updates
+  const saveScrollPosition = () => {
+    const wrapper = document.querySelector('#grid .gridjs-wrapper')
+    if (wrapper) {
+      scrollPositions = {
+        top: wrapper.scrollTop,
+        left: wrapper.scrollLeft,
+      }
+    }
+  }
+
+  // Restore scroll position after updates
+  const restoreScrollPosition = () => {
+    requestAnimationFrame(() => {
+      const wrapper = document.querySelector('#grid .gridjs-wrapper')
+      if (wrapper) {
+        wrapper.scrollTop = scrollPositions.top
+        wrapper.scrollLeft = scrollPositions.left
+      }
+    })
+  }
+
   // Week navigation
   const changeWeek = async (weeks) => {
     if (isLoading) return
@@ -60,7 +91,10 @@
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-    await loadSchedules()
+
+    // Invalidate cache on week change
+    cache.schedules = null
+    await loadSchedules(true)
   }
 
   // Copy to advance booking
@@ -85,21 +119,20 @@
         return
       }
 
-      // Deduplicate schedules
-      const uniqueSchedules = Object.values(
-        schedules.reduce((acc, s) => {
-          const key = `${s.student}-${s.timeslot}-${s.room}`
-          acc[key] ??= s
-          return acc
-        }, {})
-      )
+      // Deduplicate schedules using Map for better performance
+      const uniqueMap = new Map()
+      for (const s of schedules) {
+        const key = `${s.student}-${s.timeslot}-${s.room}`
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, s)
+        }
+      }
+      const uniqueSchedules = Array.from(uniqueMap.values())
 
-      // Filter out existing bookings
+      // Filter out existing bookings using Set for O(1) lookup
+      const existingSet = new Set(existingBookings.map((b) => `${b.timeslot}-${b.teacher}-${b.student}-${b.room}`))
       const schedulesToCopy = uniqueSchedules.filter(
-        (s) =>
-          !existingBookings.some(
-            (b) => b.timeslot === s.timeslot && b.teacher === s.teacher && b.student === s.student && b.room === s.room
-          )
+        (s) => !existingSet.has(`${s.timeslot}-${s.teacher}-${s.student}-${s.room}`)
       )
 
       if (!schedulesToCopy.length) {
@@ -124,19 +157,24 @@
 
       isCopying = true
 
-      await Promise.all(
-        schedulesToCopy.map((s) =>
-          pb.collection('advanceBooking').create({
-            date: s.date,
-            timeslot: s.timeslot,
-            teacher: s.teacher,
-            student: s.student,
-            subject: s.subject,
-            room: s.room,
-            status: 'pending',
-          })
+      // Batch create for better performance
+      const batchSize = 10
+      for (let i = 0; i < schedulesToCopy.length; i += batchSize) {
+        const batch = schedulesToCopy.slice(i, i + batchSize)
+        await Promise.all(
+          batch.map((s) =>
+            pb.collection('advanceBooking').create({
+              date: s.date,
+              timeslot: s.timeslot,
+              teacher: s.teacher,
+              student: s.student,
+              subject: s.subject,
+              room: s.room,
+              status: 'pending',
+            })
+          )
         )
-      )
+      }
 
       toast.success('Schedules copied successfully!', {
         position: 'bottom-right',
@@ -167,9 +205,8 @@
   }
 
   // Build cell data
-  function buildCellData(schedule, room, timeslot, teacher, weekStart) {
+  function buildCellData(schedule, room, timeslot, teacher) {
     const base = {
-      date: weekStart,
       room: { name: room.name, id: room.id },
       timeslot: { id: timeslot.id, start: timeslot.start, end: timeslot.end },
       assignedTeacher: teacher,
@@ -196,11 +233,15 @@
   }
 
   // Load schedules
-  async function loadSchedules() {
+  async function loadSchedules(forceRefresh = false) {
     if (isLoading) return
+
     abortController?.abort()
     abortController = new AbortController()
     const { signal } = abortController
+
+    // Save scroll position before loading
+    saveScrollPosition()
 
     isLoading = true
 
@@ -208,40 +249,56 @@
       const weekDays = getWeekDays(weekStart)
       const dateFilter = getDateFilter(weekDays)
 
-      // Fetch data from the database
-      const promises = []
-      if (!timeslots.length) promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
-      if (!rooms.length) promises.push(pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }))
-      promises.push(
-        pb.collection('lessonSchedule').getFullList({
-          filter: dateFilter,
-          expand: 'teacher,student,subject,room,timeslot',
-        })
-      )
+      // Use cache if available and not forcing refresh
+      let schedules
+      if (!forceRefresh && cache.isValid()) {
+        schedules = cache.schedules
+      } else {
+        // Parallel fetching with caching
+        const promises = []
+        if (!timeslots.length) promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
+        if (!rooms.length) promises.push(pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }))
+        promises.push(
+          pb.collection('lessonSchedule').getFullList({
+            filter: dateFilter,
+            expand: 'teacher,student,subject,room,timeslot',
+            $autoCancel: false,
+          })
+        )
 
-      const results = await Promise.all(promises)
-      if (signal.aborted) return
+        const results = await Promise.all(promises)
+        if (signal.aborted) return
 
-      // Parse results
-      let idx = 0
-      if (!timeslots.length) timeslots = results[idx++]
-      if (!rooms.length) rooms = results[idx++]
-      const schedules = results[idx]
+        // Parse results
+        let idx = 0
+        if (!timeslots.length) timeslots = results[idx++]
+        if (!rooms.length) rooms = results[idx++]
+        schedules = results[idx]
 
-      // Build schedule map
-      const scheduleMap = schedules.reduce((acc, s) => {
+        // Update cache
+        cache.schedules = schedules
+        cache.lastFetch = Date.now()
+      }
+
+      // Build schedule map using Map for better performance
+      const scheduleMap = new Map()
+      for (const s of schedules) {
         const rId = s.expand?.room?.id
         const tId = s.expand?.timeslot?.id
         const sId = s.expand?.student?.id
         if (rId && tId && sId) {
-          acc[rId] ??= {}
-          acc[rId][tId] ??= {}
-          acc[rId][tId][sId] = s
+          if (!scheduleMap.has(rId)) {
+            scheduleMap.set(rId, new Map())
+          }
+          const roomMap = scheduleMap.get(rId)
+          if (!roomMap.has(tId)) {
+            roomMap.set(tId, new Map())
+          }
+          roomMap.get(tId).set(sId, s)
         }
-        return acc
-      }, {})
+      }
 
-      // Build table data
+      // Build table data more efficiently
       const data = rooms.map((room) => {
         const teacher = room.expand?.teacher
         const row = [
@@ -249,11 +306,15 @@
           { label: 'Room', value: room.name, disabled: true },
         ]
 
-        timeslots.forEach((ts) => {
-          const students = scheduleMap[room.id]?.[ts.id]
-          const schedule = students ? Object.values(students)[0] : null
-          row.push(buildCellData(schedule, room, ts, teacher, weekStart))
-        })
+        const roomSchedules = scheduleMap.get(room.id)
+
+        // Use for loop instead of forEach for better performance
+        for (let i = 0; i < timeslots.length; i++) {
+          const ts = timeslots[i]
+          const students = roomSchedules?.get(ts.id)
+          const schedule = students ? Array.from(students.values())[0] : null
+          row.push(buildCellData(schedule, room, ts, teacher))
+        }
 
         return row
       })
@@ -262,18 +323,20 @@
 
       // Update or create grid
       if (grid.schedule) {
-        const wrapper = document.querySelector('#grid .gridjs-wrapper')
-        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+        grid.schedule
+          .updateConfig({
+            data,
+            style: {
+              table: {
+                'border-collapse': 'collapse',
+                'table-layout': 'fixed', // Prevents layout shifts
+              },
+            },
+          })
+          .forceRender()
 
-        grid.schedule.updateConfig({ data }).forceRender()
-
-        requestAnimationFrame(() => {
-          const w = document.querySelector('#grid .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = scroll.top
-            w.scrollLeft = scroll.left
-          }
-        })
+        // Restore scroll position after DOM update
+        restoreScrollPosition()
       } else {
         const columns = [
           {
@@ -311,7 +374,12 @@
             th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 align-middle text-center',
           },
-          style: { table: { 'border-collapse': 'collapse' } },
+          style: {
+            table: {
+              'border-collapse': 'collapse',
+              'table-layout': 'fixed',
+            },
+          },
         }).render(document.getElementById('grid'))
 
         grid.schedule.on('cellClick', (...args) => {
@@ -362,7 +430,10 @@
   const debouncedReload = () => {
     if (isLoading) return
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadSchedules, 50)
+    reloadTimeout = setTimeout(() => {
+      cache.schedules = null // Invalidate cache on updates
+      loadSchedules(true)
+    }, 150)
   }
 
   onMount(() => {
@@ -427,4 +498,9 @@
   <div id="grid" class="border rounded-lg"></div>
 </div>
 
-<ScheduleModal on:refresh={loadSchedules} />
+<ScheduleModal
+  on:refresh={() => {
+    saveScrollPosition()
+    loadSchedules(true)
+  }}
+/>
