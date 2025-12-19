@@ -202,8 +202,8 @@
 
         if (values.length >= 1) {
           students.push({
-            englishName: values[0] || '',
-            name: values[1] || '',
+            name: values[0] || '',
+            englishName: values[1] || '',
             course: values[2] || '',
             level: values[3] || '',
             status: values[4] || 'new',
