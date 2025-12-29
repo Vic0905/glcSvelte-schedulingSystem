@@ -103,6 +103,7 @@
         <li><a href="/#/management/group">Group</a></li>
         <li><a href="/#/management/student">Student</a></li>
         <li><a href="/#/management/teacher">Teacher</a></li>
+        <li><a href="/#/management/bookings">Bookings</a></li>
       </ul>
     </details>
   </li>

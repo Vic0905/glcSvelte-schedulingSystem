@@ -22,6 +22,9 @@ export const adminRoutes = {
   '/management/teacher': wrap({
     asyncComponent: () => import('../routes/admin/Management/Teacher.svelte'),
   }),
+  '/management/bookings': wrap({
+    asyncComponent: () => import('../routes/admin/Management/Bookings.svelte'),
+  }),
   '/advance/advanceschedule': wrap({
     asyncComponent: () => import('../routes/admin/Advance/advanceSchedule.svelte'),
   }),

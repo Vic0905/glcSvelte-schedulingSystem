@@ -348,10 +348,10 @@
     <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-primary mb-2">Teacher Management</h1>
+          <h1 class="text-3xl font-bold mb-2">Teacher Management</h1>
         </div>
         <div class="flex gap-3">
-          <button class="btn btn-secondary gap-2" onclick={openCSVModal}>
+          <button class="btn btn-neutral gap-2" onclick={openCSVModal}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-5 w-5"
@@ -368,7 +368,7 @@
             </svg>
             Import CSV
           </button>
-          <button class="btn btn-primary gap-2" onclick={openAddModal}>
+          <button class="btn btn-neutral gap-2" onclick={openAddModal}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-5 w-5"
@@ -386,13 +386,13 @@
 
     <!-- Bulk Actions Bar -->
     {#if showBulkActions}
-      <div class="bg-base-100 shadow-lg rounded-xl p-4 mb-6 border-l-4 border-primary">
+      <div class="bg-base-100 shadow-lg rounded-xl p-4 mb-6 border-l-4 border-neutral">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div class="flex items-center gap-3">
-            <div class="bg-primary/10 p-2 rounded-lg">
+            <div class="bg-neutral/10 p-2 rounded-lg">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                class="h-6 w-6 text-primary"
+                class="h-6 w-6 text-neutral"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -416,10 +416,10 @@
             <button class="btn btn-sm btn-ghost" onclick={selectAll}>Select All</button>
             <button class="btn btn-sm btn-ghost" onclick={deselectAll}>Clear</button>
             <div class="divider divider-horizontal"></div>
-            <button class="btn btn-sm btn-success" onclick={() => bulkUpdateStatus('enabled')} disabled={isProcessing}>
+            <button class="btn btn-sm btn-ghost" onclick={() => bulkUpdateStatus('enabled')} disabled={isProcessing}>
               Mark as Enabled
             </button>
-            <button class="btn btn-sm btn-error" onclick={() => bulkUpdateStatus('disabled')} disabled={isProcessing}>
+            <button class="btn btn-sm btn-ghost" onclick={() => bulkUpdateStatus('disabled')} disabled={isProcessing}>
               {isProcessing ? 'Processing...' : 'Mark as Disabled'}
             </button>
           </div>
@@ -444,6 +444,7 @@
         <div class="bg-base-200 p-4 rounded-lg">
           <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Teacher Information</h4>
           <div class="form-control">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text font-medium">Full Name <span class="text-error">*</span></span>
             </label>
@@ -453,6 +454,7 @@
 
         <!-- Status -->
         <div class="form-control">
+          <!-- svelte-ignore a11y_label_has_associated_control -->
           <label class="label">
             <span class="label-text font-medium">Status</span>
           </label>
@@ -471,6 +473,7 @@
         </button>
       </div>
     </div>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="modal-backdrop" onclick={() => (showModal = false)}></div>
   </div>
 {/if}

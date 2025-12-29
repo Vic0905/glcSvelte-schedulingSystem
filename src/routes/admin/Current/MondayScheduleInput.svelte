@@ -22,6 +22,15 @@
   let showModal = $state(false)
   let isCopying = $state(false)
   let isLoading = $state(false)
+  let scrollPositions = $state({ top: 0, left: 0 })
+
+  // Cache for better performance
+  const cache = {
+    schedules: null,
+    lastFetch: 0,
+    cacheDuration: 30000, // 30 seconds
+    isValid: () => cache.schedules && Date.now() - cache.lastFetch < cache.cacheDuration,
+  }
 
   let mondaySchedule = $state({
     id: '',
@@ -61,34 +70,43 @@
     const monday = new Date(currentMonday)
     monday.setDate(monday.getDate() + weeks * 7)
     currentMonday = monday.toISOString().split('T')[0]
-    await loadMondaySchedules()
+    await loadMondaySchedules(true)
   }
 
   const copyToMondayAdvance = async () => {
     try {
-      const schedules = await pb.collection('mondayLessonSchedule').getFullList({
-        filter: `date = "${currentMonday}"`,
-        expand: 'teacher,student,subject,room,timeslot',
-      })
+      // Use cache if available
+      let schedules
+      if (cache.isValid() && cache.schedules) {
+        schedules = cache.schedules
+      } else {
+        schedules = await pb.collection('mondayLessonSchedule').getFullList({
+          filter: `date = "${currentMonday}"`,
+          expand: 'teacher,student,subject,room,timeslot',
+        })
+      }
 
       if (schedules.length === 0) {
         toast.info('No Monday schedules found', { position: 'bottom-right', duration: 3000 })
         return
       }
 
-      // Get unique schedules
-      const uniqueSchedulesMap = {}
+      // Get unique schedules using Map for better performance
+      const uniqueSchedulesMap = new Map()
       schedules.forEach((schedule) => {
         const key = `${schedule.student}-${schedule.timeslot}-${schedule.room}`
-        uniqueSchedulesMap[key] ??= schedule
+        if (!uniqueSchedulesMap.has(key)) {
+          uniqueSchedulesMap.set(key, schedule)
+        }
       })
-      const uniqueSchedules = Object.values(uniqueSchedulesMap)
+      const uniqueSchedules = Array.from(uniqueSchedulesMap.values())
 
       const existingBookings = await pb
         .collection('mondayAdvanceBooking')
         .getFullList()
         .catch(() => [])
 
+      // Filter out existing bookings
       const schedulesToCopy = uniqueSchedules.filter(
         (schedule) =>
           !existingBookings.some(
@@ -119,18 +137,23 @@
 
       isCopying = true
 
-      await Promise.all(
-        schedulesToCopy.map((schedule) =>
-          pb.collection('mondayAdvanceBooking').create({
-            timeslot: schedule.timeslot,
-            teacher: schedule.teacher,
-            student: schedule.student,
-            subject: schedule.subject,
-            room: schedule.room,
-            hiddenDetails: true,
-          })
+      // Batch create for better performance
+      const batchSize = 10
+      for (let i = 0; i < schedulesToCopy.length; i += batchSize) {
+        const batch = schedulesToCopy.slice(i, i + batchSize)
+        await Promise.all(
+          batch.map((schedule) =>
+            pb.collection('mondayAdvanceBooking').create({
+              timeslot: schedule.timeslot,
+              teacher: schedule.teacher,
+              student: schedule.student,
+              subject: schedule.subject,
+              room: schedule.room,
+              hiddenDetails: true,
+            })
+          )
         )
-      )
+      }
 
       toast.success('Monday schedules copied successfully!', {
         position: 'bottom-right',
@@ -151,68 +174,130 @@
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
+
+    if (Array.isArray(cell)) {
+      // Multiple schedules in this cell
+      return h(
+        'div',
+        { class: 'flex flex-col gap-1 text-xs items-center' },
+        cell.map((schedule) => {
+          if (schedule.hiddenDetails) {
+            return h('div', { class: 'badge badge-success badge-sm mb-1' }, 'Scheduled')
+          }
+          return h('div', { class: 'border rounded p-1 mb-1 w-full' }, [
+            h('div', { class: 'badge badge-primary badge-xs p-2 mb-1' }, schedule.subject.name),
+            h('div', { class: 'badge badge-neutral badge-xs mb-1' }, schedule.student.englishName),
+            h('div', { class: 'badge badge-error badge-xs mb-1' }, schedule.teacher.name),
+            // h('div', { class: 'badge badge-error badge-xs' }, schedule.room.name),
+          ])
+        })
+      )
+    }
+
     if (cell.hiddenDetails) {
       return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
     }
-    return h('div', { class: 'flex flex-col gap-1 items-center' }, [
-      h('span', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name),
-      h('span', { class: 'badge badge-info badge-xs' }, cell.teacher.name),
-      h('span', { class: 'badge badge-neutral badge-xs' }, cell.student.englishName),
-      h('span', { class: 'badge badge-error badge-xs' }, cell.room.name),
+
+    // Single schedule
+    return h('div', { class: 'flex flex-col gap-1 text-xs items-center' }, [
+      h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name),
+      h('div', { class: 'badge badge-neutral badge-xs' }, cell.student.englishName),
+      h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name),
+      // h('div', { class: 'badge badge-error badge-xs' }, cell.room.name),
     ])
   }
 
-  async function loadMondaySchedules() {
+  // Save scroll position before updates
+  const saveScrollPosition = () => {
+    const wrapper = document.querySelector('#monday-current-grid .gridjs-wrapper')
+    if (wrapper) {
+      scrollPositions = {
+        top: wrapper.scrollTop,
+        left: wrapper.scrollLeft,
+      }
+    }
+  }
+
+  // Restore scroll position after updates
+  const restoreScrollPosition = () => {
+    requestAnimationFrame(() => {
+      const wrapper = document.querySelector('#monday-current-grid .gridjs-wrapper')
+      if (wrapper) {
+        wrapper.scrollTop = scrollPositions.top
+        wrapper.scrollLeft = scrollPositions.left
+      }
+    })
+  }
+
+  async function loadMondaySchedules(forceRefresh = false) {
     if (isLoading) return
+
+    // Save scroll position before loading
+    saveScrollPosition()
+
     isLoading = true
 
     try {
-      // Fetch only schedules, use cached timeslots/rooms after first load
-      const schedulesPromise = pb.collection('mondayLessonSchedule').getList(1, 200, {
-        filter: `date = "${currentMonday}"`,
-        expand: 'teacher,student,subject,room,timeslot',
-      })
+      // Use cache if available and not forcing refresh
+      let schedules
+      if (!forceRefresh && cache.isValid()) {
+        schedules = cache.schedules
+      } else {
+        // Parallel fetching
+        const [schedulesData, timeslotsData, roomsData] = await Promise.all([
+          pb.collection('mondayLessonSchedule').getFullList({
+            // Changed to getFullList to get ALL records
+            filter: `date = "${currentMonday}"`,
+            expand: 'teacher,student,subject,room,timeslot',
+          }),
+          timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
+          rooms.length ? rooms : pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
+        ])
 
-      const promises = [schedulesPromise]
+        schedules = schedulesData
+        if (!timeslots.length) timeslots = timeslotsData
+        if (!rooms.length) rooms = roomsData
 
-      if (!timeslots.length) {
-        promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
+        console.log(`Loaded ${schedules.length} schedules for ${currentMonday}`)
+
+        // Update cache
+        cache.schedules = schedules
+        cache.lastFetch = Date.now()
       }
-      if (!rooms.length) {
-        promises.push(pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }))
-      }
 
-      const results = await Promise.all(promises)
-      const schedules = results[0]
-
-      if (results.length > 1 && !timeslots.length) timeslots = results[1]
-      if (results.length > 2 && !rooms.length) rooms = results[2]
-
-      // Build schedule map
-      const scheduleMap = {}
-      for (const s of schedules.items) {
+      // Build schedule map using Map for better performance
+      const scheduleMap = new Map()
+      for (const s of schedules) {
         const rId = s.expand?.room?.id
         const tId = s.expand?.timeslot?.id
         const sId = s.expand?.student?.id
         if (!rId || !tId || !sId) continue
 
-        scheduleMap[rId] ??= {}
-        scheduleMap[rId][tId] ??= {}
-        scheduleMap[rId][tId][sId] = s
+        if (!scheduleMap.has(rId)) {
+          scheduleMap.set(rId, new Map())
+        }
+        const roomMap = scheduleMap.get(rId)
+        if (!roomMap.has(tId)) {
+          roomMap.set(tId, [])
+        }
+        roomMap.get(tId).push(s)
       }
 
-      // Build table data
+      // Build table data efficiently - now each cell can contain multiple schedules
       const data = rooms.map((room) => {
+        const roomMap = scheduleMap.get(room.id) || new Map()
         const teacher = room.expand?.teacher
         const row = [
           { label: 'Teacher', value: teacher?.name || '-', disabled: true },
           { label: 'Room', value: room.name, disabled: true },
         ]
 
-        timeslots.forEach((ts) => {
-          const students = scheduleMap[room.id]?.[ts.id]
+        // Use for loop for better performance
+        for (let i = 0; i < timeslots.length; i++) {
+          const ts = timeslots[i]
+          const schedulesInSlot = roomMap.get(ts.id) || []
 
-          if (!students || Object.keys(students).length === 0) {
+          if (schedulesInSlot.length === 0) {
             row.push({
               label: 'Empty',
               date: currentMonday,
@@ -223,8 +308,9 @@
               timeslot: { id: ts.id, start: ts.start, end: ts.end },
               assignedTeacher: teacher,
             })
-          } else {
-            const s = Object.values(students)[0]
+          } else if (schedulesInSlot.length === 1) {
+            // Single schedule
+            const s = schedulesInSlot[0]
             row.push({
               label: 'Schedule',
               id: s.id,
@@ -237,48 +323,54 @@
               assignedTeacher: teacher,
               hiddenDetails: s.hiddenDetails || false,
             })
+          } else {
+            // Multiple schedules - store as array
+            const scheduleData = schedulesInSlot.map((s) => ({
+              label: 'Schedule',
+              id: s.id,
+              date: currentMonday,
+              subject: { name: s.expand?.subject?.name || '', id: s.expand?.subject?.id || '' },
+              teacher: { name: s.expand?.teacher?.name || '', id: s.expand?.teacher?.id || '' },
+              student: { englishName: s.expand?.student?.englishName || '', id: s.expand?.student?.id || '' },
+              room: { name: room.name, id: room.id },
+              timeslot: { id: ts.id, start: ts.start, end: ts.end },
+              assignedTeacher: teacher,
+              hiddenDetails: s.hiddenDetails || false,
+            }))
+            row.push(scheduleData)
           }
-        })
+        }
 
         return row
       })
 
+      const columns = [
+        {
+          name: 'Teacher',
+          width: '120px',
+          formatter: (cell) => h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value),
+        },
+        {
+          name: 'Room',
+          width: '120px',
+          formatter: (cell) => h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value),
+        },
+        ...timeslots.map((t) => ({
+          name: `${t.start} - ${t.end}`,
+          id: t.id,
+          width: '160px',
+          formatter: formatCell,
+        })),
+      ]
+
       if (mondayCurrentGrid) {
-        // Only update data when grid exists, not columns
-        const wrapper = document.querySelector('#monday-current-grid .gridjs-wrapper')
-        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+        // Update grid data without full re-render
+        mondayCurrentGrid.updateConfig({ columns, data }).forceRender()
 
-        mondayCurrentGrid.updateConfig({ data }).forceRender()
-
-        requestAnimationFrame(() => {
-          const w = document.querySelector('#monday-current-grid .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = scroll.top
-            w.scrollLeft = scroll.left
-          }
-        })
+        // Restore scroll position
+        restoreScrollPosition()
       } else {
-        // Initial grid creation with columns
-        const columns = [
-          {
-            name: 'Teacher',
-            width: '120px',
-            formatter: (cell) =>
-              cell.disabled
-                ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-                : cell.value,
-          },
-          {
-            name: 'Room',
-            width: '120px',
-            formatter: (cell) =>
-              cell.disabled
-                ? h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value)
-                : cell.value,
-          },
-          ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
-        ]
-
+        // Initial grid creation
         mondayCurrentGrid = new Grid({
           columns,
           data,
@@ -287,29 +379,40 @@
           pagination: false,
           className: {
             table: 'w-full border text-xs',
-            th: 'bg-base-200 p-2 border text-center',
+            th: 'bg-base-200 p-1 border text-center',
             td: 'border p-2 align-middle text-center',
           },
-          style: { table: { 'border-collapse': 'collapse' } },
+          style: {
+            table: {
+              'border-collapse': 'collapse',
+              'table-layout': 'fixed', // Prevents layout shifts
+            },
+          },
         }).render(document.getElementById('monday-current-grid'))
 
-        mondayCurrentGrid.on('cellClick', (...args) => {
-          const cellData = args[1].data
+        mondayCurrentGrid.on('cellClick', (_, cell) => {
+          const cellData = cell.data
           if (cellData.disabled) return
 
-          Object.assign(mondaySchedule, cellData, {
-            mode: cellData.label === 'Empty' ? 'create' : 'edit',
+          // Handle multiple schedules - for now, edit the first one
+          let scheduleToEdit = cellData
+          if (Array.isArray(cellData)) {
+            scheduleToEdit = cellData[0]
+          }
+
+          Object.assign(mondaySchedule, scheduleToEdit, {
+            mode: scheduleToEdit.label === 'Empty' ? 'create' : 'edit',
           })
 
-          if (cellData.label === 'Empty' && cellData.assignedTeacher) {
-            mondaySchedule.teacher.id = cellData.assignedTeacher.id
-            mondaySchedule.teacher.name = cellData.assignedTeacher.name
+          if (scheduleToEdit.label === 'Empty' && scheduleToEdit.assignedTeacher) {
+            mondaySchedule.teacher.id = scheduleToEdit.assignedTeacher.id
+            mondaySchedule.teacher.name = scheduleToEdit.assignedTeacher.name
           }
 
           if (mondaySchedule.mode === 'edit') {
-            mondaySchedule.originalStudentId = cellData.student?.id || ''
-            mondaySchedule.originalTimeslotId = cellData.timeslot?.id || ''
-            mondaySchedule.originalRoomId = cellData.room?.id || ''
+            mondaySchedule.originalStudentId = scheduleToEdit.student?.id || ''
+            mondaySchedule.originalTimeslotId = scheduleToEdit.timeslot?.id || ''
+            mondaySchedule.originalRoomId = scheduleToEdit.room?.id || ''
           }
 
           showModal = true
@@ -326,7 +429,10 @@
   let reloadTimeout
   const debouncedReload = () => {
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadMondaySchedules, 50)
+    reloadTimeout = setTimeout(() => {
+      cache.schedules = null // Invalidate cache on updates
+      loadMondaySchedules(true)
+    }, 150)
   }
 
   onMount(() => {
@@ -353,9 +459,9 @@
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
-  <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
+  <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-4">
-      <button class="btn btn-success btn-sm" onclick={copyToMondayAdvance} disabled={isCopying}>
+      <button class="btn btn-success btn-sm" onclick={copyToMondayAdvance} disabled={isCopying || isLoading}>
         {#if isCopying}
           <span class="loading loading-spinner loading-sm"></span>
           Copying...
@@ -373,9 +479,11 @@
       </button>
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-20">{getMondayDisplay(currentMonday)}</h3>
+    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
+      {getMondayDisplay(currentMonday)}
+    </h3>
 
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 ml-auto">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
     </div>
@@ -388,16 +496,16 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-info badge-xs"></div>
-        <span>Teacher</span>
-      </div>
-      <div class="flex items-center gap-1">
         <div class="badge badge-neutral badge-xs"></div>
         <span>Student</span>
       </div>
       <div class="flex items-center gap-1">
         <div class="badge badge-error badge-xs"></div>
-        <span>Room</span>
+        <span>Teacher</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-success badge-xs"></div>
+        <span>Scheduled</span>
       </div>
     </div>
   </div>
@@ -405,4 +513,11 @@
   <div id="monday-current-grid" class="border rounded-lg"></div>
 </div>
 
-<MondayScheduleModal bind:show={showModal} bind:mondaySchedule onSave={loadMondaySchedules} />
+<MondayScheduleModal
+  bind:show={showModal}
+  bind:mondaySchedule
+  onSave={() => {
+    saveScrollPosition()
+    loadMondaySchedules(true)
+  }}
+/>

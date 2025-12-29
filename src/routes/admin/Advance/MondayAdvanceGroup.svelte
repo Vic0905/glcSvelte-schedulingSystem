@@ -22,6 +22,15 @@
   let showAdvanceModal = $state(false)
   let showGoLiveModal = $state(false)
   let isLoading = $state(false)
+  let scrollPositions = $state({ top: 0, left: 0 })
+
+  // Cache for frequently accessed data
+  const cache = {
+    bookings: null,
+    lastFetch: 0,
+    cacheDuration: 30000, // 30 seconds
+    isValid: () => cache.bookings && Date.now() - cache.lastFetch < cache.cacheDuration,
+  }
 
   let advanceGroupBooking = $state({
     id: '',
@@ -41,9 +50,8 @@
     currentMonday = monday.toISOString().split('T')[0]
   }
 
-  const getMondayDate = (mondayDate) => {
-    const monday = new Date(mondayDate)
-    return monday.toISOString().split('T')[0]
+  const getMondayDate = () => {
+    return currentMonday
   }
 
   const getMondayDisplay = (mondayDate) => {
@@ -57,6 +65,28 @@
     currentMonday = monday.toISOString().split('T')[0]
   }
 
+  // Save scroll position before any updates
+  const saveScrollPosition = () => {
+    const wrapper = document.querySelector('#advance-group-grid .gridjs-wrapper')
+    if (wrapper) {
+      scrollPositions = {
+        top: wrapper.scrollTop,
+        left: wrapper.scrollLeft,
+      }
+    }
+  }
+
+  // Restore scroll position after updates
+  const restoreScrollPosition = () => {
+    requestAnimationFrame(() => {
+      const wrapper = document.querySelector('#advance-group-grid .gridjs-wrapper')
+      if (wrapper) {
+        wrapper.scrollTop = scrollPositions.top
+        wrapper.scrollLeft = scrollPositions.left
+      }
+    })
+  }
+
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
 
@@ -65,51 +95,97 @@
       return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
     }
 
-    return h('div', { class: 'flex flex-col gap-1 items-center' }, [
+    const studentCount = cell.students?.length || 0
+    const maxStudents = cell.groupRoom?.maxstudents || 0
+    const additionalCount = Math.max(0, studentCount - maxStudents)
+
+    const elements = [
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
-      h('div', { class: 'badge badge-info badge-xs' }, cell.teacher.name || 'No Teacher'),
-      h('div', { class: 'badge badge-error badge-xs' }, cell.groupRoom.name || 'No Room'),
-    ])
+      h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name || 'No Teacher'),
+      // h('div', { class: 'badge badge-error badge-xs' }, cell.groupRoom.name || 'No Room'),
+    ]
+
+    if (studentCount > 0) {
+      elements.push(h('div', { class: 'badge badge-neutral badge-xs' }, `${studentCount} student(s)`))
+    }
+
+    if (additionalCount > 0) {
+      elements.push(h('div', { class: 'badge badge-warning badge-xs' }, `+${additionalCount}`))
+    }
+
+    return h('div', { class: 'flex flex-col gap-1 items-center text-xs' }, elements)
   }
 
-  async function loadAdvanceGroupBookings() {
+  async function loadAdvanceGroupBookings(forceRefresh = false) {
     if (isLoading) return
+
+    // Save scroll position before loading
+    saveScrollPosition()
+
     isLoading = true
 
     try {
-      const [timeslotsData, groupRoomsData, records] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeslot').getFullList({ sort: 'start' }),
-        allGroupRooms.length
-          ? allGroupRooms
-          : pb.collection('groupRoom').getFullList({ sort: 'name', expand: 'teacher' }),
-        pb.collection('mondayAdvanceGroupBooking').getList(1, 500, {
-          expand: 'teacher,student,subject,grouproom,timeslot',
-        }),
-      ])
+      // Use cache if available and not forcing refresh
+      let records
+      if (!forceRefresh && cache.isValid()) {
+        records = cache.bookings
+      } else {
+        // Parallel fetching with caching
+        const [timeslotsData, groupRoomsData, bookingsData] = await Promise.all([
+          timeslots.length
+            ? timeslots
+            : pb.collection('timeslot').getFullList({
+                sort: 'start',
+                fields: 'id,start,end',
+              }),
+          allGroupRooms.length
+            ? allGroupRooms
+            : pb.collection('groupRoom').getFullList({
+                sort: 'name',
+                expand: 'teacher',
+                fields: 'id,name,maxstudents,expand',
+              }),
+          pb.collection('mondayAdvanceGroupBooking').getFullList({
+            expand: 'teacher,student,subject,grouproom,timeslot',
+            fields: 'id,grouproom,timeslot,teacher,student,subject,hiddenDetails,expand',
+            $autoCancel: false,
+          }),
+        ])
 
-      timeslots = timeslotsData
-      allGroupRooms = groupRoomsData
+        timeslots = timeslotsData
+        allGroupRooms = groupRoomsData
+        records = bookingsData
 
-      // Build schedule map
-      const scheduledGroupRooms = {}
-      for (const r of records.items) {
-        const groupRoomId = r.expand?.grouproom?.id || r.grouproom
-        const slotId = r.expand?.timeslot?.id || r.timeslot
-        scheduledGroupRooms[groupRoomId] ??= {}
-        scheduledGroupRooms[groupRoomId][slotId] = r
+        // Update cache
+        cache.bookings = records
+        cache.lastFetch = Date.now()
       }
 
-      // Build table data
+      // Build schedule map using Map for better performance
+      const scheduledGroupRooms = new Map()
+      for (const r of records) {
+        const groupRoomId = r.expand?.grouproom?.id || r.grouproom
+        const slotId = r.expand?.timeslot?.id || r.timeslot
+
+        if (!scheduledGroupRooms.has(groupRoomId)) {
+          scheduledGroupRooms.set(groupRoomId, new Map())
+        }
+        scheduledGroupRooms.get(groupRoomId).set(slotId, r)
+      }
+
+      // Build table data more efficiently
       const data = allGroupRooms.map((groupRoom) => {
-        const slotMap = scheduledGroupRooms[groupRoom.id] || {}
+        const slotMap = scheduledGroupRooms.get(groupRoom.id) || new Map()
         const assignedTeacher = groupRoom.expand?.teacher
         const row = [
           { value: assignedTeacher?.name || '-', disabled: true },
           { value: groupRoom.name, disabled: true },
         ]
 
-        timeslots.forEach((t) => {
-          const item = slotMap[t.id]
+        // Use for loop for better performance
+        for (let i = 0; i < timeslots.length; i++) {
+          const t = timeslots[i]
+          const item = slotMap.get(t.id)
 
           if (!item) {
             row.push({
@@ -118,7 +194,11 @@
               subject: { name: '', id: '' },
               teacher: { name: '', id: '' },
               students: [],
-              groupRoom: { name: groupRoom.name, id: groupRoom.id, maxstudents: groupRoom.maxstudents || 0 },
+              groupRoom: {
+                name: groupRoom.name,
+                id: groupRoom.id,
+                maxstudents: groupRoom.maxstudents || 0,
+              },
               timeslot: { id: t.id, start: t.start, end: t.end },
               assignedTeacher,
               hiddenDetails: false,
@@ -126,30 +206,46 @@
           } else {
             let studentsData = []
             if (item.expand?.student && Array.isArray(item.expand.student)) {
-              studentsData = item.expand.student.map((student) => ({
-                englishName: student.englishName || '',
-                id: student.id || '',
-              }))
+              // Use for loop for better performance
+              for (const student of item.expand.student) {
+                studentsData.push({
+                  englishName: student.englishName || '',
+                  id: student.id || '',
+                })
+              }
             } else if (item.student && Array.isArray(item.student)) {
-              studentsData = item.student.map((studentId) => ({
-                englishName: `Student ${studentId}`,
-                id: studentId,
-              }))
+              // Use for loop for better performance
+              for (const studentId of item.student) {
+                studentsData.push({
+                  englishName: `Student ${studentId}`,
+                  id: studentId,
+                })
+              }
             }
 
             row.push({
               label: 'Schedule',
               id: item.id || '',
-              subject: { name: item.expand?.subject?.name || '', id: item.expand?.subject?.id || '' },
-              teacher: { name: item.expand?.teacher?.name || '', id: item.expand?.teacher?.id || '' },
+              subject: {
+                name: item.expand?.subject?.name || '',
+                id: item.expand?.subject?.id || '',
+              },
+              teacher: {
+                name: item.expand?.teacher?.name || '',
+                id: item.expand?.teacher?.id || '',
+              },
               students: studentsData,
-              groupRoom: { name: groupRoom.name, id: groupRoom.id, maxstudents: groupRoom.maxstudents || 0 },
+              groupRoom: {
+                name: groupRoom.name,
+                id: groupRoom.id,
+                maxstudents: groupRoom.maxstudents || 0,
+              },
               timeslot: { id: t.id, start: t.start, end: t.end },
               assignedTeacher,
               hiddenDetails: item.hiddenDetails || false,
             })
           }
-        })
+        }
 
         return row
       })
@@ -165,22 +261,19 @@
           width: '120px',
           formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
         },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
+        ...timeslots.map((t) => ({
+          name: `${t.start} - ${t.end}`,
+          id: t.id,
+          width: '160px',
+          formatter: formatCell,
+        })),
       ]
 
       if (advanceGroupGrid) {
-        const wrapper = document.querySelector('#advance-group-grid .gridjs-wrapper')
-        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
-
         advanceGroupGrid.updateConfig({ columns, data }).forceRender()
 
-        requestAnimationFrame(() => {
-          const w = document.querySelector('#advance-group-grid .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = scroll.top
-            w.scrollLeft = scroll.left
-          }
-        })
+        // Restore scroll position after DOM update
+        restoreScrollPosition()
       } else {
         advanceGroupGrid = new Grid({
           columns,
@@ -193,7 +286,12 @@
             th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 align-middle text-center',
           },
-          style: { table: { 'border-collapse': 'collapse' } },
+          style: {
+            table: {
+              'border-collapse': 'collapse',
+              'table-layout': 'fixed', // Prevents layout shifts
+            },
+          },
         }).render(document.getElementById('advance-group-grid'))
 
         advanceGroupGrid.on('cellClick', (_, cell) => {
@@ -228,68 +326,100 @@
         return
       }
 
-      await Promise.all(allBookings.map((b) => pb.collection('mondayAdvanceGroupBooking').delete(b.id)))
+      // Save scroll position before deletion
+      saveScrollPosition()
+
+      // Batch delete for better performance
+      const batchSize = 10
+      for (let i = 0; i < allBookings.length; i += batchSize) {
+        const batch = allBookings.slice(i, i + batchSize)
+        await Promise.all(batch.map((b) => pb.collection('mondayAdvanceGroupBooking').delete(b.id)))
+      }
+
+      // Invalidate cache
+      cache.bookings = null
+
       alert(`✅ Successfully deleted ${allBookings.length} Monday advance group bookings.`)
-      loadAdvanceGroupBookings()
+      loadAdvanceGroupBookings(true) // Force refresh
     } catch (error) {
       console.error('Error deleting Monday advance group bookings:', error)
       alert('❌ Failed to delete Monday advance group bookings. Check console for details.')
     }
   }
 
-  let reloadTimeout
-  const debouncedReload = () => {
-    clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadAdvanceGroupBookings, 100)
-  }
-
   async function copyFromAdvanceBooking() {
     if (isLoading) return
-    if (!confirm('⚡ Copy all records from Advance Booking to Monday Advance Booking?')) return
+    if (!confirm('⚡ Copy all records from Advance Group Booking to Monday Advance Group Booking?')) return
 
     isLoading = true
     try {
       // Fetch all advance bookings
       const advanceBookings = await pb.collection('groupAdvanceBooking').getFullList({
         expand: 'teacher,student,subject,grouproom,timeslot',
+        $autoCancel: false,
       })
 
       if (!advanceBookings.length) {
-        alert('No records found in Advance Booking.')
+        alert('No records found in Group Advance Booking.')
         return
       }
+
+      // Save scroll position before copying
+      saveScrollPosition()
 
       // Optional: delete existing Monday bookings before copying
       const existing = await pb.collection('mondayAdvanceGroupBooking').getFullList()
       if (existing.length > 0) {
         const confirmDelete = confirm(
-          `There are already ${existing.length} Monday advance bookings.\nDo you want to delete them before copying?`
+          `There are already ${existing.length} Monday advance group bookings.\nDo you want to delete them before copying?`
         )
         if (confirmDelete) {
-          await Promise.all(existing.map((b) => pb.collection('mondayAdvanceGroupBooking').delete(b.id)))
+          // Batch delete for better performance
+          const batchSize = 10
+          for (let i = 0; i < existing.length; i += batchSize) {
+            const batch = existing.slice(i, i + batchSize)
+            await Promise.all(batch.map((b) => pb.collection('mondayAdvanceGroupBooking').delete(b.id)))
+          }
         }
       }
 
-      // Copy each advance booking to mondayAdvanceGroupBooking
-      for (const booking of advanceBookings) {
-        await pb.collection('mondayAdvanceGroupBooking').create({
-          grouproom: booking.grouproom || booking.expand?.grouproom?.id,
-          timeslot: booking.timeslot || booking.expand?.timeslot?.id,
-          teacher: booking.teacher || booking.expand?.teacher?.id,
-          student: booking.student || booking.expand?.student?.id,
-          subject: booking.subject || booking.expand?.subject?.id,
-          hiddenDetails: true,
-        })
+      // Batch create for better performance
+      const batchSize = 10
+      for (let i = 0; i < advanceBookings.length; i += batchSize) {
+        const batch = advanceBookings.slice(i, i + batchSize)
+        const createPromises = batch.map((booking) =>
+          pb.collection('mondayAdvanceGroupBooking').create({
+            grouproom: booking.grouproom,
+            timeslot: booking.timeslot,
+            teacher: booking.teacher,
+            student: booking.student,
+            subject: booking.subject,
+            hiddenDetails: true,
+          })
+        )
+        await Promise.all(createPromises)
       }
 
-      alert(`✅ Successfully copied ${advanceBookings.length} records from Advance Booking!`)
-      loadAdvanceGroupBookings()
+      // Invalidate cache
+      cache.bookings = null
+
+      alert(`✅ Successfully copied ${advanceBookings.length} records from Group Advance Booking!`)
+      loadAdvanceGroupBookings(true) // Force refresh
     } catch (error) {
-      console.error('Error copying from Advance Booking:', error)
-      alert('❌ Failed to copy from Advance Booking. Check console for details.')
+      console.error('Error copying from Group Advance Booking:', error)
+      alert('❌ Failed to copy from Group Advance Booking. Check console for details.')
     } finally {
       isLoading = false
     }
+  }
+
+  let reloadTimeout
+  const debouncedReload = () => {
+    clearTimeout(reloadTimeout)
+    reloadTimeout = setTimeout(() => {
+      cache.bookings = null // Invalidate cache on updates
+      loadAdvanceGroupBookings(true)
+    }, 150)
   }
 
   onMount(() => {
@@ -318,7 +448,7 @@
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-2">
-      <button class="btn btn-success btn-sm" onclick={copyFromAdvanceBooking}>
+      <button class="btn btn-success btn-sm" onclick={copyFromAdvanceBooking} disabled={isLoading}>
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             stroke-linecap="round"
@@ -329,7 +459,9 @@
         </svg>
         Copy from advance
       </button>
-      <button class="btn btn-error btn-sm" onclick={deleteAllAdvanceGroupBookings}>Delete All</button>
+      <button class="btn btn-error btn-sm" onclick={deleteAllAdvanceGroupBookings} disabled={isLoading}>
+        Delete All
+      </button>
     </div>
 
     <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
@@ -339,7 +471,9 @@
     <div class="flex items-center gap-2 ml-auto">
       <button class="btn btn-outline btn-sm" onclick={() => changeMonday(-1)} disabled={isLoading}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeMonday(1)} disabled={isLoading}>&rarr;</button>
-      <button class="btn btn-primary btn-sm" onclick={() => (showGoLiveModal = true)}>🚀 Go Live</button>
+      <button class="btn btn-primary btn-sm" onclick={() => (showGoLiveModal = true)} disabled={isLoading}>
+        🚀 Go Live
+      </button>
     </div>
   </div>
 
@@ -350,20 +484,16 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-info badge-xs"></div>
-        <span>Teacher</span>
-      </div>
-      <div class="flex items-center gap-1">
         <div class="badge badge-error badge-xs"></div>
-        <span>Group Room</span>
+        <span>Teacher</span>
       </div>
       <div class="flex items-center gap-1">
         <div class="badge badge-neutral badge-xs"></div>
         <span>Students</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-warning badge-xs"></div>
-        <span>Additional Count</span>
+        <div class="badge badge-success badge-xs"></div>
+        <span>Scheduled</span>
       </div>
     </div>
   </div>
@@ -371,5 +501,13 @@
   <div id="advance-group-grid" class="border rounded-lg"></div>
 </div>
 
-<MondayAdvanceGroupModal bind:show={showAdvanceModal} bind:advanceGroupBooking onSave={loadAdvanceGroupBookings} />
+<MondayAdvanceGroupModal
+  bind:show={showAdvanceModal}
+  bind:advanceGroupBooking
+  onSave={() => {
+    saveScrollPosition()
+    cache.bookings = null // Invalidate cache
+    loadAdvanceGroupBookings(true)
+  }}
+/>
 <MondayGroupGoLiveModal bind:show={showGoLiveModal} {getMondayDisplay} {currentMonday} {getMondayDate} />

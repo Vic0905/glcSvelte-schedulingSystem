@@ -29,25 +29,39 @@
         return
       }
 
-      // Step 2: Fetch all existing schedules for this Monday at once
+      console.log(`Total bookings fetched: ${mondayBookings.length}`)
+
+      // Step 2: Group bookings by room/timeslot/student combination
+      // Each room/timeslot can have multiple students (different bookings)
+      const groupedBookings = new Map()
+
+      for (const booking of mondayBookings) {
+        const key = `${booking.room}_${booking.timeslot}_${booking.student}`
+        groupedBookings.set(key, booking)
+      }
+
+      console.log(`Unique room/timeslot/student combinations: ${groupedBookings.size}`)
+
+      // Step 3: Fetch all existing schedules for this Monday
       let existingSchedules = []
       try {
         existingSchedules = await pb.collection('mondayLessonSchedule').getFullList({
           filter: `date = "${mondayDate}"`,
         })
+        console.log(`Existing schedules found: ${existingSchedules.length}`)
       } catch (err) {
         if (err.status !== 404) throw err
         // No existing schedules, that's fine
       }
 
-      // Create a Map for quick lookup: "room_timeslot" -> existing schedule
-      const existingMap = new Map(existingSchedules.map((s) => [`${s.room}_${s.timeslot}`, s]))
+      // Create a Map for quick lookup: "room_timeslot_student" -> existing schedule
+      const existingMap = new Map(existingSchedules.map((s) => [`${s.room}_${s.timeslot}_${s.student}`, s]))
 
-      // Step 3: Prepare batch operations
+      // Step 4: Prepare batch operations for ALL bookings
       const schedulesToCreate = []
       const schedulesToUpdate = []
 
-      for (const booking of mondayBookings) {
+      for (const [key, booking] of groupedBookings) {
         const scheduleData = {
           date: mondayDate,
           room: booking.room,
@@ -59,7 +73,6 @@
           hiddenDetails: booking.hiddenDetails || false,
         }
 
-        const key = `${booking.room}_${booking.timeslot}`
         const existing = existingMap.get(key)
 
         if (existing) {
@@ -71,7 +84,9 @@
         }
       }
 
-      // Step 4: Batch create new schedules
+      console.log(`To create: ${schedulesToCreate.length}, To update: ${schedulesToUpdate.length}`)
+
+      // Step 5: Batch create new schedules
       const BATCH_SIZE = 50
       let successCount = 0
       let failedCount = 0
@@ -104,13 +119,14 @@
             errors.push({
               room: booking.expand?.room?.name || 'Unknown',
               timeslot: `${booking.expand?.timeslot?.start || ''} - ${booking.expand?.timeslot?.end || ''}`,
+              student: booking.expand?.student?.englishName || 'Unknown',
               error: result.error,
             })
           }
         })
       }
 
-      // Step 5: Batch update existing schedules
+      // Step 6: Batch update existing schedules
       for (let i = 0; i < schedulesToUpdate.length; i += BATCH_SIZE) {
         const batch = schedulesToUpdate.slice(i, i + BATCH_SIZE)
 
@@ -137,6 +153,7 @@
             errors.push({
               room: booking.expand?.room?.name || 'Unknown',
               timeslot: `${booking.expand?.timeslot?.start || ''} - ${booking.expand?.timeslot?.end || ''}`,
+              student: booking.expand?.student?.englishName || 'Unknown',
               error: result.error,
             })
           }
@@ -151,13 +168,15 @@
       }
 
       // Show results
-      if (failedCount === 0) {
+      if (failedCount === 0 && successCount > 0) {
         alert(`✅ Success! Published ${successCount} Monday bookings to live schedule.`)
         show = false
-      } else {
+      } else if (successCount > 0) {
         alert(
           `⚠️ Partially completed:\n✅ Success: ${successCount}\n❌ Failed: ${failedCount}\n\nCheck the modal for error details.`
         )
+      } else {
+        alert('❌ No schedules were published. Check console for details.')
       }
     } catch (error) {
       console.error('Error going live:', error)
@@ -209,7 +228,8 @@
           <ul class="list-disc list-inside space-y-1 text-sm">
             <li>All Monday advance bookings will be copied to the live schedule</li>
             <li>Date will be set to: {currentMonday}</li>
-            <li>Existing schedules for this date/room/timeslot will be updated</li>
+            <li>Existing schedules for this date/room/timeslot/student will be updated</li>
+            <li>Multiple students per room/timeslot will be preserved</li>
             <li>Status will be set to "scheduled"</li>
           </ul>
         </div>
@@ -221,10 +241,12 @@
               <div class="stat">
                 <div class="stat-title">Success</div>
                 <div class="stat-value text-success">{result.success}</div>
+                <div class="stat-desc">Schedules published</div>
               </div>
               <div class="stat">
                 <div class="stat-title">Failed</div>
                 <div class="stat-value text-error">{result.failed}</div>
+                <div class="stat-desc">Schedules failed</div>
               </div>
             </div>
 
@@ -237,6 +259,7 @@
                       <div class="text-xs">
                         <div><strong>Room:</strong> {error.room}</div>
                         <div><strong>Time:</strong> {error.timeslot}</div>
+                        <div><strong>Student:</strong> {error.student}</div>
                         <div><strong>Error:</strong> {error.error}</div>
                       </div>
                     </div>

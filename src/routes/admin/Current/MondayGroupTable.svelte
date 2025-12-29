@@ -3,9 +3,8 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { onDestroy, onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
-  import { booking, grid } from './schedule.svelte'
-  import MondayGroupModal from './MondayGroupModal.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import MondayGroupModal from './MondayGroupModal.svelte'
 
   const stickyStyles = `
     #monday-group-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
@@ -16,11 +15,37 @@
     #monday-group-grid th:nth-child(2) { z-index: 25; }
   `
 
-  let weekStart = $state(getMondayStart(new Date()))
+  let currentMonday = $state(getMondayStart(new Date()))
   let timeslots = []
-  let mondayGroupModal
+  let mondayGroupGrid = null
+  let showGroupModal = $state(false)
   let isCopying = $state(false)
   let isLoading = $state(false)
+  let scrollPositions = $state({ top: 0, left: 0 })
+
+  // Cache for frequently accessed data
+  const cache = {
+    schedules: null,
+    lastFetch: 0,
+    cacheDuration: 30000, // 30 seconds
+    isValid: () => cache.schedules && Date.now() - cache.lastFetch < cache.cacheDuration,
+  }
+
+  let groupBooking = $state({
+    id: '',
+    date: '',
+    groupRoom: { id: '', name: '', maxstudents: 0 },
+    timeslot: { id: '', start: '', end: '' },
+    teacher: { id: '', name: '' },
+    students: [],
+    subject: { id: '', name: '' },
+    mode: 'create',
+    assignedTeacher: null,
+    originalTeacherId: '',
+    originalSubjectId: '',
+    originalTimeslotId: '',
+    originalGroupRoomId: '',
+  })
 
   function getMondayStart(date) {
     const d = new Date(date)
@@ -35,17 +60,38 @@
     return start.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   }
 
+  // Save scroll position before any updates
+  const saveScrollPosition = () => {
+    const wrapper = document.querySelector('#monday-group-grid .gridjs-wrapper')
+    if (wrapper) {
+      scrollPositions = {
+        top: wrapper.scrollTop,
+        left: wrapper.scrollLeft,
+      }
+    }
+  }
+
+  // Restore scroll position after updates
+  const restoreScrollPosition = () => {
+    requestAnimationFrame(() => {
+      const wrapper = document.querySelector('#monday-group-grid .gridjs-wrapper')
+      if (wrapper) {
+        wrapper.scrollTop = scrollPositions.top
+        wrapper.scrollLeft = scrollPositions.left
+      }
+    })
+  }
+
   const changeWeek = (weeks) => {
-    const d = new Date(weekStart)
+    const d = new Date(currentMonday)
     d.setDate(d.getDate() + weeks * 7)
-    weekStart = getMondayStart(d)
-    loadMondayGroupSchedules()
+    currentMonday = getMondayStart(d)
   }
 
   const copyToAdvanceBooking = async () => {
     try {
       const schedules = await pb.collection('mondayGroupLessonSchedule').getFullList({
-        filter: `date = "${weekStart}"`,
+        filter: `date = "${currentMonday}"`,
         expand: 'teacher,student,subject,grouproom,timeslot',
       })
 
@@ -54,28 +100,26 @@
         return
       }
 
-      // Get unique schedules
-      const uniqueSchedulesMap = {}
+      // Get unique schedules using Map for better performance
+      const uniqueSchedulesMap = new Map()
       schedules.forEach((schedule) => {
         const key = `${schedule.timeslot}-${schedule.grouproom}-${schedule.subject}-${schedule.teacher}`
-        uniqueSchedulesMap[key] ??= schedule
+        if (!uniqueSchedulesMap.has(key)) {
+          uniqueSchedulesMap.set(key, schedule)
+        }
       })
-      const uniqueSchedules = Object.values(uniqueSchedulesMap)
+      const uniqueSchedules = Array.from(uniqueSchedulesMap.values())
 
       const existingBookings = await pb
         .collection('groupAdvanceBooking')
         .getFullList()
         .catch(() => [])
 
+      // Filter out existing bookings using Set for O(1) lookup
+      const existingSet = new Set(existingBookings.map((b) => `${b.timeslot}-${b.grouproom}-${b.subject}-${b.teacher}`))
       const schedulesToCopy = uniqueSchedules.filter(
         (schedule) =>
-          !existingBookings.some(
-            (booking) =>
-              booking.timeslot === schedule.timeslot &&
-              booking.teacher === schedule.teacher &&
-              booking.subject === schedule.subject &&
-              booking.grouproom === schedule.grouproom
-          )
+          !existingSet.has(`${schedule.timeslot}-${schedule.grouproom}-${schedule.subject}-${schedule.teacher}`)
       )
 
       if (schedulesToCopy.length === 0) {
@@ -89,7 +133,7 @@
 
       const confirmMessage =
         `Copy ${schedulesToCopy.length} unique Monday group schedule(s) to Advance Booking?\n\n` +
-        `Date: ${getMondayDisplay(weekStart)}\n` +
+        `Date: ${getMondayDisplay(currentMonday)}\n` +
         (existingBookings.length > 0
           ? `(Skipping ${uniqueSchedules.length - schedulesToCopy.length} duplicate(s))\n`
           : '') +
@@ -99,19 +143,24 @@
 
       isCopying = true
 
-      await Promise.all(
-        schedulesToCopy.map((schedule) =>
-          pb.collection('groupAdvanceBooking').create({
-            date: schedule.date,
-            timeslot: schedule.timeslot,
-            teacher: schedule.teacher,
-            student: schedule.student,
-            subject: schedule.subject,
-            grouproom: schedule.grouproom,
-            status: 'pending',
-          })
+      // Batch create for better performance
+      const batchSize = 10
+      for (let i = 0; i < schedulesToCopy.length; i += batchSize) {
+        const batch = schedulesToCopy.slice(i, i + batchSize)
+        await Promise.all(
+          batch.map((schedule) =>
+            pb.collection('groupAdvanceBooking').create({
+              date: schedule.date,
+              timeslot: schedule.timeslot,
+              teacher: schedule.teacher,
+              student: schedule.student,
+              subject: schedule.subject,
+              grouproom: schedule.grouproom,
+              status: 'pending',
+            })
+          )
         )
-      )
+      }
 
       toast.success('Monday group schedules copied successfully!', {
         position: 'bottom-right',
@@ -133,63 +182,119 @@
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
 
-    // show "Scheduled" if hiddenDetails is true
+    // Show "Scheduled" if hiddenDetails is true
     if (cell.hiddenDetails) {
       return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
     }
 
-    return h('div', { class: 'flex flex-col gap-1 items-center' }, [
+    const studentCount = cell.students?.length || 0
+    const maxStudents = cell.groupRoom?.maxstudents || 0
+    const additionalCount = Math.max(0, studentCount - maxStudents)
+
+    const elements = [
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
       h('div', { class: 'badge badge-info badge-xs' }, cell.teacher.name || 'No Teacher'),
       h('div', { class: 'badge badge-error badge-xs' }, cell.groupRoom.name || 'No Room'),
-    ])
+    ]
+
+    if (studentCount > 0) {
+      elements.push(h('div', { class: 'badge badge-neutral badge-xs' }, `${studentCount} student(s)`))
+    }
+
+    if (additionalCount > 0) {
+      elements.push(h('div', { class: 'badge badge-warning badge-xs' }, `+${additionalCount}`))
+    }
+
+    return h('div', { class: 'flex flex-col gap-1 items-center text-xs' }, elements)
   }
 
-  async function loadMondayGroupSchedules() {
+  async function loadMondayGroupSchedules(forceRefresh = false) {
     if (isLoading) return
+
+    // Save scroll position before loading
+    saveScrollPosition()
+
     isLoading = true
 
     try {
-      const [timeslotsData, groupRooms, schedules] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeslot').getFullList({ sort: 'start' }),
-        pb.collection('groupRoom').getFullList({ sort: 'name', expand: 'teacher' }),
-        pb.collection('mondayGroupLessonSchedule').getFullList({
-          filter: `date = "${weekStart}"`,
-          expand: 'teacher,student,subject,grouproom,timeslot',
-        }),
-      ])
+      // Use cache if available and not forcing refresh
+      let schedules
+      if (!forceRefresh && cache.isValid()) {
+        schedules = cache.schedules
+      } else {
+        // Parallel fetching with caching
+        const [timeslotsData, groupRoomsData, schedulesData] = await Promise.all([
+          timeslots.length
+            ? timeslots
+            : pb.collection('timeslot').getFullList({
+                sort: 'start',
+                fields: 'id,start,end',
+              }),
+          pb.collection('groupRoom').getFullList({
+            sort: 'name',
+            expand: 'teacher',
+            fields: 'id,name,maxstudents,expand',
+          }),
+          pb.collection('mondayGroupLessonSchedule').getFullList({
+            filter: `date = "${currentMonday}"`,
+            expand: 'teacher,student,subject,grouproom,timeslot',
+            fields: '*,expand',
+            $autoCancel: false,
+          }),
+        ])
 
-      timeslots = timeslotsData
+        timeslots = timeslotsData
+        schedules = schedulesData
 
-      // Build schedule map
-      const scheduleMap = {}
+        // Update cache
+        cache.schedules = schedules
+        cache.lastFetch = Date.now()
+      }
+
+      // Build schedule map using Map for better performance
+      const scheduleMap = new Map()
       for (const s of schedules) {
         const gr = s.expand?.grouproom
         const ts = s.expand?.timeslot
         if (!gr || !ts) continue
 
-        scheduleMap[gr.id] ??= {}
-        scheduleMap[gr.id][ts.id] ??= {}
+        if (!scheduleMap.has(gr.id)) {
+          scheduleMap.set(gr.id, new Map())
+        }
+        const roomMap = scheduleMap.get(gr.id)
+        if (!roomMap.has(ts.id)) {
+          roomMap.set(ts.id, new Map())
+        }
 
         const key = `${s.subject}_${s.teacher}`
-        scheduleMap[gr.id][ts.id][key] = s
+        roomMap.get(ts.id).set(key, s)
       }
 
-      // Build table data
+      // Get group rooms for display
+      const groupRooms = await pb.collection('groupRoom').getFullList({
+        sort: 'name',
+        expand: 'teacher',
+        fields: 'id,name,maxstudents,expand',
+      })
+
+      // Build table data more efficiently
       const data = groupRooms.map((gr) => {
+        const roomMap = scheduleMap.get(gr.id) || new Map()
         const teacher = gr.expand?.teacher
         const row = [
           { label: 'Teacher', value: teacher?.name || '-', disabled: true },
           { label: 'Group Room', value: gr.name, disabled: true },
         ]
 
-        timeslots.forEach((ts) => {
-          const schedules = scheduleMap[gr.id]?.[ts.id]
+        // Use for loop for better performance
+        for (let i = 0; i < timeslots.length; i++) {
+          const ts = timeslots[i]
+          const slotMap = roomMap.get(ts.id)
 
-          if (!schedules || Object.keys(schedules).length === 0) {
+          if (!slotMap || slotMap.size === 0) {
             row.push({
               label: 'Empty',
-              date: weekStart,
+              date: currentMonday,
               subject: { name: '', id: '' },
               teacher: { name: '', id: '' },
               students: [],
@@ -199,22 +304,31 @@
               hiddenDetails: false,
             })
           } else {
-            const s = Object.values(schedules)[0]
+            const s = Array.from(slotMap.values())[0]
 
             let studentsData = []
             if (s.expand?.student && Array.isArray(s.expand.student)) {
-              studentsData = s.expand.student.map((student) => ({
-                englishName: student.englishName || '',
-                id: student.id || '',
-              }))
+              // Use for loop for better performance
+              for (const student of s.expand.student) {
+                studentsData.push({
+                  englishName: student.englishName || '',
+                  id: student.id || '',
+                })
+              }
             } else if (s.student && Array.isArray(s.student)) {
-              studentsData = s.student.map((id) => ({ name: `Student ${id}`, id }))
+              // Use for loop for better performance
+              for (const studentId of s.student) {
+                studentsData.push({
+                  englishName: `Student ${studentId}`,
+                  id: studentId,
+                })
+              }
             }
 
             row.push({
               label: 'Schedule',
               id: s.id || '',
-              date: weekStart,
+              date: currentMonday,
               subject: { name: s.expand?.subject?.name || '', id: s.expand?.subject?.id || '' },
               teacher: { name: s.expand?.teacher?.name || '', id: s.expand?.teacher?.id || '' },
               students: studentsData,
@@ -224,7 +338,7 @@
               hiddenDetails: s.hiddenDetails || false,
             })
           }
-        })
+        }
 
         return row
       })
@@ -240,24 +354,21 @@
           width: '120px',
           formatter: (cell) => h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value),
         },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, id: t.id, width: '160px', formatter: formatCell })),
+        ...timeslots.map((t) => ({
+          name: `${t.start} - ${t.end}`,
+          id: t.id,
+          width: '160px',
+          formatter: formatCell,
+        })),
       ]
 
-      if (grid.mondayGroupSchedule) {
-        const wrapper = document.querySelector('#monday-group-grid .gridjs-wrapper')
-        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+      if (mondayGroupGrid) {
+        mondayGroupGrid.updateConfig({ columns, data }).forceRender()
 
-        grid.mondayGroupSchedule.updateConfig({ columns, data }).forceRender()
-
-        requestAnimationFrame(() => {
-          const w = document.querySelector('#monday-group-grid .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = scroll.top
-            w.scrollLeft = scroll.left
-          }
-        })
+        // Restore scroll position after DOM update
+        restoreScrollPosition()
       } else {
-        grid.mondayGroupSchedule = new Grid({
+        mondayGroupGrid = new Grid({
           columns,
           data,
           search: false,
@@ -268,41 +379,37 @@
             th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 align-middle text-center',
           },
-          style: { table: { 'border-collapse': 'collapse' } },
+          style: {
+            table: {
+              'border-collapse': 'collapse',
+              'table-layout': 'fixed', // Prevents layout shifts
+            },
+          },
         }).render(document.getElementById('monday-group-grid'))
 
-        grid.mondayGroupSchedule.on('cellClick', (...args) => {
-          const cellData = args[1].data
+        mondayGroupGrid.on('cellClick', (_, cell) => {
+          const cellData = cell.data
           if (cellData.disabled) return
 
-          booking.mondayData = {
-            ...cellData,
-            selectedDate: weekStart,
-            timeslot: { id: cellData.timeslot?.id || '', ...cellData.timeslot },
-            groupRoom: { ...cellData.groupRoom },
-            students: cellData.students || [],
+          Object.assign(groupBooking, cellData, {
             mode: cellData.label === 'Empty' ? 'create' : 'edit',
-          }
-
-          if (booking.mondayData.mode === 'edit') {
-            booking.mondayData.originalTeacherId = cellData.teacher.id
-            booking.mondayData.originalSubjectId = cellData.subject.id
-            booking.mondayData.originalTimeslotId = cellData.timeslot.id
-            booking.mondayData.originalGroupRoomId = cellData.groupRoom.id
-          }
+          })
 
           if (cellData.label === 'Empty' && cellData.assignedTeacher) {
-            booking.mondayData.teacher = {
+            groupBooking.teacher = {
               id: cellData.assignedTeacher.id,
               name: cellData.assignedTeacher.name,
             }
           }
 
-          if (mondayGroupModal?.showModal) {
-            mondayGroupModal.showModal()
-          } else {
-            toast.error('Monday group modal not initialized')
+          if (groupBooking.mode === 'edit') {
+            groupBooking.originalTeacherId = cellData.teacher?.id || ''
+            groupBooking.originalSubjectId = cellData.subject?.id || ''
+            groupBooking.originalTimeslotId = cellData.timeslot?.id || ''
+            groupBooking.originalGroupRoomId = cellData.groupRoom?.id || ''
           }
+
+          showGroupModal = true
         })
       }
     } catch (error) {
@@ -316,20 +423,21 @@
   let reloadTimeout
   const debouncedReload = () => {
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadMondayGroupSchedules, 50)
+    reloadTimeout = setTimeout(() => {
+      cache.schedules = null // Invalidate cache on updates
+      loadMondayGroupSchedules(true)
+    }, 150)
   }
 
   onMount(() => {
-    grid.mondayGroupSchedule?.destroy()
-    grid.mondayGroupSchedule = null
     loadMondayGroupSchedules()
     pb.collection('mondayGroupLessonSchedule').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
     clearTimeout(reloadTimeout)
-    grid.mondayGroupSchedule?.destroy()
-    grid.mondayGroupSchedule = null
+    mondayGroupGrid?.destroy()
+    mondayGroupGrid = null
     pb.collection('mondayGroupLessonSchedule').unsubscribe()
   })
 </script>
@@ -340,13 +448,13 @@
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">Monday GRP Schedule Table</h2>
+    <h2 class="text-center flex-1">Monday GRP Schedule Table (Current)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-4">
-      <button class="btn btn-success btn-sm" onclick={copyToAdvanceBooking} disabled={isCopying}>
+      <button class="btn btn-success btn-sm" onclick={copyToAdvanceBooking} disabled={isCopying || isLoading}>
         {#if isCopying}
           <span class="loading loading-spinner loading-sm"></span>
           Copying...
@@ -364,23 +472,52 @@
       </button>
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-20">{getMondayDisplay(weekStart)}</h3>
+    <h3 class="text-xl font-semibold text-primary text-center flex-1">{getMondayDisplay(currentMonday)}</h3>
 
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2 ml-auto">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
     </div>
   </div>
 
   <div class="bg-base-200 rounded-lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-2 text-xs">
-      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
-      <div class="flex gap-1"><span class="badge badge-info badge-xs"></span> Teacher</div>
-      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Group Room</div>
+    <div class="flex flex-wrap gap-4 text-xs">
+      <div class="flex items-center gap-1">
+        <div class="badge badge-primary badge-xs"></div>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-info badge-xs"></div>
+        <span>Teacher</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-error badge-xs"></div>
+        <span>Group Room</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-neutral badge-xs"></div>
+        <span>Students</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-warning badge-xs"></div>
+        <span>Additional Count</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-success badge-xs"></div>
+        <span>Scheduled (Hidden Details)</span>
+      </div>
     </div>
   </div>
 
   <div id="monday-group-grid" class="border rounded-lg"></div>
 </div>
 
-<MondayGroupModal on:refresh={loadMondayGroupSchedules} bind:this={mondayGroupModal} />
+<MondayGroupModal
+  bind:show={showGroupModal}
+  bind:groupBooking
+  onSave={() => {
+    saveScrollPosition()
+    cache.schedules = null // Invalidate cache
+    loadMondayGroupSchedules(true)
+  }}
+/>

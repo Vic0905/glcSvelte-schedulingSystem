@@ -1,6 +1,7 @@
 <script>
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import { onMount } from 'svelte'
 
   let { show = $bindable(false), advanceGroupBooking = $bindable(), onSave } = $props()
 
@@ -13,40 +14,65 @@
   let selectedStudents = $state([])
   let maxStudentsAllowed = $state(0)
   let searchTerm = $state('')
+
+  // Conflict data
   let mondayAdvanceBookings = $state([])
   let otherMondayGroupBookings = $state([])
 
-  // Consolidated conflict detection using $derived
-  const conflicts = $derived({
-    teacher:
-      mondayAdvanceBookings.find((b) => b.teacher === advanceGroupBooking.teacher?.id) ||
-      otherMondayGroupBookings.find((b) => b.teacher === advanceGroupBooking.teacher?.id),
-    students: selectedStudents.filter(
-      (studentId) =>
-        mondayAdvanceBookings.some((b) => b.student === studentId) ||
-        otherMondayGroupBookings.some((b) => Array.isArray(b.student) && b.student.includes(studentId))
-    ),
+  // Caching system
+  let dataLoaded = $state(false)
+  let bookingsCache = new Map() // timeslotId -> { mondayAdvanceBookings, otherMondayGroupBookings, timestamp }
+  let prevTimeslotId = $state(null)
+  let prevShow = $state(false)
+
+  // Load reference data ONCE globally
+  onMount(async () => {
+    if (!dataLoaded) {
+      await loadReferenceData()
+    }
   })
 
   // Load data when modal opens
   $effect(() => {
-    if (show) {
-      loadAllData()
+    if (show && !prevShow) {
       // Initialize selected students from booking data
       if (advanceGroupBooking.mode === 'edit' && advanceGroupBooking.students) {
-        selectedStudents = advanceGroupBooking.students.map((student) => student.id)
+        selectedStudents = advanceGroupBooking.students.map((student) => student?.id).filter(Boolean)
       } else {
         selectedStudents = []
       }
       setMaxStudentsAllowed()
     }
+    prevShow = show
   })
 
   // Load conflict data when timeslot changes
   $effect(() => {
-    if (advanceGroupBooking.timeslot?.id) {
-      loadConflictData()
+    const currentTimeslotId = advanceGroupBooking.timeslot?.id
+    if (currentTimeslotId && currentTimeslotId !== prevTimeslotId) {
+      loadConflictData(currentTimeslotId)
+      prevTimeslotId = currentTimeslotId
+    } else if (!currentTimeslotId && prevTimeslotId !== null) {
+      // Clear conflicts when timeslot is deselected
+      mondayAdvanceBookings = []
+      otherMondayGroupBookings = []
+      prevTimeslotId = null
     }
+  })
+
+  // Optimized conflict detection using $derived
+  const conflicts = $derived({
+    teacher:
+      advanceGroupBooking.teacher?.id &&
+      (mondayAdvanceBookings.find((b) => b.teacher === advanceGroupBooking.teacher.id) ||
+        otherMondayGroupBookings.find((b) => b.teacher === advanceGroupBooking.teacher.id)),
+    students: advanceGroupBooking.timeslot?.id
+      ? selectedStudents.filter(
+          (studentId) =>
+            mondayAdvanceBookings.some((b) => b.student === studentId) ||
+            otherMondayGroupBookings.some((b) => Array.isArray(b.student) && b.student.includes(studentId))
+        )
+      : [],
   })
 
   function closeModal() {
@@ -56,16 +82,34 @@
     searchTerm = ''
     mondayAdvanceBookings = []
     otherMondayGroupBookings = []
+    prevTimeslotId = null
   }
 
-  const loadAllData = async () => {
+  const loadReferenceData = async () => {
+    if (dataLoaded) return
+
     try {
       const [subjectsData, studentsData, teachersData, groupRoomsData, timeslotsData] = await Promise.all([
-        pb.collection('subject').getFullList({ sort: 'name' }),
-        pb.collection('student').getFullList({ sort: 'englishName' }),
-        pb.collection('teacher').getFullList({ sort: 'name' }),
-        pb.collection('groupRoom').getFullList({ sort: 'name' }),
-        pb.collection('timeslot').getFullList({ sort: 'start' }),
+        pb.collection('subject').getFullList({
+          sort: 'name',
+          fields: 'id,name',
+        }),
+        pb.collection('student').getFullList({
+          sort: 'englishName',
+          fields: 'id,englishName,status',
+        }),
+        pb.collection('teacher').getFullList({
+          sort: 'name',
+          fields: 'id,name',
+        }),
+        pb.collection('groupRoom').getFullList({
+          sort: 'name',
+          fields: 'id,name,maxstudents',
+        }),
+        pb.collection('timeslot').getFullList({
+          sort: 'start',
+          fields: 'id,start,end',
+        }),
       ])
 
       subjects = subjectsData
@@ -73,21 +117,32 @@
       teachers = teachersData
       groupRooms = groupRoomsData
       timeslots = timeslotsData
+      dataLoaded = true
     } catch (err) {
-      console.error('Error loading data:', err)
+      console.error('Error loading reference data:', err)
       toast.error('Failed to load dropdown data')
     }
   }
 
-  const loadConflictData = async () => {
-    try {
-      const timeslotId = advanceGroupBooking.timeslot.id
-      if (!timeslotId) {
-        mondayAdvanceBookings = []
-        otherMondayGroupBookings = []
-        return
-      }
+  const loadConflictData = async (timeslotId) => {
+    if (!timeslotId) {
+      mondayAdvanceBookings = []
+      otherMondayGroupBookings = []
+      return
+    }
 
+    // Check cache first
+    const cached = bookingsCache.get(timeslotId)
+    const cacheAge = cached ? Date.now() - cached.timestamp : Infinity
+    const cacheStale = cacheAge > 30000 // 30 seconds
+
+    if (cached && !cacheStale) {
+      mondayAdvanceBookings = cached.mondayAdvanceBookings
+      otherMondayGroupBookings = cached.otherMondayGroupBookings
+      return
+    }
+
+    try {
       const excludeFilter =
         advanceGroupBooking.mode === 'edit' && advanceGroupBooking.id ? ` && id != "${advanceGroupBooking.id}"` : ''
 
@@ -95,22 +150,47 @@
         pb.collection('mondayAdvanceBooking').getFullList({
           filter: `timeslot = "${timeslotId}"`,
           expand: 'teacher,student',
+          fields: 'id,teacher,student,expand',
+          $autoCancel: false,
         }),
         pb
           .collection('mondayAdvanceGroupBooking')
           .getFullList({
             filter: `timeslot = "${timeslotId}"${excludeFilter}`,
             expand: 'teacher,student',
+            fields: 'id,teacher,student,expand',
+            $autoCancel: false,
           })
           .catch(() => []),
       ])
 
       mondayAdvanceBookings = individualBookings
       otherMondayGroupBookings = groupBookings
+
+      // Cache the results
+      bookingsCache.set(timeslotId, {
+        mondayAdvanceBookings: individualBookings,
+        otherMondayGroupBookings: groupBookings,
+        timestamp: Date.now(),
+      })
+
+      // Clean up old cache entries
+      cleanupCache()
     } catch (error) {
       console.error('Error loading conflict data:', error)
       mondayAdvanceBookings = []
       otherMondayGroupBookings = []
+    }
+  }
+
+  const cleanupCache = () => {
+    const now = Date.now()
+    const fiveMinutes = 5 * 60 * 1000
+
+    for (const [key, value] of bookingsCache.entries()) {
+      if (now - value.timestamp > fiveMinutes) {
+        bookingsCache.delete(key)
+      }
     }
   }
 
@@ -233,6 +313,8 @@
       const conflictInfo = getConflictLabel(conflicts.teacher, 'teacher')
       toast.error('Selected teacher is already booked for Monday at this timeslot', {
         description: conflictInfo,
+        position: 'bottom-right',
+        duration: 5000,
       })
       return false
     }
@@ -243,6 +325,8 @@
       const conflictInfo = getConflictLabel(conflictBooking, 'student')
       toast.error('Some selected students are already booked for Monday', {
         description: `${student?.englishName || 'Student'} - ${conflictInfo}`,
+        position: 'bottom-right',
+        duration: 5000,
       })
       return false
     }
@@ -263,19 +347,32 @@
         student: selectedStudents,
       }
 
+      let savedBooking
       if (advanceGroupBooking.mode === 'edit') {
-        await pb.collection('mondayAdvanceGroupBooking').update(advanceGroupBooking.id, payload)
-        toast.success('Monday advance group schedule template updated!')
+        savedBooking = await pb.collection('mondayAdvanceGroupBooking').update(advanceGroupBooking.id, payload)
+        toast.success('Monday advance group schedule template updated!', {
+          position: 'bottom-right',
+          duration: 3000,
+        })
       } else {
-        await pb.collection('mondayAdvanceGroupBooking').create(payload)
-        toast.success('Monday advance group schedule template created!')
+        savedBooking = await pb.collection('mondayAdvanceGroupBooking').create(payload)
+        toast.success('Monday advance group schedule template created!', {
+          position: 'bottom-right',
+          duration: 3000,
+        })
       }
+
+      // Invalidate cache for this timeslot
+      bookingsCache.delete(advanceGroupBooking.timeslot.id)
 
       closeModal()
       setTimeout(() => onSave?.(), 200)
     } catch (err) {
       console.error('Error saving Monday schedule:', err)
-      toast.error(`Error saving Monday schedule: ${err.message}`)
+      toast.error(`Error saving Monday schedule: ${err.message}`, {
+        position: 'bottom-right',
+        duration: 5000,
+      })
     } finally {
       saving = false
     }
@@ -289,12 +386,22 @@
     saving = true
     try {
       await pb.collection('mondayAdvanceGroupBooking').delete(advanceGroupBooking.id)
-      toast.success('Monday advance group schedule template deleted!')
+      toast.success('Monday advance group schedule template deleted!', {
+        position: 'bottom-right',
+        duration: 3000,
+      })
+
+      // Invalidate cache for this timeslot
+      bookingsCache.delete(advanceGroupBooking.timeslot.id)
+
       closeModal()
       setTimeout(() => onSave?.(), 200)
     } catch (err) {
       console.error('Error deleting Monday schedule:', err)
-      toast.error(`Error deleting Monday schedule: ${err.message}`)
+      toast.error(`Error deleting Monday schedule: ${err.message}`, {
+        position: 'bottom-right',
+        duration: 5000,
+      })
     } finally {
       saving = false
     }
@@ -305,9 +412,9 @@
   )
 </script>
 
-{#if show}
-  <div class="modal modal-open">
-    <div class="modal-box max-w-4xl w-full space-y-6 rounded-xl">
+<dialog class="modal {show ? 'modal-open' : ''}">
+  <div class="modal-box max-w-4xl w-full space-y-6 rounded-xl">
+    {#if dataLoaded}
       <h3 class="text-xl font-bold text-center">
         {advanceGroupBooking.mode === 'edit' ? 'Edit' : 'Create'} Monday Advance Group Schedule Template
       </h3>
@@ -503,6 +610,18 @@
 
         <button class="btn" onclick={closeModal} disabled={saving}>Cancel</button>
       </div>
-    </div>
+    {:else}
+      <!-- Loading fallback -->
+      <div class="flex justify-center items-center py-10">
+        <span class="loading loading-spinner loading-lg"></span>
+        <span class="ml-2">Loading data...</span>
+      </div>
+      <div class="modal-action">
+        <button class="btn" onclick={closeModal}>Close</button>
+      </div>
+    {/if}
   </div>
-{/if}
+
+  <!-- Modal backdrop -->
+  <div class="modal-backdrop" onclick={closeModal}></div>
+</dialog>
