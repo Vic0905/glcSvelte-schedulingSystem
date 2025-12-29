@@ -31,7 +31,7 @@
     const data = records.map((t) => [
       h('input', {
         type: 'checkbox',
-        className: 'checkbox checkbox-primary',
+        className: 'checkbox checkbox-neutral',
         checked: selectedTeachers.has(t.id),
         onChange: (e) => toggleTeacherSelection(t.id, e.target.checked),
       }),
@@ -41,7 +41,7 @@
         h(
           'button',
           {
-            className: 'btn btn-outline btn-sm btn-accent',
+            className: 'btn btn-ghost btn-sm btn-neutral',
             onClick: () => openEdit(t),
           },
           'Edit'
@@ -49,7 +49,7 @@
         h(
           'button',
           {
-            className: 'btn btn-outline btn-sm btn-error',
+            className: 'btn btn-ghost btn-sm btn-neutral',
             onClick: () => deleteTeacher(t.id),
           },
           'Delete'
@@ -62,7 +62,7 @@
     } else {
       grid = new Grid({
         columns: [
-          { name: 'Select', width: '120px' },
+          { name: 'Select', width: '50px' },
           { name: 'Name', width: '150px' },
           { name: 'Status', width: '120px' },
           { name: 'Actions', width: '120px' },
@@ -348,10 +348,10 @@
     <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold mb-2">Teacher Management</h1>
+          <h1 class="text-2xl font-bold mb-2">Teacher Management</h1>
         </div>
         <div class="flex gap-3">
-          <button class="btn btn-neutral gap-2" onclick={openCSVModal}>
+          <button class="btn btn-ghost gap-2" onclick={openCSVModal}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-5 w-5"
@@ -368,7 +368,7 @@
             </svg>
             Import CSV
           </button>
-          <button class="btn btn-neutral gap-2" onclick={openAddModal}>
+          <button class="btn btn-ghost gap-2" onclick={openAddModal}>
             <svg
               xmlns="http://www.w3.org/2000/svg"
               class="h-5 w-5"
@@ -392,7 +392,7 @@
             <div class="bg-neutral/10 p-2 rounded-lg">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                class="h-6 w-6 text-neutral"
+                class="h-6 w-6"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -437,43 +437,55 @@
 <!-- Add/Edit Modal -->
 {#if showModal}
   <div class="modal modal-open">
-    <div class="modal-box max-w-lg">
-      <h3 class="font-bold text-2xl mb-6 text-base-content">{editingId ? 'Edit Teacher' : 'Add New Teacher'}</h3>
+    <div class="modal-box max-w-md p-0">
+      <!-- Header -->
+      <div class="p-6 pb-2">
+        <h3 class="text-lg font-medium">
+          {editingId ? 'Edit Teacher' : 'Add New Teacher'}
+        </h3>
+      </div>
 
-      <div class="space-y-6">
-        <div class="bg-base-200 p-4 rounded-lg">
-          <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Teacher Information</h4>
-          <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="label">
-              <span class="label-text font-medium">Full Name <span class="text-error">*</span></span>
-            </label>
-            <input type="text" bind:value={name} class="input input-bordered w-full" required />
+      <!-- Form -->
+      <div class="p-6 space-y-4">
+        <!-- Name Input -->
+        <div>
+          <div class="text-sm mb-1">
+            Full Name <span class="opacity-50">(required)</span>
           </div>
+          <input
+            type="text"
+            bind:value={name}
+            class="w-full px-3 py-2 rounded border"
+            placeholder="Enter name"
+            required
+          />
         </div>
 
         <!-- Status -->
-        <div class="form-control">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="label">
-            <span class="label-text font-medium">Status</span>
-          </label>
-          <select bind:value={status} class="select select-bordered w-full">
+        <div>
+          <div class="text-sm mb-1">Status</div>
+          <select bind:value={status} class="w-full px-3 py-2 rounded border">
             {#each statusOptions as option}
-              <option value={option}>{option.charAt(0).toUpperCase() + option.slice(1)}</option>
+              <option value={option}>
+                {option.charAt(0).toUpperCase() + option.slice(1)}
+              </option>
             {/each}
           </select>
         </div>
       </div>
 
-      <div class="modal-action mt-8">
-        <button class="btn btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
-        <button class="btn btn-primary" onclick={saveTeacher}>
-          {editingId ? 'Update Teacher' : 'Add Teacher'}
-        </button>
+      <!-- Actions -->
+      <div class="p-6 pt-0">
+        <div class="flex justify-end gap-2">
+          <button class="px-4 py-2 rounded btn btn-ghost" onclick={() => (showModal = false)}> Cancel </button>
+          <button class="px-4 py-2 rounded btn btn-ghost" onclick={saveTeacher}>
+            {editingId ? 'Update' : 'Add'}
+          </button>
+        </div>
       </div>
     </div>
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
+
+    <!-- Backdrop -->
     <div class="modal-backdrop" onclick={() => (showModal = false)}></div>
   </div>
 {/if}
@@ -486,7 +498,7 @@
 
       <div class="space-y-6">
         <!-- Instructions -->
-        <div class="alert alert-info">
+        <div class="alert alert-neutral">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
@@ -506,18 +518,6 @@
               <strong>Required:</strong> Name &nbsp;|&nbsp; <strong>Optional:</strong> Status (enabled/disabled)
             </div>
           </div>
-        </div>
-
-        <div class="alert">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            ></path>
-          </svg>
-          <span class="text-sm">Duplicate names (case-insensitive) will be automatically skipped during import.</span>
         </div>
 
         <div class="flex items-center gap-4">
@@ -553,7 +553,7 @@
           <div class="bg-base-200 p-4 rounded-lg">
             <div class="flex items-center justify-between mb-3">
               <h4 class="font-semibold text-base-content">Preview</h4>
-              <span class="badge badge-primary">{csvPreview.length} teachers found</span>
+              <span class="badge badge-neutral">{csvPreview.length} teachers found</span>
             </div>
             <div class="max-h-80 overflow-y-auto border rounded-lg bg-base-100">
               <table class="table table-sm table-pin-rows">
@@ -583,7 +583,7 @@
 
       <div class="modal-action mt-8">
         <button class="btn btn-ghost" onclick={() => (showCSVModal = false)} disabled={isProcessing}> Cancel </button>
-        <button class="btn btn-primary" onclick={importCSV} disabled={csvPreview.length === 0 || isProcessing}>
+        <button class="btn btn-neutral" onclick={importCSV} disabled={csvPreview.length === 0 || isProcessing}>
           {#if isProcessing}
             <span class="loading loading-spinner loading-sm"></span>
             Importing...
