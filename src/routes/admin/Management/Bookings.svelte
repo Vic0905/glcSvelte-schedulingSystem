@@ -86,9 +86,9 @@
   <h1 class="text-2xl font-bold mb-6">Daily Bookings</h1>
 
   <div class="flex items-center justify-between mb-6 gap-4">
-    <button class="btn btn-sm" onclick={() => changeDate(-1)}>←</button>
+    <button class="btn btn-sm" onclick={() => changeDate(-1)}>&larr;</button>
     <div class="text-lg font-medium">{getDateDisplay(currentDate)}</div>
-    <button class="btn btn-sm" onclick={() => changeDate(1)}>→</button>
+    <button class="btn btn-sm" onclick={() => changeDate(1)}>&rarr;</button>
   </div>
 
   <div class="text-center mb-6">

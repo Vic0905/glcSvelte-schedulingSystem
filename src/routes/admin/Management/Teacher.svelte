@@ -455,7 +455,7 @@
           <input
             type="text"
             bind:value={name}
-            class="w-full px-3 py-2 rounded border"
+            class="w-full px-3 py-2 rounded border border-gray-300"
             placeholder="Enter name"
             required
           />
@@ -464,7 +464,7 @@
         <!-- Status -->
         <div>
           <div class="text-sm mb-1">Status</div>
-          <select bind:value={status} class="w-full px-3 py-2 rounded border">
+          <select bind:value={status} class="w-full px-3 py-2 rounded border border-gray-300">
             {#each statusOptions as option}
               <option value={option}>
                 {option.charAt(0).toUpperCase() + option.slice(1)}

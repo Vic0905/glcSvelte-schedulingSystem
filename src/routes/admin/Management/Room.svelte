@@ -64,7 +64,7 @@
             h(
               'button',
               {
-                className: 'btn btn-outline btn-sm btn-accent',
+                className: 'btn btn-ghost btn-sm btn-neutral',
                 onClick: () => openEdit(t),
               },
               'Edit'
@@ -72,7 +72,7 @@
             h(
               'button',
               {
-                className: 'btn btn-outline btn-sm btn-error',
+                className: 'btn btn-ghost btn-sm btn-neutral',
                 onClick: () => deleteRoom(t.id),
               },
               'Delete'
@@ -94,7 +94,7 @@
           },
           pagination: {
             enabled: true,
-            limit: 150,
+            limit: 10,
           },
           search: true,
           sort: true,
@@ -181,21 +181,10 @@
     <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-primary mb-2">Room Management</h1>
+          <h1 class="text-2xl font-bold text-neutral mb-2">Room Management</h1>
         </div>
         <div class="flex gap-3">
-          <button class="btn btn-primary gap-2" on:click={openAddModal}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            Add Room
-          </button>
+          <button class="btn btn-ghost gap-2" on:click={openAddModal}> Add Room </button>
         </div>
       </div>
     </div>
@@ -210,97 +199,79 @@
 <!-- Add/Edit Room Modal -->
 {#if showModal}
   <div class="modal modal-open">
-    <div class="modal-box max-w-2xl">
-      <h3 class="font-bold text-2xl mb-6 text-base-content">{editingId ? 'Edit Room' : 'Add New Room'}</h3>
+    <div class="modal-box max-w-1xl">
+      <h3 class="font-bold text-2xl mb-6 text-base-content">{editingId ? 'Edit Room' : 'Add Room'}</h3>
 
       <div class="space-y-6">
         <!-- Room Information -->
-        <div class="bg-base-200 p-4 rounded-lg">
-          <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Room Information</h4>
-          <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="label">
-              <span class="label-text font-medium">Room Name <span class="text-error">*</span></span>
-            </label>
-            <input type="text" bind:value={name} class="input input-bordered w-full" required />
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="label">
-              <span class="label-text-alt text-base-content/60">Unique identifier for this classroom</span>
-            </label>
-          </div>
+
+        <div class="form-control">
+          <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label class="label">
+            <span class="label-text font-medium">Room Name <span class="text-error">*</span></span>
+          </label>
+          <input type="text" bind:value={name} class="input input-bordered w-full" required />
         </div>
 
-        <!-- Teacher Assignment -->
-        <div class="bg-base-200 p-4 rounded-lg">
-          <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Teacher Assignment</h4>
-          <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="label">
-              <span class="label-text font-medium">Assigned Teacher</span>
-            </label>
-            <select bind:value={selectedTeacherId} class="select select-bordered w-full">
-              <option value="">-- No teacher assigned --</option>
-              {#each teachers as teacher}
-                {@const assignedToOtherRoom = rooms.find(
-                  (room) => room.teacher === teacher.id && room.id !== editingId
-                )}
-                {@const assignedToGrouproom = grouprooms.find((grouproom) => grouproom.teacher === teacher.id)}
-                {@const isAssigned = assignedToOtherRoom || assignedToGrouproom}
-                <option
-                  value={teacher.id}
-                  disabled={isAssigned}
-                  class={isAssigned ? 'text-gray-400 cursor-not-allowed' : ''}
-                >
-                  {teacher.name}
-                  {#if assignedToOtherRoom}
-                    (Already in room: {assignedToOtherRoom.name})
-                  {:else if assignedToGrouproom}
-                    (Already in grouproom: {assignedToGrouproom.name})
-                  {/if}
-                </option>
-              {/each}
-            </select>
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="label">
-              <span class="label-text-alt text-base-content/60"
-                >Teachers can only be assigned to one room or grouproom</span
+        <div class="form-control mt-3">
+          <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label class="label">
+            <span class="label-text font-medium">Assigned Teacher</span>
+          </label>
+          <select bind:value={selectedTeacherId} class="select select-bordered w-full">
+            <option value="">-- No teacher assigned --</option>
+            {#each teachers as teacher}
+              {@const assignedToOtherRoom = rooms.find((room) => room.teacher === teacher.id && room.id !== editingId)}
+              {@const assignedToGrouproom = grouprooms.find((grouproom) => grouproom.teacher === teacher.id)}
+              {@const isAssigned = assignedToOtherRoom || assignedToGrouproom}
+              <option
+                value={teacher.id}
+                disabled={isAssigned}
+                class={isAssigned ? 'text-gray-400 cursor-not-allowed' : ''}
               >
-            </label>
-          </div>
+                {teacher.name}
+                {#if assignedToOtherRoom}
+                  (Already in room: {assignedToOtherRoom.name})
+                {:else if assignedToGrouproom}
+                  (Already in grouproom: {assignedToGrouproom.name})
+                {/if}
+              </option>
+            {/each}
+          </select>
+        </div>
 
-          {#if selectedTeacherId && isTeacherAssigned(selectedTeacherId)}
-            {@const assignedRoom = rooms.find((room) => room.teacher === selectedTeacherId && room.id !== editingId)}
-            {@const assignedGrouproom = grouprooms.find((grouproom) => grouproom.teacher === selectedTeacherId)}
-            <div class="alert alert-warning mt-4">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                class="stroke-current shrink-0 w-6 h-6"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                />
-              </svg>
-              <div>
-                <div class="font-semibold">Teacher Already Assigned</div>
-                <div class="text-sm">
-                  This teacher is currently assigned to
-                  {#if assignedRoom}
-                    <strong>{assignedRoom.name}</strong>
-                  {:else if assignedGrouproom}
-                    grouproom <strong>{assignedGrouproom.name}</strong>
-                  {:else}
-                    another location
-                  {/if}
-                </div>
+        {#if selectedTeacherId && isTeacherAssigned(selectedTeacherId)}
+          {@const assignedRoom = rooms.find((room) => room.teacher === selectedTeacherId && room.id !== editingId)}
+          {@const assignedGrouproom = grouprooms.find((grouproom) => grouproom.teacher === selectedTeacherId)}
+          <div class="alert alert-warning mt-4">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              class="stroke-current shrink-0 w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <div>
+              <div class="font-semibold">Teacher Already Assigned</div>
+              <div class="text-sm">
+                This teacher is currently assigned to
+                {#if assignedRoom}
+                  <strong>{assignedRoom.name}</strong>
+                {:else if assignedGrouproom}
+                  grouproom <strong>{assignedGrouproom.name}</strong>
+                {:else}
+                  another location
+                {/if}
               </div>
             </div>
-          {/if}
-        </div>
+          </div>
+        {/if}
       </div>
 
       <div class="modal-action mt-8">

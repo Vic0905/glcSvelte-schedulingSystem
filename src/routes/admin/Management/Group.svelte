@@ -65,7 +65,7 @@
           h(
             'button',
             {
-              className: 'btn btn-outline btn-sm btn-accent',
+              className: 'btn btn-ghost btn-sm btn-neutral',
               onClick: () => openEdit(t),
             },
             'Edit'
@@ -73,7 +73,7 @@
           h(
             'button',
             {
-              className: 'btn btn-outline btn-sm btn-error',
+              className: 'btn btn-ghost btn-sm btn-neutral',
               onClick: () => deleteGroupRoom(t.id),
             },
             'Delete'
@@ -186,21 +186,10 @@
     <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-primary mb-2">Group Room Management</h1>
+          <h1 class="text-2xl font-bold text-neutral mb-2">GRP Room Management</h1>
         </div>
         <div class="flex gap-3">
-          <button class="btn btn-primary gap-2" onclick={openAddModal}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            Add Group Room
-          </button>
+          <button class="btn btn-ghost gap-2" onclick={openAddModal}> Add GRP Room </button>
         </div>
       </div>
     </div>
@@ -228,9 +217,6 @@
                 <span class="label-text font-medium">Group Room Name <span class="text-error">*</span></span>
               </label>
               <input type="text" bind:value={name} class="input input-bordered w-full" required />
-              <label class="label">
-                <span class="label-text-alt text-base-content/60">Unique identifier for this group room</span>
-              </label>
             </div>
 
             <div class="form-control">
@@ -245,9 +231,6 @@
                 min="1"
                 max="200"
               />
-              <label class="label">
-                <span class="label-text-alt text-base-content/60">Capacity limit (1-50 students)</span>
-              </label>
             </div>
           </div>
         </div>
@@ -281,11 +264,6 @@
                 </option>
               {/each}
             </select>
-            <label class="label">
-              <span class="label-text-alt text-base-content/60"
-                >Teachers can only be assigned to one room or grouproom</span
-              >
-            </label>
           </div>
 
           {#if selectedTeacherId && isTeacherAssigned(selectedTeacherId)}
@@ -327,8 +305,8 @@
 
       <div class="modal-action mt-8">
         <button class="btn btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
-        <button class="btn btn-primary" onclick={saveGroupRoom}>
-          {editingId ? 'Update Group Room' : 'Add Group Room'}
+        <button class="btn btn-ghost" onclick={saveGroupRoom}>
+          {editingId ? 'Update' : 'Add'}
         </button>
       </div>
     </div>
