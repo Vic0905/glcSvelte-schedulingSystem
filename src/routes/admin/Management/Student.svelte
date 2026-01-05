@@ -292,7 +292,7 @@
 
   function downloadTemplate() {
     const csv =
-      'English Name,Name,Course,Level,Status\nJuan Dela Cruz,John,BSIT,1,new\nMary Smith,Mary,BSCS,2,old\nPedro Reyes,Peter,BSED,3,graduated'
+      'Name,English Name,Course,Level,Status\nJuan Dela Cruz,John,BSIT,1,new\nMary Smith,Mary,BSCS,2,old\nPedro Reyes,Peter,BSED,3,graduated'
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
