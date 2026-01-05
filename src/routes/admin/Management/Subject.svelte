@@ -21,7 +21,7 @@
         h(
           'button',
           {
-            className: 'btn btn-outline btn-sm btn-accent',
+            className: 'btn btn-ghost btn-sm btn-neutral',
             onClick: () => openEdit(t),
           },
           'Edit'
@@ -29,7 +29,7 @@
         h(
           'button',
           {
-            className: 'btn btn-outline btn-sm btn-error',
+            className: 'btn btn-ghost btn-sm btn-neutral',
             onClick: () => deleteSubject(t.id),
           },
           'Delete'
@@ -117,21 +117,10 @@
     <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-3xl font-bold text-primary mb-2">Subject Management</h1>
+          <h1 class="text-2xl font-bold text-neutral mb-2">Subject Management</h1>
         </div>
         <div class="flex gap-3">
-          <button class="btn btn-primary gap-2" on:click={openAddModal}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            Add Subject
-          </button>
+          <button class="btn btn-ghost gap-2" on:click={openAddModal}> Add Subject </button>
         </div>
       </div>
     </div>
@@ -146,23 +135,16 @@
 <!-- Add/Edit Modal -->
 {#if showModal}
   <div class="modal modal-open">
-    <div class="modal-box max-w-lg">
-      <h3 class="font-bold text-2xl mb-6 text-base-content">{editingId ? 'Edit Subject' : 'Add New Subject'}</h3>
+    <div class="modal-box max-w-sm">
+      <h3 class="font-bold text-2xl mb-6 text-base-content">{editingId ? 'Edit Subject' : 'Add Subject'}</h3>
 
       <div class="space-y-6">
-        <div class="bg-base-200 p-4 rounded-lg">
-          <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Subject Information</h4>
-          <div class="form-control">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="label">
-              <span class="label-text font-medium">Subject Name <span class="text-error">*</span></span>
-            </label>
-            <input type="text" bind:value={name} class="input input-bordered w-full" required />
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="label">
-              <span class="label-text-alt text-base-content/60">This will appear in all schedules</span>
-            </label>
-          </div>
+        <div class="form-control">
+          <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label class="label">
+            <span class="label-text font-medium">Subject Name <span class="text-error">*</span></span>
+          </label>
+          <input type="text" bind:value={name} class="input input-bordered w-full" required />
         </div>
       </div>
 
