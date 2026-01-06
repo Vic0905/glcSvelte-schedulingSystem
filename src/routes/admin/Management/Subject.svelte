@@ -21,7 +21,7 @@
         h(
           'button',
           {
-            className: 'btn btn-ghost btn-sm btn-neutral',
+            className: 'btn btn-ghost btn-sm btn-success',
             onClick: () => openEdit(t),
           },
           'Edit'
@@ -29,7 +29,7 @@
         h(
           'button',
           {
-            className: 'btn btn-ghost btn-sm btn-neutral',
+            className: 'btn btn-ghost btn-sm btn-error',
             onClick: () => deleteSubject(t.id),
           },
           'Delete'
@@ -41,7 +41,10 @@
       grid.updateConfig({ data }).forceRender()
     } else {
       grid = new Grid({
-        columns: ['Name', 'Actions'],
+        columns: [
+          { name: 'Name', width: '90px' },
+          { name: 'Actions', width: '10px' },
+        ],
         data,
         className: {
           table: 'w-full text-xs',
@@ -150,8 +153,8 @@
 
       <div class="modal-action mt-8">
         <button class="btn btn-ghost" on:click={() => (showModal = false)}>Cancel</button>
-        <button class="btn btn-primary" on:click={saveSubject}>
-          {editingId ? 'Update Subject' : 'Add Subject'}
+        <button class="btn btn-ghost btn-neutral" on:click={saveSubject}>
+          {editingId ? 'Update' : 'Add'}
         </button>
       </div>
     </div>
