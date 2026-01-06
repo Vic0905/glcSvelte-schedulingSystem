@@ -441,7 +441,7 @@
       <!-- Header -->
       <div class="p-6 pb-2">
         <h3 class="text-lg font-medium">
-          {editingId ? 'Edit Teacher' : 'Add New Teacher'}
+          {editingId ? 'Edit Teacher' : 'Add Teacher'}
         </h3>
       </div>
 
@@ -450,7 +450,7 @@
         <!-- Name Input -->
         <div>
           <div class="text-sm mb-1">
-            Full Name <span class="opacity-50">(required)</span>
+            Name <span class="opacity-50">(required)</span>
           </div>
           <input
             type="text"
