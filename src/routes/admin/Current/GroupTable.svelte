@@ -145,11 +145,22 @@
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
-    return h('div', { class: 'flex flex-col gap-1 items-center' }, [
+
+    const elements = [
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
-      h('div', { class: 'badge badge-info badge-xs' }, cell.teacher.name || 'No Teacher'),
-      h('div', { class: 'badge badge-error badge-xs' }, cell.groupRoom.name || 'No Room'),
-    ])
+      h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name || 'No Teacher'),
+      // h('div', { class: 'badge badge-error badge-xs' }, cell.groupRoom.name || 'No Room'),
+    ]
+
+    // Add student count badge like in advance group
+    const studentCount = cell.students?.length || 0
+    if (studentCount > 0) {
+      elements.push(
+        h('div', { class: 'badge badge-neutral badge-xs' }, `${studentCount} student${studentCount !== 1 ? 's' : ''}`)
+      )
+    }
+
+    return h('div', { class: 'flex flex-col gap-1 items-center text-xs' }, elements)
   }
 
   async function loadGroupSchedules() {
@@ -388,7 +399,7 @@
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
       <div class="flex gap-1"><span class="badge badge-info badge-xs"></span> Teacher</div>
-      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Group Room</div>
+      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span> Student(s)</div>
     </div>
   </div>
 

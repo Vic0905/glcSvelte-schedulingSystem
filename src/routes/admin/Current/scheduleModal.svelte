@@ -74,7 +74,7 @@
   }
 
   const checkForConflicts = async () => {
-    const { teacher, student, timeslot, room, startDate, endDate } = booking.data
+    const { teacher, student, timeslot, room, startDate, endDate, mode } = booking.data
 
     if (!teacher?.id || !student?.id || !timeslot?.id || !room?.id) return true
 
@@ -82,8 +82,35 @@
       const weekDays = getWeekDays(startDate, endDate)
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
+      // Get IDs of schedules being edited to exclude them
+      let excludeIds = []
+
+      if (mode === 'edit') {
+        const originalStudentId = booking.data.originalStudentId || student.id
+        const originalTimeslotId = booking.data.originalTimeslotId || timeslot.id
+        const originalRoomId = booking.data.originalRoomId || room.id
+
+        // Get all schedules for this week that belong to the original booking
+        const existingSchedules = await pb
+          .collection('lessonSchedule')
+          .getFullList({
+            filter: `student = "${originalStudentId}" && timeslot = "${originalTimeslotId}" && room = "${originalRoomId}" && (${dateFilter})`,
+            fields: 'id',
+            $autoCancel: false,
+          })
+          .catch(() => [])
+
+        excludeIds = existingSchedules.map((s) => s.id)
+      }
+
       // Check for teacher conflicts in BOTH collections
       let teacherFilter = `(${dateFilter}) && timeslot = "${timeslot.id}" && teacher = "${teacher.id}"`
+
+      // Exclude schedules from the original booking when editing
+      if (excludeIds.length > 0) {
+        const excludeFilter = excludeIds.map((id) => `id != "${id}"`).join(' && ')
+        teacherFilter += ` && (${excludeFilter})`
+      }
 
       const [teacherIndividualBookings, teacherGroupBookings, studentRecords] = await Promise.all([
         pb.collection('lessonSchedule').getFullList({
@@ -140,6 +167,12 @@
       // Check for student conflicts
       let studentFilter = `(${dateFilter}) && timeslot = "${timeslot.id}" && student = "${student.id}"`
 
+      // Exclude schedules from the original booking when editing
+      if (excludeIds.length > 0) {
+        const excludeFilter = excludeIds.map((id) => `id != "${id}"`).join(' && ')
+        studentFilter += ` && (${excludeFilter})`
+      }
+
       const [studentIndividualBookings, studentGroupBookings] = await Promise.all([
         pb.collection('lessonSchedule').getFullList({
           filter: studentFilter,
@@ -179,6 +212,12 @@
 
       // Check for room conflicts
       let roomFilter = `(${dateFilter}) && timeslot = "${timeslot.id}" && room = "${room.id}"`
+
+      // Exclude schedules from the original booking when editing
+      if (excludeIds.length > 0) {
+        const excludeFilter = excludeIds.map((id) => `id != "${id}"`).join(' && ')
+        roomFilter += ` && (${excludeFilter})`
+      }
 
       const [roomIndividualBookings, roomGroupBookings] = await Promise.all([
         pb.collection('lessonSchedule').getFullList({

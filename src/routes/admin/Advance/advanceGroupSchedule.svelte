@@ -84,22 +84,18 @@
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
 
-    const studentCount = cell.students?.length || 0
-    const maxStudents = cell.groupRoom?.maxstudents || 0
-    const additionalCount = Math.max(0, studentCount - maxStudents)
-
     const elements = [
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
       h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name || 'No Teacher'),
-      // h('div', { class: 'badge badge-neutral badge-xs' }, cell.groupRoom.name || 'No Room'),
+      // h('div', { class: 'badge badge-error badge-xs' }, cell.groupRoom.name || 'No Room'),
     ]
 
+    // Add student count badge like in advance group
+    const studentCount = cell.students?.length || 0
     if (studentCount > 0) {
-      elements.push(h('div', { class: 'badge badge-neutral badge-xs' }, `${studentCount} student(s)`))
-    }
-
-    if (additionalCount > 0) {
-      elements.push(h('div', { class: 'badge badge-warning badge-xs' }, `+${additionalCount}`))
+      elements.push(
+        h('div', { class: 'badge badge-neutral badge-xs' }, `${studentCount} student${studentCount !== 1 ? 's' : ''}`)
+      )
     }
 
     return h('div', { class: 'flex flex-col gap-1 items-center text-xs' }, elements)
@@ -408,16 +404,12 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-info badge-xs"></div>
+        <div class="badge badge-error badge-xs"></div>
         <span>Teacher</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-error badge-xs"></div>
-        <span>Group Room</span>
-      </div>
-      <div class="flex items-center gap-1">
         <div class="badge badge-neutral badge-xs"></div>
-        <span>Students</span>
+        <span>Student(s)</span>
       </div>
     </div>
   </div>
