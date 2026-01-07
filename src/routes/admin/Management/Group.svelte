@@ -186,7 +186,7 @@
     <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-neutral mb-2">GRP Room Management</h1>
+          <h1 class="text-2xl font-bold mb-2">GRP Room Management</h1>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-ghost gap-2" onclick={openAddModal}> Add GRP Room </button>
@@ -209,7 +209,7 @@
 
       <div class="space-y-6">
         <!-- Room Information -->
-        <div class="bg-base-200 p-4 rounded-lg">
+        <div class="p-4 rounded-lg">
           <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Room Information</h4>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="form-control">
@@ -236,7 +236,7 @@
         </div>
 
         <!-- Teacher Assignment -->
-        <div class="bg-base-200 p-4 rounded-lg">
+        <div class="p-4 rounded-lg">
           <h4 class="font-semibold text-sm text-base-content/70 mb-3 uppercase tracking-wide">Teacher Assignment</h4>
           <div class="form-control">
             <label class="label">

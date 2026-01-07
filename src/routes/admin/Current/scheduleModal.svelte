@@ -8,44 +8,20 @@
 
   let isDeleting = $state(false)
   let isSaving = $state(false)
-  let existingSchedules = $state([])
 
-  // Cache reference data globally (shared across all modal instances)
+  // Store reference data
   let teachers = $state([])
   let students = $state([])
   let subjects = $state([])
   let rooms = $state([])
   let timeslots = $state([])
-  let dataLoaded = $state(false)
 
-  // Enhanced cache with smart invalidation
-  let schedulesCache = new Map()
-  let isLoading = $state(false)
-  let lastCacheKey = null // Track last loaded cache key
-
-  // Consolidated computed conflicts
-  const conflicts = $derived({
-    teacher: booking.data?.teacher?.id ? existingSchedules.find((s) => s.teacher === booking.data.teacher.id) : null,
-    student: booking.data?.student?.id
-      ? existingSchedules.find(
-          (s) =>
-            s.student === booking.data.student.id ||
-            (Array.isArray(s.student) && s.student.includes(booking.data.student.id))
-        )
-      : null,
-    room: booking.data?.room?.id
-      ? existingSchedules.find((s) => s.room === booking.data.room.id || s.grouproom === booking.data.room.id)
-      : null,
+  // Load reference data ONCE
+  $effect(() => {
+    if (teachers.length === 0) {
+      loadAllData()
+    }
   })
-
-  // Check if data is ready for rendering
-  const isDataReady = $derived(
-    booking.data?.teacher &&
-      booking.data?.student &&
-      booking.data?.subject &&
-      booking.data?.room &&
-      booking.data?.timeslot
-  )
 
   const getWeekDays = (startDate, endDate) => {
     const days = []
@@ -61,32 +37,7 @@
     return days
   }
 
-  // Generate cache key from date range and timeslot
-  const getCacheKey = (startDate, endDate, timeslotId) => {
-    return `${startDate}_${endDate}_${timeslotId}`
-  }
-
-  // Load all data ONCE globally
-  $effect(() => {
-    if (!dataLoaded && !teachers.length) {
-      loadAllData()
-    }
-  })
-
-  // OPTIMIZED: Only load schedules when cache key CHANGES
-  $effect(() => {
-    if (booking.data?.startDate && booking.data?.endDate && booking.data?.timeslot?.id) {
-      const cacheKey = getCacheKey(booking.data.startDate, booking.data.endDate, booking.data.timeslot.id)
-      if (cacheKey !== lastCacheKey) {
-        lastCacheKey = cacheKey
-        loadExistingSchedulesOptimized(cacheKey)
-      }
-    }
-  })
-
   const loadAllData = async () => {
-    if (dataLoaded) return
-
     try {
       const [teachersData, studentsData, subjectsData, roomsData, timeslotsData] = await Promise.all([
         pb.collection('teacher').getFullList({
@@ -116,149 +67,198 @@
       subjects = subjectsData
       rooms = roomsData
       timeslots = timeslotsData
-      dataLoaded = true
     } catch (error) {
       console.error('Error loading reference data:', error)
+      toast.error('Failed to load data')
     }
   }
 
-  // OPTIMIZED: Use cache more aggressively, only reload if stale
-  const loadExistingSchedulesOptimized = async (cacheKey) => {
-    if (!cacheKey) return
+  const checkForConflicts = async () => {
+    const { teacher, student, timeslot, room, startDate, endDate } = booking.data
 
-    const cached = schedulesCache.get(cacheKey)
-    const cacheAge = cached ? Date.now() - cached.timestamp : Infinity
-    const cacheStale = cacheAge > 30000 // 30 seconds
+    if (!teacher?.id || !student?.id || !timeslot?.id || !room?.id) return true
 
-    // Use cache if fresh
-    if (cached && !cacheStale) {
-      existingSchedules = cached.schedules
-      return
-    }
-
-    // Load in background, don't block UI
-    isLoading = true
     try {
-      const { startDate, endDate, timeslot, mode, student, room } = booking.data
       const weekDays = getWeekDays(startDate, endDate)
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-      const [lessonRecords, groupRecords] = await Promise.all([
+      // Check for teacher conflicts in BOTH collections
+      let teacherFilter = `(${dateFilter}) && timeslot = "${timeslot.id}" && teacher = "${teacher.id}"`
+
+      const [teacherIndividualBookings, teacherGroupBookings, studentRecords] = await Promise.all([
         pb.collection('lessonSchedule').getFullList({
-          filter: `(${dateFilter}) && timeslot = "${timeslot.id}"`,
-          expand: 'teacher,student,room',
-          fields: 'id,teacher,student,room,timeslot,date,expand',
+          filter: teacherFilter,
+          expand: 'teacher,student',
           $autoCancel: false,
         }),
+
         pb
           .collection('groupLessonSchedule')
           .getFullList({
-            filter: `(${dateFilter}) && timeslot = "${timeslot.id}"`,
-            expand: 'teacher,student,grouproom,subject',
-            fields: 'id,teacher,student,grouproom,timeslot,date,expand',
+            filter: teacherFilter,
+            expand: 'teacher',
+            $autoCancel: false,
+          })
+          .catch(() => []),
+
+        pb
+          .collection('student')
+          .getFullList({
+            filter: 'id != ""',
+            fields: 'id,englishName',
             $autoCancel: false,
           })
           .catch(() => []),
       ])
 
-      const allSchedules =
-        mode === 'edit'
-          ? [...lessonRecords, ...groupRecords].filter((s) => !(s.student === student?.id && s.room === room?.id))
-          : [...lessonRecords, ...groupRecords]
+      const studentMap = new Map()
+      studentRecords.forEach((s) => studentMap.set(s.id, s.englishName))
 
-      existingSchedules = allSchedules
+      // Check for teacher conflict
+      const teacherConflict = teacherIndividualBookings[0] || teacherGroupBookings[0]
 
-      // Cache with timestamp
-      schedulesCache.set(cacheKey, {
-        schedules: allSchedules,
-        timestamp: Date.now(),
-      })
+      if (teacherConflict) {
+        const teacherName =
+          teacherConflict.expand?.teacher?.name ||
+          teachers.find((t) => t.id === teacherConflict.teacher)?.name ||
+          'Unknown Teacher'
 
-      cleanupCache()
-    } catch (error) {
-      console.error('Error loading schedules:', error)
-      existingSchedules = []
-    } finally {
-      isLoading = false
-    }
-  }
+        const isGroupLesson = Array.isArray(teacherConflict.student)
 
-  const cleanupCache = () => {
-    const now = Date.now()
-    const fiveMinutes = 5 * 60 * 1000
-
-    for (const [key, value] of schedulesCache.entries()) {
-      if (now - value.timestamp > fiveMinutes) {
-        schedulesCache.delete(key)
-      }
-    }
-  }
-
-  const getConflictLabel = (schedule, type) => {
-    if (!schedule?.expand) return 'Unknown'
-
-    switch (type) {
-      case 'teacher':
-        return Array.isArray(schedule.expand.student)
-          ? 'Group Class'
-          : schedule.expand.student?.englishName || 'Unknown'
-      case 'student':
-        return schedule.expand.teacher?.name || 'Unknown'
-      case 'room':
-        const teacher = schedule.expand.teacher?.name || 'Unknown'
-        const student = Array.isArray(schedule.expand.student)
-          ? 'Group Class'
-          : schedule.expand.student?.englishName || 'Unknown'
-        return `${teacher} & ${student}`
-      default:
-        return 'Unknown'
-    }
-  }
-
-  const validateAndCheckConflicts = () => {
-    const { teacher, student, subject, timeslot, startDate, endDate, room } = booking.data
-
-    const validations = [
-      [teacher?.id, 'Please select Teacher'],
-      [student?.id, 'Please select Student'],
-      [subject?.id, 'Please select Subject'],
-      [timeslot?.id, 'Please select Timeslot'],
-      [startDate, 'Please select Start Date'],
-      [endDate, 'Please select End Date'],
-      [room?.id, 'Please select Room'],
-    ]
-
-    for (const [field, message] of validations) {
-      if (!field) {
-        toast.error(message, { position: 'bottom-right', duration: 3000 })
+        if (isGroupLesson) {
+          const studentCount = teacherConflict.student?.length || 0
+          toast.error(`${teacherName} is already teaching a group lesson (${studentCount} students) for this timeslot`)
+        } else {
+          const studentId = teacherConflict.student
+          const studentName =
+            teacherConflict.expand?.student?.englishName || studentMap.get(studentId) || 'Unknown Student'
+          toast.error(`${teacherName} is already booked with ${studentName} for this timeslot`)
+        }
         return false
       }
-    }
 
-    if (conflicts.teacher) {
-      toast.error('Teacher conflict', {
-        position: 'bottom-right',
-        duration: 5000,
-        description: `${teacher.name} is already booked during this week's timeslot`,
-      })
+      // Check for student conflicts
+      let studentFilter = `(${dateFilter}) && timeslot = "${timeslot.id}" && student = "${student.id}"`
+
+      const [studentIndividualBookings, studentGroupBookings] = await Promise.all([
+        pb.collection('lessonSchedule').getFullList({
+          filter: studentFilter,
+          expand: 'teacher,student',
+          $autoCancel: false,
+        }),
+
+        pb
+          .collection('groupLessonSchedule')
+          .getFullList({
+            filter: `(${dateFilter}) && timeslot = "${timeslot.id}"`,
+            expand: 'teacher',
+            $autoCancel: false,
+          })
+          .catch(() => []),
+      ])
+
+      // Check individual bookings
+      const studentConflict = studentIndividualBookings[0]
+      if (studentConflict) {
+        const studentName = booking.data.student?.englishName || studentMap.get(student.id) || 'Unknown Student'
+        const teacherName = studentConflict.expand?.teacher?.name || 'Unknown Teacher'
+        toast.error(`${studentName} is already booked with ${teacherName} for this timeslot`)
+        return false
+      }
+
+      // Check group bookings
+      const studentGroupConflict = studentGroupBookings.find(
+        (b) => Array.isArray(b.student) && b.student.includes(student.id)
+      )
+      if (studentGroupConflict) {
+        const studentName = booking.data.student?.englishName || studentMap.get(student.id) || 'Unknown Student'
+        const teacherName = studentGroupConflict.expand?.teacher?.name || 'Unknown Teacher'
+        toast.error(`${studentName} is already in a group lesson with ${teacherName} for this timeslot`)
+        return false
+      }
+
+      // Check for room conflicts
+      let roomFilter = `(${dateFilter}) && timeslot = "${timeslot.id}" && room = "${room.id}"`
+
+      const [roomIndividualBookings, roomGroupBookings] = await Promise.all([
+        pb.collection('lessonSchedule').getFullList({
+          filter: roomFilter,
+          expand: 'teacher,student',
+          $autoCancel: false,
+        }),
+
+        pb
+          .collection('groupLessonSchedule')
+          .getFullList({
+            filter: `(${dateFilter}) && timeslot = "${timeslot.id}" && grouproom = "${room.id}"`,
+            expand: 'teacher',
+            $autoCancel: false,
+          })
+          .catch(() => []),
+      ])
+
+      // Check individual room bookings
+      const roomConflict = roomIndividualBookings[0]
+      if (roomConflict) {
+        const teacherName = roomConflict.expand?.teacher?.name || 'Unknown Teacher'
+        const studentName = roomConflict.expand?.student?.englishName || 'Unknown Student'
+        toast.error(`Room is already occupied by ${teacherName} & ${studentName} for this timeslot`)
+        return false
+      }
+
+      // Check group room bookings
+      const roomGroupConflict = roomGroupBookings[0]
+      if (roomGroupConflict) {
+        const teacherName = roomGroupConflict.expand?.teacher?.name || 'Unknown Teacher'
+        const studentCount = Array.isArray(roomGroupConflict.student) ? roomGroupConflict.student.length : 0
+        toast.error(`Room is already occupied by a group lesson with ${teacherName} (${studentCount} students)`)
+        return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('Error checking conflicts:', error)
+      return true // Allow save on error
+    }
+  }
+
+  const validateForm = () => {
+    const { teacher, student, subject, timeslot, startDate, endDate, room } = booking.data
+
+    if (!teacher?.id) {
+      toast.error('Please select Teacher')
+      return false
+    }
+    if (!student?.id) {
+      toast.error('Please select Student')
+      return false
+    }
+    if (!subject?.id) {
+      toast.error('Please select Subject')
+      return false
+    }
+    if (!timeslot?.id) {
+      toast.error('Please select Timeslot')
+      return false
+    }
+    if (!startDate) {
+      toast.error('Please select Start Date')
+      return false
+    }
+    if (!endDate) {
+      toast.error('Please select End Date')
+      return false
+    }
+    if (!room?.id) {
+      toast.error('Please select Room')
       return false
     }
 
-    if (conflicts.student) {
-      toast.error('Student conflict', {
-        position: 'bottom-right',
-        duration: 5000,
-        description: `${student.englishName} has another lesson scheduled during this week`,
-      })
-      return false
-    }
-
-    if (conflicts.room) {
-      toast.error('Room conflict', {
-        position: 'bottom-right',
-        duration: 5000,
-        description: `${room.name} is already occupied during this week`,
-      })
+    // Validate date range
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    if (start > end) {
+      toast.error('Start date must be before end date')
       return false
     }
 
@@ -266,7 +266,11 @@
   }
 
   const saveSchedule = async () => {
-    if (!validateAndCheckConflicts()) return
+    if (!validateForm()) return
+
+    // Check for conflicts and show toast if found
+    const noConflicts = await checkForConflicts()
+    if (!noConflicts) return
 
     const { timeslot, teacher, student, subject, room, mode, startDate, endDate } = booking.data
     const weekDays = getWeekDays(startDate, endDate)
@@ -279,95 +283,51 @@
       room: room.id,
     }
 
-    try {
-      isSaving = true
+    toast.promise(
+      async () => {
+        if (mode === 'edit') {
+          const originalStudentId = booking.data.originalStudentId || student.id
+          const originalTimeslotId = booking.data.originalTimeslotId || timeslot.id
+          const originalRoomId = booking.data.originalRoomId || room.id
 
-      if (mode === 'edit') {
-        const originalStudentId = booking.data.originalStudentId || student.id
-        const originalTimeslotId = booking.data.originalTimeslotId || timeslot.id
-
-        const existingWeekSchedules = await pb.collection('lessonSchedule').getFullList({
-          filter: `student = "${originalStudentId}" && timeslot = "${originalTimeslotId}" && room = "${room.id}" && (${weekDays.map((d) => `date = "${d}"`).join(' || ')})`,
-        })
-
-        // Use Batch API for updates
-        try {
-          const batch = pb.createBatch()
-
-          existingWeekSchedules.forEach((schedule) => {
-            batch.collection('lessonSchedule').update(schedule.id, { ...scheduleData, date: schedule.date })
+          const existingWeekSchedules = await pb.collection('lessonSchedule').getFullList({
+            filter: `student = "${originalStudentId}" && timeslot = "${originalTimeslotId}" && room = "${originalRoomId}" && (${weekDays.map((d) => `date = "${d}"`).join(' || ')})`,
           })
 
-          await batch.send()
-        } catch (error) {
-          // Fallback to individual updates if batch fails
-          console.warn('Batch update failed, falling back to individual updates:', error)
+          // Update all schedules for the week
           await Promise.all(
             existingWeekSchedules.map((schedule) =>
               pb.collection('lessonSchedule').update(schedule.id, { ...scheduleData, date: schedule.date })
             )
           )
-        }
 
-        toast.success('Weekly schedule updated!', {
-          position: 'bottom-right',
-          duration: 3000,
-          description: `Updated ${existingWeekSchedules.length} lesson(s)`,
-        })
-      } else {
-        // Use Batch API for creates
-        try {
-          const batch = pb.createBatch()
-
-          weekDays.forEach((date) => {
-            batch.collection('lessonSchedule').create({ ...scheduleData, date })
-          })
-
-          await batch.send()
-        } catch (error) {
-          // Fallback to individual creates if batch fails
-          console.warn('Batch create failed, falling back to individual creates:', error)
+          return 'Weekly schedule updated!'
+        } else {
+          // Create all schedules for the week
           await Promise.all(weekDays.map((date) => pb.collection('lessonSchedule').create({ ...scheduleData, date })))
+
+          return 'Weekly schedule created!'
         }
-
-        toast.success('Weekly schedule created!', {
-          position: 'bottom-right',
-          duration: 3000,
-          description: `Created ${weekDays.length} lessons (Tue-Fri)`,
-        })
+      },
+      {
+        loading: 'Saving...',
+        success: () => {
+          dispatch('refresh')
+          document.getElementById('editModal').close()
+          return 'Schedule saved successfully!'
+        },
+        error: (error) => {
+          console.error('Error:', error)
+          return `Failed to save: ${error.message}`
+        },
       }
-
-      // OPTIMIZED: Invalidate only affected cache entries
-      const affectedCacheKey = getCacheKey(startDate, endDate, timeslot.id)
-      schedulesCache.delete(affectedCacheKey)
-
-      // Also invalidate original timeslot cache if editing
-      if (mode === 'edit' && booking.data.originalTimeslotId !== timeslot.id) {
-        const originalCacheKey = getCacheKey(startDate, endDate, booking.data.originalTimeslotId)
-        schedulesCache.delete(originalCacheKey)
-      }
-
-      dispatch('refresh')
-      document.getElementById('editModal').close()
-    } catch (error) {
-      toast.error(`${mode === 'edit' ? 'Update' : 'Creation'} failed`, {
-        position: 'bottom-right',
-        duration: 5000,
-        description: error.message,
-      })
-    } finally {
-      isSaving = false
-    }
+    )
   }
 
   const deleteSchedule = async () => {
-    const { startDate, endDate, subject, teacher, student, room, timeslot, id } = booking.data
+    if (!booking.data.id) return
 
-    if (!id) {
-      toast.error('No schedule selected to delete', { position: 'bottom-right', duration: 3000 })
-      return
-    }
-
+    const { startDate, endDate, subject, teacher, student, room, timeslot } = booking.data
     const weekDays = getWeekDays(startDate, endDate)
 
     const confirmMessage =
@@ -383,56 +343,38 @@
 
     if (!confirm(confirmMessage)) return
 
-    try {
-      isDeleting = true
+    toast.promise(
+      async () => {
+        const originalStudentId = booking.data.originalStudentId || student.id
+        const originalTimeslotId = booking.data.originalTimeslotId || timeslot.id
+        const originalRoomId = booking.data.originalRoomId || room.id
 
-      const originalStudentId = booking.data.originalStudentId || student.id
-      const originalTimeslotId = booking.data.originalTimeslotId || timeslot.id
-      const originalRoomId = booking.data.originalRoomId || room.id
-
-      const schedulesToDelete = await pb.collection('lessonSchedule').getFullList({
-        filter: `student = "${originalStudentId}" && timeslot = "${originalTimeslotId}" && room = "${originalRoomId}" && (${weekDays.map((d) => `date = "${d}"`).join(' || ')})`,
-      })
-
-      // Use Batch API for deletes
-      try {
-        const batch = pb.createBatch()
-
-        schedulesToDelete.forEach((schedule) => {
-          batch.collection('lessonSchedule').delete(schedule.id)
+        const schedulesToDelete = await pb.collection('lessonSchedule').getFullList({
+          filter: `student = "${originalStudentId}" && timeslot = "${originalTimeslotId}" && room = "${originalRoomId}" && (${weekDays.map((d) => `date = "${d}"`).join(' || ')})`,
         })
 
-        await batch.send()
-      } catch (error) {
-        // Fallback to individual deletes if batch fails
-        console.warn('Batch delete failed, falling back to individual deletes:', error)
         await Promise.all(schedulesToDelete.map((schedule) => pb.collection('lessonSchedule').delete(schedule.id)))
+      },
+      {
+        loading: 'Deleting...',
+        success: () => {
+          dispatch('refresh')
+          document.getElementById('editModal').close()
+          return 'Weekly schedule deleted!'
+        },
+        error: (error) => {
+          console.error('Error:', error)
+          return `Failed to delete: ${error.message}`
+        },
       }
-
-      toast.success('Weekly schedule deleted!', {
-        position: 'bottom-right',
-        duration: 3000,
-        description: `Deleted ${schedulesToDelete.length} lesson(s)`,
-      })
-
-      // OPTIMIZED: Invalidate cache
-      const affectedCacheKey = getCacheKey(startDate, endDate, timeslot.id)
-      schedulesCache.delete(affectedCacheKey)
-
-      dispatch('refresh')
-      document.getElementById('editModal').close()
-    } catch (error) {
-      toast.error(`Failed to delete: ${error.message}`, { position: 'bottom-right', duration: 5000 })
-    } finally {
-      isDeleting = false
-    }
+    )
   }
 </script>
 
 <!-- Dialog always in DOM, content conditionally rendered -->
 <dialog id="editModal" class="modal">
   <div class="modal-box max-w-3xl w-full space-y-6 rounded-xl">
-    {#if isDataReady}
+    {#if booking.data?.teacher && booking.data?.student && booking.data?.subject && booking.data?.room && booking.data?.timeslot}
       <h3 class="text-xl font-bold text-center">
         {booking.data.mode === 'edit' ? 'Edit' : 'Create'} Weekly Schedule
       </h3>
@@ -456,11 +398,35 @@
         <!-- Left column -->
         <div class="space-y-4">
           <fieldset class="fieldset">
+            <legend class="fieldset-legend font-semibold text-gray-700">Student</legend>
+            <select
+              class="select select-bordered w-full"
+              bind:value={booking.data.student.id}
+              disabled={students.length === 0}
+              required
+            >
+              <option value="">Select Student</option>
+              {#each students as student (student.id)}
+                {#if student.status !== 'graduated' || student.id === booking.data.student.id}
+                  <option
+                    value={student.id}
+                    disabled={student.status === 'graduated'}
+                    class:italic={student.status === 'graduated'}
+                  >
+                    {student.englishName}
+                    {#if student.status === 'graduated'}(Graduated){/if}
+                  </option>
+                {/if}
+              {/each}
+            </select>
+          </fieldset>
+
+          <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Subject</legend>
             <select
               class="select select-bordered w-full"
               bind:value={booking.data.subject.id}
-              disabled={!dataLoaded}
+              disabled={subjects.length === 0}
               required
             >
               <option value="">Select Subject</option>
@@ -471,94 +437,45 @@
           </fieldset>
 
           <fieldset class="fieldset">
-            <legend class="fieldset-legend font-semibold text-gray-700">Student</legend>
+            <legend class="fieldset-legend font-semibold text-gray-700">Teacher</legend>
             <select
               class="select select-bordered w-full"
-              bind:value={booking.data.student.id}
-              disabled={!dataLoaded}
+              bind:value={booking.data.teacher.id}
+              disabled={teachers.length === 0}
               required
             >
-              <option value="">Select Student</option>
-              {#each students as student (student.id)}
-                {@const isGraduated = student.status === 'graduated'}
-                {@const isCurrentStudent = student.id === booking.data.student.id}
-                {@const conflictSchedule = existingSchedules.find(
-                  (s) => s.student === student.id || (Array.isArray(s.student) && s.student.includes(student.id))
-                )}
-
-                {#if !isGraduated || isCurrentStudent}
+              <option value="">Select Teacher</option>
+              {#each teachers as teacher}
+                {#if teacher.status !== 'disabled' || teacher.id === booking.data.teacher.id}
                   <option
-                    value={student.id}
-                    disabled={isGraduated || !!conflictSchedule}
-                    class:text-gray-400={isGraduated || conflictSchedule}
-                    class:italic={isGraduated}
+                    value={teacher.id}
+                    disabled={teacher.status === 'disabled'}
+                    class:italic={teacher.status === 'disabled'}
                   >
-                    {student.englishName}
-                    {#if isGraduated}
-                      (Graduated)
-                    {:else if conflictSchedule}
-                      (Booked with {getConflictLabel(conflictSchedule, 'student')})
-                    {/if}
+                    {teacher.name}
+                    {#if teacher.status === 'disabled'}(Disabled){/if}
                   </option>
                 {/if}
               {/each}
             </select>
-            {#if conflicts.student}
-              <div class="label">
-                <span class="label-text-alt text-warning"
-                  >⚠️ This student is already booked for this week's timeslot</span
-                >
-              </div>
-            {/if}
-          </fieldset>
-
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend font-semibold text-gray-700">Week Range</legend>
-            <div class="space-y-2">
-              <input
-                type="date"
-                bind:value={booking.data.startDate}
-                class="input input-bordered w-full input-sm"
-                disabled
-              />
-              <div class="text-center text-xs text-gray-500">to</div>
-              <input
-                type="date"
-                bind:value={booking.data.endDate}
-                class="input input-bordered w-full input-sm"
-                disabled
-              />
-            </div>
-            <div class="label">
-              <span class="label-text-alt">Lessons: Tuesday - Friday</span>
-            </div>
           </fieldset>
         </div>
 
         <!-- Right column -->
         <div class="space-y-4">
           <fieldset class="fieldset">
-            <legend class="fieldset-legend font-semibold text-gray-700">Teacher</legend>
+            <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
             <select
               class="select select-bordered w-full"
-              bind:value={booking.data.teacher.id}
-              disabled={!dataLoaded}
+              bind:value={booking.data.timeslot.id}
+              disabled={timeslots.length === 0}
               required
             >
-              <option value="">Select Teacher</option>
-              {#each teachers as teacher}
-                {@const conflictSchedule = existingSchedules.find((s) => s.teacher === teacher.id)}
-                <option value={teacher.id} disabled={!!conflictSchedule} class:text-gray-400={conflictSchedule}>
-                  {teacher.name}
-                  {#if conflictSchedule}(Booked with {getConflictLabel(conflictSchedule, 'teacher')}){/if}
-                </option>
+              <option value="">Select Timeslot</option>
+              {#each timeslots as slot}
+                <option value={slot.id}>{slot.start} - {slot.end}</option>
               {/each}
             </select>
-            {#if conflicts.teacher}
-              <div class="label">
-                <span class="label-text-alt text-warning">⚠️ This teacher is already booked</span>
-              </div>
-            {/if}
           </fieldset>
 
           <fieldset class="fieldset">
@@ -566,36 +483,12 @@
             <select
               class="select select-bordered w-full"
               bind:value={booking.data.room.id}
-              disabled={!dataLoaded}
+              disabled={rooms.length === 0}
               required
             >
               <option value="">Select Room</option>
               {#each rooms as room}
-                {@const conflictSchedule = existingSchedules.find((s) => s.room === room.id || s.grouproom === room.id)}
-                <option value={room.id} disabled={!!conflictSchedule} class:text-gray-400={conflictSchedule}>
-                  {room.name}
-                  {#if conflictSchedule}(Occupied by {getConflictLabel(conflictSchedule, 'room')}){/if}
-                </option>
-              {/each}
-            </select>
-            {#if conflicts.room}
-              <div class="label">
-                <span class="label-text-alt text-warning">⚠️ This room is already occupied</span>
-              </div>
-            {/if}
-          </fieldset>
-
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend font-semibold text-gray-700">Time Slot</legend>
-            <select
-              class="select select-bordered w-full"
-              bind:value={booking.data.timeslot.id}
-              disabled={!dataLoaded}
-              required
-            >
-              <option value="">Select Timeslot</option>
-              {#each timeslots as slot}
-                <option value={slot.id}>{slot.start} - {slot.end}</option>
+                <option value={room.id}>{room.name}</option>
               {/each}
             </select>
           </fieldset>
@@ -605,27 +498,15 @@
       <!-- Buttons -->
       <div class="modal-action">
         {#if booking.data.mode === 'edit' && booking.data.id}
-          <button class="btn btn-error mr-auto" onclick={deleteSchedule} disabled={isDeleting || isSaving}>
-            {#if isDeleting}
-              <span class="loading loading-spinner loading-sm"></span>
-              Deleting...
-            {:else}
-              Delete Week
-            {/if}
-          </button>
+          <button class="btn btn-error mr-auto" onclick={deleteSchedule}> Delete Week </button>
         {/if}
 
-        <button class="btn btn-primary" onclick={saveSchedule} disabled={isSaving || isDeleting}>
-          {#if isSaving}
-            <span class="loading loading-spinner loading-sm"></span>
-            Saving...
-          {:else}
-            {booking.data.mode === 'edit' ? 'Update' : 'Save'} Week
-          {/if}
+        <button class="btn btn-primary" onclick={saveSchedule}>
+          {booking.data.mode === 'edit' ? 'Update' : 'Save'} Week
         </button>
 
         <form method="dialog">
-          <button class="btn" disabled={isSaving || isDeleting}>Close</button>
+          <button class="btn">Close</button>
         </form>
       </div>
     {:else}

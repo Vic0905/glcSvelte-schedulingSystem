@@ -120,7 +120,7 @@
     <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-neutral mb-2">Subject Management</h1>
+          <h1 class="text-2xl font-bold mb-2">Subject Management</h1>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-ghost gap-2" on:click={openAddModal}> Add Subject </button>
