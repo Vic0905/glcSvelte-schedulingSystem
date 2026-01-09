@@ -12,14 +12,15 @@
     #studentGrid th:nth-child(1) { z-index: 25; }
     #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
     #studentGrid th:nth-child(2) { z-index: 25; }
-    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #studentGrid th:nth-child(3) { z-index: 25; }
-    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 450px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #studentGrid th:nth-child(4) { z-index: 25; }
   `
 
+  // #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+  //   #studentGrid th:nth-child(3) { z-index: 25; }
+  //   #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 450px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+  //   #studentGrid th:nth-child(4) { z-index: 25; }
+
   let studentGrid = null
-  let timeslots = $state([]) // Make it reactive
+  let timeslots = []
 
   // Keep only this date display function
   function getCurrentDateDisplay() {
@@ -43,7 +44,7 @@
           { class: 'flex flex-col gap-1 items-center' },
           [
             h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name || ''),
-            h('span', { class: 'badge badge-info badge-xs' }, item.teacher?.name || ''),
+            h('span', { class: 'badge badge-neutral badge-xs' }, item.teacher?.name || ''),
             item.isGroup && h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'),
             h('span', { class: 'badge badge-error badge-xs' }, item.room?.name || ''),
           ].filter(Boolean)
@@ -52,25 +53,10 @@
     )
   }
 
-  // Load timeslots separately first
-  async function loadTimeslots() {
-    try {
-      const timeslotsData = await pb.collection('timeSlot').getFullList({ sort: 'start' })
-      timeslots = timeslotsData
-    } catch (error) {
-      console.error('Error loading timeslots:', error)
-      toast.error('Failed to load timeslots')
-    }
-  }
-
   async function loadStudentSchedule() {
     try {
-      // First ensure timeslots are loaded
-      if (timeslots.length === 0) {
-        await loadTimeslots()
-      }
-
-      const [allStudents, individualBookings, groupBookings] = await Promise.all([
+      const [timeslotsData, allStudents, individualBookings, groupBookings] = await Promise.all([
+        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
         pb.collection('student').getFullList({ sort: 'name' }),
         pb.collection('advanceBooking').getFullList({
           expand: 'teacher,student,subject,room,timeslot',
@@ -82,6 +68,8 @@
 
       // Track which students have bookings
       const studentsWithBookings = new Set()
+
+      timeslots = timeslotsData
 
       // Process ALL individual bookings to track students with bookings
       for (const b of individualBookings) {
@@ -107,8 +95,8 @@
         scheduleMap[s.id] = {
           student: s.name,
           englishName: s.englishName || '',
-          course: s.course || '',
-          level: s.level || '',
+          // course: s.course || '',
+          // level: s.level || '',
           slots: {},
         }
       })
@@ -144,19 +132,14 @@
         })
       }
 
-      // Build table data - ONLY if we have timeslots
-      if (timeslots.length === 0) {
-        console.warn('No timeslots available')
-        return
-      }
-
+      // Build table data
       const data = Object.values(scheduleMap)
         .sort((a, b) => a.student.localeCompare(b.student, undefined, { numeric: true }))
         .map((entry) => [
           { label: 'Student', value: entry.student },
           { label: 'English Name', value: entry.englishName },
-          { label: 'Course', value: entry.course },
-          { label: 'Level', value: entry.level },
+          // { label: 'Course', value: entry.course },
+          // { label: 'Level', value: entry.level },
           ...timeslots.map((ts) => {
             const schedule = entry.slots[ts.id]
             return schedule ? [schedule] : []
@@ -166,8 +149,8 @@
       const columns = [
         { name: 'Student', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
         { name: 'English Name', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Course', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Level', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        // { name: 'Course', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        // { name: 'Level', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
         ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
       ]
 
@@ -191,7 +174,6 @@
           search: false,
           sort: false,
           pagination: false,
-          fixedHeader: true,
           className: {
             table: 'w-full border text-xs',
             th: 'bg-base-200 p-2 border text-center',
@@ -207,10 +189,7 @@
   }
 
   onMount(() => {
-    // Load timeslots first, then schedule
-    loadTimeslots().then(() => {
-      loadStudentSchedule()
-    })
+    loadStudentSchedule()
 
     // Add toast notifications for real-time updates
     pb.collection('advanceBooking').subscribe('*', (e) => {
@@ -265,7 +244,7 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-info badge-xs"></div>
+        <div class="badge badge-neutral badge-xs"></div>
         <span>Teacher</span>
       </div>
       <div class="flex items-center gap-1">
