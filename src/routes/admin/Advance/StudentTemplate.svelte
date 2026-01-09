@@ -3,6 +3,7 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
     #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
@@ -17,29 +18,18 @@
     #studentGrid th:nth-child(4) { z-index: 25; }
   `
 
-  let weekStart = $state(getWeekStart(new Date()))
   let studentGrid = null
-  let timeslots = []
-  let isLoading = $state(false)
+  let timeslots = $state([]) // Make it reactive
 
-  function getWeekStart(date) {
-    const d = new Date(date)
-    const diff = d.getDay() === 0 ? -5 : d.getDay() === 1 ? 1 : 2 - d.getDay()
-    d.setDate(d.getDate() + diff)
-    return d.toISOString().split('T')[0]
-  }
-
-  function getWeekRangeDisplay(startDate) {
-    const start = new Date(startDate)
-    const end = new Date(start)
-    end.setDate(start.getDate() + 3)
-    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-  }
-
-  const changeWeek = (weeks) => {
-    const d = new Date(weekStart)
-    d.setDate(d.getDate() + weeks * 7)
-    weekStart = getWeekStart(d)
+  // Keep only this date display function
+  function getCurrentDateDisplay() {
+    const today = new Date()
+    return today.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
   }
 
   const formatCell = (cell) => {
@@ -62,18 +52,30 @@
     )
   }
 
-  async function loadStudentSchedule() {
-    if (isLoading) return
-    isLoading = true
-
+  // Load timeslots separately first
+  async function loadTimeslots() {
     try {
-      const [timeslotsData, allStudents, individualBookings, groupBookings] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
+      const timeslotsData = await pb.collection('timeSlot').getFullList({ sort: 'start' })
+      timeslots = timeslotsData
+    } catch (error) {
+      console.error('Error loading timeslots:', error)
+      toast.error('Failed to load timeslots')
+    }
+  }
+
+  async function loadStudentSchedule() {
+    try {
+      // First ensure timeslots are loaded
+      if (timeslots.length === 0) {
+        await loadTimeslots()
+      }
+
+      const [allStudents, individualBookings, groupBookings] = await Promise.all([
         pb.collection('student').getFullList({ sort: 'name' }),
-        pb.collection('advanceBooking').getList(1, 500, {
+        pb.collection('advanceBooking').getFullList({
           expand: 'teacher,student,subject,room,timeslot',
         }),
-        pb.collection('groupAdvanceBooking').getList(1, 500, {
+        pb.collection('groupAdvanceBooking').getFullList({
           expand: 'teacher,student,subject,grouproom,timeslot',
         }),
       ])
@@ -81,16 +83,14 @@
       // Track which students have bookings
       const studentsWithBookings = new Set()
 
-      timeslots = timeslotsData
-
-      // Process individual bookings to track students with bookings
-      for (const b of individualBookings.items) {
+      // Process ALL individual bookings to track students with bookings
+      for (const b of individualBookings) {
         const studentId = b.expand?.student?.id
         if (studentId) studentsWithBookings.add(studentId)
       }
 
-      // Process group bookings to track students with bookings
-      for (const b of groupBookings.items) {
+      // Process ALL group bookings to track students with bookings
+      for (const b of groupBookings) {
         const students = Array.isArray(b.expand?.student) ? b.expand.student : []
         students.forEach((student) => studentsWithBookings.add(student.id))
       }
@@ -113,8 +113,8 @@
         }
       })
 
-      // Process individual bookings
-      for (const b of individualBookings.items) {
+      // Process ALL individual bookings
+      for (const b of individualBookings) {
         const studentId = b.expand?.student?.id
         const timeslotId = b.expand?.timeslot?.id
         if (!studentId || !timeslotId || !scheduleMap[studentId]) continue
@@ -127,8 +127,8 @@
         }
       }
 
-      // Process group bookings
-      for (const b of groupBookings.items) {
+      // Process ALL group bookings
+      for (const b of groupBookings) {
         const students = Array.isArray(b.expand?.student) ? b.expand.student : []
         const timeslotId = b.expand?.timeslot?.id
         if (!timeslotId) continue
@@ -144,7 +144,12 @@
         })
       }
 
-      // Build table data
+      // Build table data - ONLY if we have timeslots
+      if (timeslots.length === 0) {
+        console.warn('No timeslots available')
+        return
+      }
+
       const data = Object.values(scheduleMap)
         .sort((a, b) => a.student.localeCompare(b.student, undefined, { numeric: true }))
         .map((entry) => [
@@ -186,6 +191,7 @@
           search: false,
           sort: false,
           pagination: false,
+          fixedHeader: true,
           className: {
             table: 'w-full border text-xs',
             th: 'bg-base-200 p-2 border text-center',
@@ -196,15 +202,38 @@
       }
     } catch (error) {
       console.error('Error loading schedule:', error)
-    } finally {
-      isLoading = false
+      toast.error('Failed to load student bookings')
     }
   }
 
   onMount(() => {
-    loadStudentSchedule()
-    pb.collection('advanceBooking').subscribe('*', loadStudentSchedule)
-    pb.collection('groupAdvanceBooking').subscribe('*', loadStudentSchedule)
+    // Load timeslots first, then schedule
+    loadTimeslots().then(() => {
+      loadStudentSchedule()
+    })
+
+    // Add toast notifications for real-time updates
+    pb.collection('advanceBooking').subscribe('*', (e) => {
+      if (e.action === 'create') {
+        toast.success('New booking added')
+      } else if (e.action === 'update') {
+        toast.info('Booking updated')
+      } else if (e.action === 'delete') {
+        toast.warning('Booking removed')
+      }
+      loadStudentSchedule()
+    })
+
+    pb.collection('groupAdvanceBooking').subscribe('*', (e) => {
+      if (e.action === 'create') {
+        toast.success('New group booking added')
+      } else if (e.action === 'update') {
+        toast.info('Group booking updated')
+      } else if (e.action === 'delete') {
+        toast.warning('Group booking removed')
+      }
+      loadStudentSchedule()
+    })
   })
 
   onDestroy(() => {
@@ -220,18 +249,13 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">Student View Table (Advance Template)</h2>
-    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
+  <div class="mb-4 text-2xl font-bold text-primary">
+    <h2 class="text-center">Student View Table (Advance Template)</h2>
   </div>
 
-  <div class="mb-2 flex items-center justify-between gap-4 ml-20">
-    <h3 class="text-xl font-semibold text-primary flex-1 text-center">{getWeekRangeDisplay(weekStart)}</h3>
-
-    <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
-    </div>
+  <!-- Simplified date display only -->
+  <div class="mb-6">
+    <h3 class="text-xl font-semibold text-primary text-center">{getCurrentDateDisplay()}</h3>
   </div>
 
   <div class="p-3 bg-base-200 rounded-lg mb-4">

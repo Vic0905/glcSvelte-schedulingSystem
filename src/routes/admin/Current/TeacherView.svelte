@@ -15,6 +15,8 @@
   let teacherGrid = null
   let timeslots = []
   let teachers = []
+  let rooms = []
+  let grouprooms = []
   let isLoading = $state(false)
 
   function getWeekStart(date) {
@@ -64,11 +66,110 @@
           }
         }
 
-        badges.push(h('span', { class: 'badge badge-error badge-xs' }, item.room?.name ?? 'No Room'))
-
         return h('div', { class: 'flex flex-col gap-1 items-center' }, badges)
       })
     )
+  }
+
+  async function loadRoomsAndGrouprooms() {
+    try {
+      // Load both rooms and grouprooms
+      const [roomRecords, grouproomRecords] = await Promise.all([
+        pb.collection('room').getFullList({
+          expand: 'teacher',
+        }),
+        pb.collection('grouproom').getFullList({
+          expand: 'teacher',
+        }),
+      ])
+
+      rooms = roomRecords
+      grouprooms = grouproomRecords
+
+      // Create a map of teacher IDs to their assigned rooms/grouprooms
+      const teacherAssignmentMap = {}
+
+      // Process regular rooms
+      roomRecords.forEach((room) => {
+        if (room.teacher && room.expand?.teacher) {
+          teacherAssignmentMap[room.teacher] = {
+            type: 'room',
+            name: room.name || 'Unnamed Room',
+            id: room.id,
+            teacherName: room.expand.teacher.name,
+            sortKey: `room_${room.name || ''}`,
+          }
+        }
+      })
+
+      // Process grouprooms
+      grouproomRecords.forEach((grouproom) => {
+        if (grouproom.teacher && grouproom.expand?.teacher) {
+          // If teacher already has a room, keep room assignment (room takes precedence)
+          if (!teacherAssignmentMap[grouproom.teacher]) {
+            teacherAssignmentMap[grouproom.teacher] = {
+              type: 'grouproom',
+              name: grouproom.name || 'Unnamed Grouproom',
+              id: grouproom.id,
+              teacherName: grouproom.expand.teacher.name,
+              maxStudents: grouproom.maxstudents,
+              sortKey: `grouproom_${grouproom.name || ''}`,
+            }
+          }
+        }
+      })
+
+      // Load teachers
+      const teacherRecords = await pb.collection('teacher').getFullList({
+        sort: 'name',
+      })
+
+      // Categorize teachers based on assignments
+      const teachersWithRooms = []
+      const teachersWithGrouproomsOnly = []
+      const teachersWithoutAssignments = []
+
+      teacherRecords.forEach((teacher) => {
+        const assignment = teacherAssignmentMap[teacher.id]
+
+        if (assignment) {
+          if (assignment.type === 'room') {
+            teachersWithRooms.push({ teacher, assignment })
+          } else if (assignment.type === 'grouproom') {
+            teachersWithGrouproomsOnly.push({ teacher, assignment })
+          }
+        } else {
+          teachersWithoutAssignments.push({ teacher, assignment: null })
+        }
+      })
+
+      // Sort teachers with rooms by room name
+      teachersWithRooms.sort((a, b) => {
+        return a.assignment.name.localeCompare(b.assignment.name)
+      })
+
+      // Sort teachers with only grouprooms by grouproom name
+      teachersWithGrouproomsOnly.sort((a, b) => {
+        return a.assignment.name.localeCompare(b.assignment.name)
+      })
+
+      // Sort teachers without assignments by name
+      teachersWithoutAssignments.sort((a, b) => {
+        return a.teacher.name.localeCompare(b.teacher.name)
+      })
+
+      // Combine lists in order: room-assigned > grouproom-only > unassigned
+      teachers = [
+        ...teachersWithRooms.map((item) => item.teacher),
+        ...teachersWithGrouproomsOnly.map((item) => item.teacher),
+        ...teachersWithoutAssignments.map((item) => item.teacher),
+      ]
+
+      return teacherAssignmentMap
+    } catch (error) {
+      console.error('Error loading rooms and grouprooms:', error)
+      return {}
+    }
   }
 
   async function loadTeacherSchedule() {
@@ -79,9 +180,11 @@
       const weekDays = getWeekDays(weekStart)
       const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
 
-      const [timeslotsData, teachersData, individualSchedules, groupSchedules] = await Promise.all([
+      // Load rooms, grouprooms and teachers first for sorting
+      const teacherAssignmentMap = await loadRoomsAndGrouprooms()
+
+      const [timeslotsData, individualSchedules, groupSchedules] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        teachers.length ? teachers : pb.collection('teacher').getFullList({ sort: 'name' }),
         pb.collection('lessonSchedule').getList(1, 200, {
           filter: dateFilter,
           expand: 'teacher,student,subject,room,timeslot',
@@ -93,7 +196,6 @@
       ])
 
       timeslots = timeslotsData
-      teachers = teachersData
 
       // Build schedule map
       const scheduleMap = {}
@@ -136,11 +238,22 @@
         }
       }
 
-      // Build table data
+      // Build table data with sorted teachers - ONLY SHOW TEACHER NAME
       const data = teachers.map((teacher) => {
         const teacherSchedule = scheduleMap[teacher.id] || {}
+        const assignment = teacherAssignmentMap[teacher.id]
+
+        // For sorting only - not displayed
+        const sortValue = assignment ? assignment.sortKey : ''
+
         return [
-          { value: teacher.name },
+          {
+            value: teacher.name, // Only show teacher name
+            sortValue: sortValue,
+            rawName: teacher.name,
+            assignmentType: assignment?.type,
+            assignmentName: assignment?.name,
+          },
           ...timeslots.map((ts) => {
             const schedules = teacherSchedule[ts.id]
             return schedules ? Object.values(schedules) : []
@@ -149,7 +262,38 @@
       })
 
       const columns = [
-        { name: 'Teacher', width: '120px', formatter: (cell) => cell.value },
+        {
+          name: 'Teacher',
+          width: '150px',
+          formatter: (cell) => {
+            // Only show teacher name - no room info
+            return h('span', {}, cell.rawName || cell.value)
+          },
+          sort: {
+            compare: (a, b) => {
+              // First sort by assignment type (room > grouproom > none)
+              if (a.assignmentType === 'room' && b.assignmentType !== 'room') return -1
+              if (a.assignmentType !== 'room' && b.assignmentType === 'room') return 1
+
+              // Both have same assignment type or no assignment
+              if (a.assignmentType === b.assignmentType) {
+                // Sort by assignment name
+                if (a.assignmentName && b.assignmentName) {
+                  const nameCompare = a.assignmentName.localeCompare(b.assignmentName)
+                  if (nameCompare !== 0) return nameCompare
+                }
+                // Then by teacher name
+                return a.rawName.localeCompare(b.rawName)
+              }
+
+              // If one has grouproom and other has none
+              if (a.assignmentType === 'grouproom' && !b.assignmentType) return -1
+              if (!a.assignmentType && b.assignmentType === 'grouproom') return 1
+
+              return 0
+            },
+          },
+        },
         ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
       ]
 
@@ -157,7 +301,7 @@
         const wrapper = document.querySelector('#teacherGrid .gridjs-wrapper')
         const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
 
-        teacherGrid.updateConfig({ data }).forceRender()
+        teacherGrid.updateConfig({ data, columns }).forceRender()
 
         requestAnimationFrame(() => {
           const w = document.querySelector('#teacherGrid .gridjs-wrapper')
@@ -171,7 +315,7 @@
           columns,
           data,
           search: false,
-          sort: false,
+          sort: true,
           pagination: false,
           className: {
             table: 'w-full border text-xs',
@@ -198,6 +342,8 @@
     loadTeacherSchedule()
     pb.collection('lessonSchedule').subscribe('*', debouncedReload)
     pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
+    pb.collection('room').subscribe('*', debouncedReload)
+    pb.collection('grouproom').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
@@ -205,6 +351,8 @@
     teacherGrid?.destroy()
     pb.collection('lessonSchedule').unsubscribe()
     pb.collection('groupLessonSchedule').unsubscribe()
+    pb.collection('room').unsubscribe()
+    pb.collection('grouproom').unsubscribe()
   })
 </script>
 
@@ -214,7 +362,7 @@
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">Teacher View Table (Current)</h2>
+    <h2 class="text-center flex-1">Teacher View Table</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
@@ -240,12 +388,11 @@
   </div>
 
   <div class="bg-base-200 rounded-lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-2 text-xs">
+    <div class="flex flex-wrap items-center gap-2 text-xs mb-2">
       <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
       <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span> Student</div>
-      <div class="flex gap-1"><span class="badge badge-Success badge-xs"></span> New Student</div>
+      <div class="flex gap-1"><span class="badge badge-success badge-xs"></span> New Student</div>
       <div class="flex gap-1"><span class="badge badge-secondary badge-xs"></span> Group Lesson</div>
-      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Room</div>
     </div>
   </div>
 
