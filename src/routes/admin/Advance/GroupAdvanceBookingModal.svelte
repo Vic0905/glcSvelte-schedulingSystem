@@ -283,13 +283,15 @@
   }
 
   function toggleStudent(studentId) {
-    // Check if student is graduated
     const student = students.find((s) => s.id === studentId)
+
+    // Check if trying to ADD a graduated student
     if (student?.status === 'graduated' && !selectedStudents.includes(studentId)) {
       toast.error('Cannot select graduated student')
       return
     }
 
+    // Always allow REMOVING a student (even if graduated)
     if (selectedStudents.includes(studentId)) {
       selectedStudents = selectedStudents.filter((id) => id !== studentId)
     } else {
@@ -471,11 +473,12 @@
               {#each filteredStudents as student (student.id)}
                 {#if student.status !== 'graduated' || selectedStudents.includes(student.id)}
                   {@const isGraduated = student.status === 'graduated'}
+                  {@const isSelected = selectedStudents.includes(student.id)}
+
+                  <!-- Updated: Only disable if trying to ADD a graduated student -->
                   {@const isDisabled =
-                    isGraduated ||
-                    (maxStudentsAllowed > 0 &&
-                      !selectedStudents.includes(student.id) &&
-                      selectedStudents.length >= maxStudentsAllowed) ||
+                    (isGraduated && !isSelected) || // Only disable checkbox for ADDING graduated students
+                    (maxStudentsAllowed > 0 && !isSelected && selectedStudents.length >= maxStudentsAllowed) ||
                     saving}
 
                   <div class="form-control">
@@ -483,14 +486,14 @@
                       <input
                         type="checkbox"
                         class="checkbox checkbox-sm"
-                        checked={selectedStudents.includes(student.id)}
+                        checked={isSelected}
                         disabled={isDisabled}
                         onchange={() => toggleStudent(student.id)}
                       />
-                      <span class="label-text" class:italic={isDisabled}>
+                      <span class="label-text" class:opacity-10={isDisabled && !isSelected}>
                         {student.englishName}
                         {#if isGraduated}
-                          <span class="text-xs text-gray-400 ml-2">(Graduated)</span>
+                          <span class="text-xs text-warning ml-2 opacity-90">(Graduated - click to remove)</span>
                         {/if}
                       </span>
                     </label>
