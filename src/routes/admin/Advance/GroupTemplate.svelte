@@ -100,13 +100,22 @@
           ]
         })
 
+        // In the loadGroupSchedule function:
         if (roomIndex < groupRooms.length - 1) {
+          // Add a separator row with room name
           rows.push([
-            '',
+            h(
+              'div',
+              {
+                class: 'text-xs font-bold text-secondary italic opacity-80',
+                innerHTML: `┄┄┄ ${room.name} end ┄┄┄`,
+              },
+              ''
+            ),
             '',
             ...timeslots.map(() =>
               h('div', {
-                class: 'h-[4px] w-full rounded-full opacity-70 my-1',
+                class: 'h-[1px] w-full bg-gradient-to-r from-transparent via-primary/20 to-transparent my-1',
               })
             ),
           ])
