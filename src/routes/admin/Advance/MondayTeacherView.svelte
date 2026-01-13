@@ -3,6 +3,7 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
     #mondayTeacherAdvanceGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
@@ -11,42 +12,26 @@
     #mondayTeacherAdvanceGrid th:nth-child(1) { z-index: 25; }
   `
 
-  let selectedMonday = $state(getNextMonday(new Date()))
   let teacherGrid = null
-  let timeslots = []
-  let teachers = []
-  let isLoading = $state(false)
+  let timeslots = $state([])
+  let rooms = []
+  let grouprooms = []
 
-  function getNextMonday(date) {
-    const d = new Date(date)
-    const day = d.getDay()
-    // If today is Monday (1), use today. Otherwise go back to most recent Monday
-    const diff = day === 0 ? -6 : 1 - day
-    d.setDate(d.getDate() + diff)
-    return d.toISOString().split('T')[0]
-  }
-
-  function getMondayDisplay(mondayDate) {
-    const date = new Date(mondayDate)
-    return date.toLocaleDateString('en-US', {
+  function getCurrentDateDisplay() {
+    const today = new Date()
+    return today.toLocaleDateString('en-US', {
       weekday: 'long',
+      year: 'numeric',
       month: 'long',
       day: 'numeric',
-      year: 'numeric',
     })
-  }
-
-  const changeWeek = (weeks) => {
-    const d = new Date(selectedMonday)
-    d.setDate(d.getDate() + weeks * 7)
-    selectedMonday = d.toISOString().split('T')[0]
   }
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
 
-    // check if all items have hiddenDetails
-    const allHidden = cell.every((item) => item.hiddenDetails)
+    // Check if all items have hiddenDetails = true
+    const allHidden = cell.every((item) => item.hiddenDetails === true)
     if (allHidden) {
       return h('div', { class: 'badge badge-success badge-sm' }, 'Scheduled')
     }
@@ -55,76 +40,165 @@
       'div',
       { class: 'text-xs flex flex-col gap-1 items-center' },
       cell.map((item) => {
-        // Shoe "Scheduled" for individual hidden items
-        if (item.hiddenDetails) {
+        // Show "Scheduled" for items with hiddenDetails = true
+        if (item.hiddenDetails === true) {
           return h('div', { class: 'badge badge-success badge-sm mb-1' }, 'Scheduled')
         }
 
-        const badges = [h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject')]
-
-        if (item.isGroup) {
-          badges.push(h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'))
-        } else {
-          badges.push(h('span', { class: 'badge badge-neutral badge-xs' }, item.student?.englishName ?? 'No Student'))
-          if (item.student?.status === 'new') {
-            badges.push(h('span', { class: 'badge badge-success badge-xs' }, 'NEW'))
-          }
-        }
-
-        badges.push(h('span', { class: 'badge badge-error badge-xs' }, item.room?.name ?? 'No Room'))
-
-        return h('div', { class: 'flex flex-col gap-1 items-center' }, badges)
+        return h('div', { class: 'flex flex-col gap-1 items-center' }, [
+          h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject'),
+          item.isGroup
+            ? h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class')
+            : h('span', { class: 'badge badge-neutral badge-xs' }, item.student?.englishName ?? 'No Student'),
+          h('span', { class: 'badge badge-error badge-xs' }, item.room?.name ?? 'No Room'),
+        ])
       })
     )
   }
 
-  async function loadMondayTeacherSchedule() {
-    if (isLoading) return
-    isLoading = true
-
+  async function loadTimeslots() {
     try {
-      const [timeslotsData, teachersData, individualSchedules, groupSchedules] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        teachers.length ? teachers : pb.collection('teacher').getFullList({ sort: 'name' }),
-        pb.collection('mondayAdvanceBooking').getList(1, 500, {
+      const timeslotsData = await pb.collection('timeSlot').getFullList({ sort: 'start' })
+      timeslots = timeslotsData
+    } catch (error) {
+      console.error('Error loading timeslots:', error)
+      toast.error('Failed to load timeslots')
+    }
+  }
+
+  async function loadRoomsAndGrouprooms() {
+    try {
+      const [roomRecords, grouproomRecords] = await Promise.all([
+        pb.collection('room').getFullList({ expand: 'teacher' }),
+        pb.collection('grouproom').getFullList({ expand: 'teacher' }),
+      ])
+
+      rooms = roomRecords
+      grouprooms = grouproomRecords
+
+      const teacherAssignmentMap = {}
+
+      roomRecords.forEach((room) => {
+        if (room.teacher && room.expand?.teacher) {
+          teacherAssignmentMap[room.teacher] = {
+            type: 'room',
+            name: room.name || 'Unnamed Room',
+            id: room.id,
+            teacherName: room.expand.teacher.name,
+            sortKey: `room_${room.name || ''}`,
+          }
+        }
+      })
+
+      grouproomRecords.forEach((grouproom) => {
+        if (grouproom.teacher && grouproom.expand?.teacher) {
+          if (!teacherAssignmentMap[grouproom.teacher]) {
+            teacherAssignmentMap[grouproom.teacher] = {
+              type: 'grouproom',
+              name: grouproom.name || 'Unnamed Grouproom',
+              id: grouproom.id,
+              teacherName: grouproom.expand.teacher.name,
+              maxStudents: grouproom.maxstudents,
+              sortKey: `grouproom_${grouproom.name || ''}`,
+            }
+          }
+        }
+      })
+
+      return teacherAssignmentMap
+    } catch (error) {
+      console.error('Error loading rooms and grouprooms:', error)
+      toast.error('Failed to load rooms')
+      return {}
+    }
+  }
+
+  async function loadMondayTeacherSchedule() {
+    try {
+      if (timeslots.length === 0) {
+        await loadTimeslots()
+      }
+
+      const teacherAssignmentMap = await loadRoomsAndGrouprooms()
+      const [allTeachers, individualBookings, groupBookings] = await Promise.all([
+        pb.collection('teacher').getFullList({ sort: 'name' }),
+        pb.collection('mondayAdvanceBooking').getFullList({
           expand: 'teacher,student,subject,room,timeslot',
         }),
-        pb.collection('mondayAdvanceGroupBooking').getList(1, 500, {
+        pb.collection('mondayAdvanceGroupBooking').getFullList({
           expand: 'teacher,student,subject,grouproom,timeslot',
         }),
       ])
 
-      timeslots = timeslotsData
-      teachers = teachersData
+      const teachersWithBookings = new Set()
 
-      // Build schedule map
+      for (const b of individualBookings) {
+        const teacherId = b.expand?.teacher?.id
+        if (teacherId) teachersWithBookings.add(teacherId)
+      }
+
+      for (const b of groupBookings) {
+        const teacherId = b.expand?.teacher?.id
+        if (teacherId) teachersWithBookings.add(teacherId)
+      }
+
+      let teachers = allTeachers.filter((t) => {
+        if (t.status !== 'disabled') return true
+        return teachersWithBookings.has(t.id)
+      })
+
+      const teachersWithRooms = []
+      const teachersWithGrouproomsOnly = []
+      const teachersWithoutAssignments = []
+
+      teachers.forEach((teacher) => {
+        const assignment = teacherAssignmentMap[teacher.id]
+        if (assignment) {
+          if (assignment.type === 'room') {
+            teachersWithRooms.push({ teacher, assignment })
+          } else if (assignment.type === 'grouproom') {
+            teachersWithGrouproomsOnly.push({ teacher, assignment })
+          }
+        } else {
+          teachersWithoutAssignments.push({ teacher, assignment: null })
+        }
+      })
+
+      teachersWithRooms.sort((a, b) => a.assignment.name.localeCompare(b.assignment.name))
+      teachersWithGrouproomsOnly.sort((a, b) => a.assignment.name.localeCompare(b.assignment.name))
+      teachersWithoutAssignments.sort((a, b) => a.teacher.name.localeCompare(b.teacher.name))
+
+      teachers = [
+        ...teachersWithRooms.map((item) => item.teacher),
+        ...teachersWithGrouproomsOnly.map((item) => item.teacher),
+        ...teachersWithoutAssignments.map((item) => item.teacher),
+      ]
+
       const scheduleMap = {}
 
-      // Process individual lessons
-      for (const s of individualSchedules.items) {
-        const teacherId = s.expand?.teacher?.id
-        const timeslotId = s.expand?.timeslot?.id
-        const studentId = s.expand?.student?.id
+      for (const b of individualBookings) {
+        const teacherId = b.expand?.teacher?.id
+        const timeslotId = b.expand?.timeslot?.id
+        const studentId = b.expand?.student?.id
         if (!teacherId || !timeslotId) continue
 
         scheduleMap[teacherId] ??= {}
         scheduleMap[teacherId][timeslotId] ??= {}
 
         scheduleMap[teacherId][timeslotId][studentId] = {
-          subject: s.expand?.subject,
-          student: s.expand?.student,
-          room: s.expand?.room,
+          subject: b.expand?.subject,
+          student: b.expand?.student,
+          room: b.expand?.room,
           isGroup: false,
-          hiddenDetails: s.hiddenDetails || false,
+          hiddenDetails: b.hiddenDetails === true, // ADDED: Include hiddenDetails
         }
       }
 
-      // Process group lessons
-      for (const s of groupSchedules.items) {
-        const teacherId = s.expand?.teacher?.id
-        const timeslotId = s.expand?.timeslot?.id
-        const subjectId = s.expand?.subject?.id
-        const roomId = s.expand?.grouproom?.id
+      for (const b of groupBookings) {
+        const teacherId = b.expand?.teacher?.id
+        const timeslotId = b.expand?.timeslot?.id
+        const subjectId = b.expand?.subject?.id
+        const roomId = b.expand?.grouproom?.id
         if (!teacherId || !timeslotId) continue
 
         scheduleMap[teacherId] ??= {}
@@ -132,19 +206,31 @@
 
         const key = `group_${subjectId}_${roomId}`
         scheduleMap[teacherId][timeslotId][key] = {
-          subject: s.expand?.subject,
+          subject: b.expand?.subject,
           student: null,
-          room: s.expand?.grouproom,
+          room: b.expand?.grouproom,
           isGroup: true,
-          hiddenDetails: s.hiddenDetails || false,
+          hiddenDetails: b.hiddenDetails === true, // ADDED: Include hiddenDetails
         }
       }
 
-      // Build table data
+      if (timeslots.length === 0) {
+        console.warn('No timeslots available')
+        return
+      }
+
       const data = teachers.map((teacher) => {
         const teacherSchedule = scheduleMap[teacher.id] || {}
+        const assignment = teacherAssignmentMap[teacher.id]
+
         return [
-          { value: teacher.name },
+          {
+            value: teacher.name,
+            sortValue: assignment ? assignment.sortKey : '',
+            rawName: teacher.name,
+            assignmentType: assignment?.type,
+            assignmentName: assignment?.name,
+          },
           ...timeslots.map((ts) => {
             const schedules = teacherSchedule[ts.id]
             return schedules ? Object.values(schedules) : []
@@ -153,7 +239,30 @@
       })
 
       const columns = [
-        { name: 'Teacher', width: '120px', formatter: (cell) => cell.value },
+        {
+          name: 'Teacher',
+          width: '120px',
+          formatter: (cell) => h('span', {}, cell.rawName || cell.value),
+          sort: {
+            compare: (a, b) => {
+              if (a.assignmentType === 'room' && b.assignmentType !== 'room') return -1
+              if (a.assignmentType !== 'room' && b.assignmentType === 'room') return 1
+
+              if (a.assignmentType === b.assignmentType) {
+                if (a.assignmentName && b.assignmentName) {
+                  const nameCompare = a.assignmentName.localeCompare(b.assignmentName)
+                  if (nameCompare !== 0) return nameCompare
+                }
+                return a.rawName.localeCompare(b.rawName)
+              }
+
+              if (a.assignmentType === 'grouproom' && !b.assignmentType) return -1
+              if (!a.assignmentType && b.assignmentType === 'grouproom') return 1
+
+              return 0
+            },
+          },
+        },
         ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
       ]
 
@@ -161,7 +270,7 @@
         const wrapper = document.querySelector('#mondayTeacherAdvanceGrid .gridjs-wrapper')
         const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
 
-        teacherGrid.updateConfig({ data }).forceRender()
+        teacherGrid.updateConfig({ columns, data }).forceRender()
 
         requestAnimationFrame(() => {
           const w = document.querySelector('#mondayTeacherAdvanceGrid .gridjs-wrapper')
@@ -187,29 +296,68 @@
       }
     } catch (error) {
       console.error('Error loading Monday teacher schedule:', error)
-    } finally {
-      isLoading = false
+      toast.error('Failed to load teacher schedule')
     }
   }
 
-  let reloadTimeout
-  const debouncedReload = () => {
-    clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadMondayTeacherSchedule, 150)
-  }
-
   onMount(() => {
-    loadMondayTeacherSchedule()
-    pb.collection('mondayAdvanceBooking').subscribe('*', debouncedReload)
-    pb.collection('mondayAdvanceGroupBooking').subscribe('*', debouncedReload)
+    loadTimeslots().then(() => {
+      loadMondayTeacherSchedule()
+    })
+
+    // Subscribe to Monday collections
+    pb.collection('mondayAdvanceBooking').subscribe('*', (e) => {
+      if (e.action === 'create') {
+        toast.success('New Monday booking added')
+      } else if (e.action === 'update') {
+        toast.info('Monday booking updated')
+      } else if (e.action === 'delete') {
+        toast.warning('Monday booking removed')
+      }
+      loadMondayTeacherSchedule()
+    })
+
+    pb.collection('mondayAdvanceGroupBooking').subscribe('*', (e) => {
+      if (e.action === 'create') {
+        toast.success('New Monday group booking added')
+      } else if (e.action === 'update') {
+        toast.info('Monday group booking updated')
+      } else if (e.action === 'delete') {
+        toast.warning('Monday group booking removed')
+      }
+      loadMondayTeacherSchedule()
+    })
+
+    pb.collection('room').subscribe('*', (e) => {
+      if (e.action === 'create') {
+        toast.success('New room added')
+      } else if (e.action === 'update') {
+        toast.info('Room updated')
+      } else if (e.action === 'delete') {
+        toast.warning('Room removed')
+      }
+      loadMondayTeacherSchedule()
+    })
+
+    pb.collection('grouproom').subscribe('*', (e) => {
+      if (e.action === 'create') {
+        toast.success('New group room added')
+      } else if (e.action === 'update') {
+        toast.info('Group room updated')
+      } else if (e.action === 'delete') {
+        toast.warning('Group room removed')
+      }
+      loadMondayTeacherSchedule()
+    })
   })
 
   onDestroy(() => {
-    clearTimeout(reloadTimeout)
     teacherGrid?.destroy()
     teacherGrid = null
     pb.collection('mondayAdvanceBooking').unsubscribe()
     pb.collection('mondayAdvanceGroupBooking').unsubscribe()
+    pb.collection('room').unsubscribe()
+    pb.collection('grouproom').unsubscribe()
   })
 </script>
 
@@ -218,38 +366,36 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">Monday Teacher View Table (Advance Template)</h2>
-    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
+  <div class="mb-4 text-2xl font-bold text-primary">
+    <h2 class="text-center">Monday Teacher View Table (Advance Template)</h2>
   </div>
 
-  <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
-      <label for="filterDate" class="text-sm font-semibold">Select Monday:</label>
-      <input
-        type="date"
-        id="filterDate"
-        bind:value={selectedMonday}
-        class="input input-bordered input-sm w-40"
-        disabled={isLoading}
-      />
-    </div>
-
-    <h3 class="text-xl font-semibold text-primary text-center mr-50">{getMondayDisplay(selectedMonday)}</h3>
-
-    <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
-    </div>
+  <div class="mb-6">
+    <h3 class="text-xl font-semibold text-primary text-center">{getCurrentDateDisplay()}</h3>
   </div>
 
-  <div class="bg-base-200 rounded-lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-2 text-xs">
-      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
-      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span> Student</div>
-      <div class="flex gap-1"><span class="badge badge-success badge-xs"></span> New Student</div>
-      <div class="flex gap-1"><span class="badge badge-secondary badge-xs"></span> Group Lesson</div>
-      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Room</div>
+  <div class="p-3 bg-base-200 rounded-lg mb-4">
+    <div class="flex flex-wrap gap-4 text-xs mb-2">
+      <div class="flex items-center gap-1">
+        <div class="badge badge-primary badge-xs"></div>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-neutral badge-xs"></div>
+        <span>Student</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-secondary badge-xs"></div>
+        <span>Group Lesson</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-error badge-xs"></div>
+        <span>Room</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-success badge-xs"></div>
+        <span>Scheduled (hidden)</span>
+      </div>
     </div>
   </div>
 

@@ -3,47 +3,29 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
     #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #studentGrid th { position: sticky; top: 0; z-index: 20; box-shadow: 0 1px 0 #ddd; }
-    #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
     #studentGrid th:nth-child(1) { z-index: 25; }
-    #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
     #studentGrid th:nth-child(2) { z-index: 25; }
-    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(3) { z-index: 25; }
-    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 450px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(4) { z-index: 25; }
   `
 
-  let selectedDate = $state(getMonday(new Date()))
   let studentGrid = null
   let timeslots = []
-  let isLoading = $state(false)
 
-  function getMonday(date) {
-    const d = new Date(date)
-    const day = d.getDay()
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1) // adjust when day is Sunday
-    d.setDate(diff)
-    return d.toISOString().split('T')[0]
-  }
-
-  function getDateDisplay(date) {
-    return new Date(date).toLocaleDateString('en-US', {
+  // Keep only this date display function (same as advance template)
+  function getCurrentDateDisplay() {
+    const today = new Date()
+    return today.toLocaleDateString('en-US', {
       weekday: 'long',
+      year: 'numeric',
       month: 'long',
       day: 'numeric',
-      year: 'numeric',
     })
-  }
-
-  const changeWeek = (weeks) => {
-    const d = new Date(selectedDate)
-    d.setDate(d.getDate() + weeks * 7)
-    selectedDate = getMonday(d)
-    loadStudentSchedule()
   }
 
   const formatCell = (cell) => {
@@ -69,7 +51,7 @@
           { class: 'flex flex-col gap-1 items-center' },
           [
             h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name || ''),
-            h('span', { class: 'badge badge-info badge-xs' }, item.teacher?.name || ''),
+            h('span', { class: 'badge badge-neutral badge-xs' }, item.teacher?.name || ''),
             item.isGroup && h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'),
             h('span', { class: 'badge badge-error badge-xs' }, item.room?.name || ''),
           ].filter(Boolean)
@@ -79,36 +61,32 @@
   }
 
   async function loadStudentSchedule() {
-    if (isLoading) return
-    isLoading = true
-
     try {
+      // Use getFullList instead of getList (same as advance template)
       const [timeslotsData, allStudents, mondayIndividualSchedules, mondayGroupSchedules] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
         pb.collection('student').getFullList({ sort: 'name' }),
-        pb.collection('mondayLessonSchedule').getList(1, 200, {
-          filter: `date = "${selectedDate}"`,
+        pb.collection('mondayLessonSchedule').getFullList({
           expand: 'teacher,student,subject,room,timeslot',
         }),
-        pb.collection('mondayGroupLessonSchedule').getList(1, 200, {
-          filter: `date = "${selectedDate}"`,
+        pb.collection('mondayGroupLessonSchedule').getFullList({
           expand: 'teacher,student,subject,grouproom,timeslot',
         }),
       ])
 
-      // Track which students have lessons on this Monday
+      // Track which students have Monday lessons
       const studentsWithLessons = new Set()
 
       timeslots = timeslotsData
 
       // Process Monday individual schedules to track students with lessons
-      for (const s of mondayIndividualSchedules.items) {
+      for (const s of mondayIndividualSchedules) {
         const studentId = s.expand?.student?.id
         if (studentId) studentsWithLessons.add(studentId)
       }
 
       // Process Monday group schedules to track students with lessons
-      for (const s of mondayGroupSchedules.items) {
+      for (const s of mondayGroupSchedules) {
         const students = Array.isArray(s.expand?.student) ? s.expand.student : []
         students.forEach((student) => studentsWithLessons.add(student.id))
       }
@@ -125,14 +103,14 @@
         scheduleMap[s.id] = {
           student: s.name,
           englishName: s.englishName || '',
-          course: s.course || '',
-          level: s.level || '',
+          // course: s.course || '',  // Commented out like advance template
+          // level: s.level || '',    // Commented out like advance template
           slots: {},
         }
       })
 
       // Process Monday individual schedules
-      for (const s of mondayIndividualSchedules.items) {
+      for (const s of mondayIndividualSchedules) {
         const studentId = s.expand?.student?.id
         const timeslotId = s.expand?.timeslot?.id
         if (!studentId || !timeslotId || !scheduleMap[studentId]) continue
@@ -147,7 +125,7 @@
       }
 
       // Process Monday group schedules
-      for (const s of mondayGroupSchedules.items) {
+      for (const s of mondayGroupSchedules) {
         const students = Array.isArray(s.expand?.student) ? s.expand.student : []
         const timeslotId = s.expand?.timeslot?.id
         if (!timeslotId) continue
@@ -164,14 +142,14 @@
         })
       }
 
-      // Build table data
+      // Build table data (same pattern as advance template)
       const data = Object.values(scheduleMap)
         .sort((a, b) => a.student.localeCompare(b.student, undefined, { numeric: true }))
         .map((entry) => [
           { label: 'Student', value: entry.student },
           { label: 'English Name', value: entry.englishName },
-          { label: 'Course', value: entry.course },
-          { label: 'Level', value: entry.level },
+          // { label: 'Course', value: entry.course },
+          // { label: 'Level', value: entry.level },
           ...timeslots.map((ts) => {
             const schedule = entry.slots[ts.id]
             return schedule ? [schedule] : []
@@ -181,8 +159,8 @@
       const columns = [
         { name: 'Student', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
         { name: 'English Name', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Course', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Level', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        // { name: 'Course', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        // { name: 'Level', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
         ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
       ]
 
@@ -190,7 +168,7 @@
         const wrapper = document.querySelector('#studentGrid .gridjs-wrapper')
         const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
 
-        studentGrid.updateConfig({ data }).forceRender()
+        studentGrid.updateConfig({ columns, data }).forceRender()
 
         requestAnimationFrame(() => {
           const w = document.querySelector('#studentGrid .gridjs-wrapper')
@@ -215,29 +193,41 @@
         }).render(document.getElementById('studentGrid'))
       }
     } catch (error) {
-      console.error('Error loading schedule:', error)
-    } finally {
-      isLoading = false
+      console.error('Error loading Monday student schedule:', error)
+      toast.error('Failed to load Monday student schedule')
     }
-  }
-
-  let reloadTimeout
-  const debouncedReload = () => {
-    clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadStudentSchedule, 150)
   }
 
   onMount(() => {
     loadStudentSchedule()
-    // Subscribe to Monday collections instead of regular collections
-    pb.collection('mondayLessonSchedule').subscribe('*', debouncedReload)
-    pb.collection('mondayGroupLessonSchedule').subscribe('*', debouncedReload)
+
+    // Add toast notifications for real-time updates (same pattern as advance template)
+    pb.collection('mondayLessonSchedule').subscribe('*', (e) => {
+      if (e.action === 'create') {
+        toast.success('New Monday schedule added')
+      } else if (e.action === 'update') {
+        toast.info('Monday schedule updated')
+      } else if (e.action === 'delete') {
+        toast.warning('Monday schedule removed')
+      }
+      loadStudentSchedule()
+    })
+
+    pb.collection('mondayGroupLessonSchedule').subscribe('*', (e) => {
+      if (e.action === 'create') {
+        toast.success('New Monday group schedule added')
+      } else if (e.action === 'update') {
+        toast.info('Monday group schedule updated')
+      } else if (e.action === 'delete') {
+        toast.warning('Monday group schedule removed')
+      }
+      loadStudentSchedule()
+    })
   })
 
   onDestroy(() => {
-    clearTimeout(reloadTimeout)
     studentGrid?.destroy()
-    // Unsubscribe from Monday collections
+    studentGrid = null
     pb.collection('mondayLessonSchedule').unsubscribe()
     pb.collection('mondayGroupLessonSchedule').unsubscribe()
   })
@@ -248,38 +238,37 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
-    <h2 class="text-center flex-1">Monday Student Schedule</h2>
-    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
+  <div class="mb-4 text-2xl font-bold text-primary">
+    <h2 class="text-center">Monday Student Schedule</h2>
   </div>
 
-  <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
-      <label for="filterDate" class="text-sm font-semibold">Monday Date:</label>
-      <input
-        type="date"
-        id="filterDate"
-        bind:value={selectedDate}
-        class="input input-bordered input-sm w-40"
-        onchange={loadStudentSchedule}
-        disabled={isLoading}
-      />
-    </div>
-
-    <h3 class="text-xl font-semibold text-primary text-center mr-50">{getDateDisplay(selectedDate)}</h3>
-
-    <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
-    </div>
+  <!-- Simplified date display only (same as advance template) -->
+  <div class="mb-6">
+    <h3 class="text-xl font-semibold text-primary text-center">{getCurrentDateDisplay()}</h3>
   </div>
 
-  <div class="bg-base-200 rounded-lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-2 text-xs">
-      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
-      <div class="flex gap-1"><span class="badge badge-info badge-xs"></span> Teacher</div>
-      <div class="flex gap-1"><span class="badge badge-secondary badge-xs"></span> Group Class</div>
-      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Room</div>
+  <div class="p-3 bg-base-200 rounded-lg mb-4">
+    <div class="flex flex-wrap gap-4 text-xs">
+      <div class="flex items-center gap-1">
+        <div class="badge badge-primary badge-xs"></div>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-neutral badge-xs"></div>
+        <span>Teacher</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-secondary badge-xs"></div>
+        <span>Group Class</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-error badge-xs"></div>
+        <span>Room</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-success badge-xs"></div>
+        <span>Scheduled (hidden)</span>
+      </div>
     </div>
   </div>
 
