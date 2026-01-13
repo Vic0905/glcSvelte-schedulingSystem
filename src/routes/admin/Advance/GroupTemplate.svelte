@@ -33,8 +33,8 @@
     const { schedule, studentName } = cellData
     return h('div', { class: 'text-xs flex flex-col gap-1 items-center' }, [
       h('span', { class: 'badge badge-primary badge-xs p-3' }, schedule.subject?.name ?? 'No Subject'),
-      h('span', { class: 'badge badge-info badge-xs' }, schedule.teacher?.name ?? 'No Teacher'),
       h('span', { class: 'badge badge-neutral badge-xs' }, studentName),
+      h('span', { class: 'badge badge-error badge-xs' }, schedule.teacher?.name ?? 'No Teacher'),
     ])
   }
 
@@ -56,7 +56,8 @@
 
       const [groupRoomsData, bookings] = await Promise.all([
         groupRooms.length ? groupRooms : pb.collection('grouproom').getFullList({ sort: 'name' }),
-        pb.collection('groupAdvanceBooking').getList(1, 500, {
+        pb.collection('groupAdvanceBooking').getFullList({
+          // CHANGED: getList to getFullList
           expand: 'teacher,student,subject,grouproom,timeslot',
         }),
       ])
@@ -64,7 +65,8 @@
       groupRooms = groupRoomsData
 
       const scheduleMap = {}
-      for (const b of bookings.items) {
+      for (const b of bookings) {
+        // CHANGED: No .items
         const roomId = b.expand?.grouproom?.id
         const timeslotId = b.expand?.timeslot?.id
         if (!roomId || !timeslotId) continue
@@ -149,7 +151,7 @@
           data,
           search: false,
           sort: false,
-          pagination: { enabled: true, limit: 100, summary: false },
+          pagination: false,
           className: {
             table: 'w-full border text-xs',
             th: 'bg-base-200 p-2 border text-center',
@@ -229,12 +231,12 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-info badge-xs"></div>
-        <span>Teacher</span>
+        <div class="badge badge-neutral badge-xs"></div>
+        <span>Student</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
-        <span>Student Names</span>
+        <div class="badge badge-error badge-xs"></div>
+        <span>Teacher</span>
       </div>
     </div>
   </div>
