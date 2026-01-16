@@ -11,16 +11,26 @@
     #studentGrid th:nth-child(1) { z-index: 25; }
     #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
     #studentGrid th:nth-child(2) { z-index: 25; }
-    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(3) { z-index: 25; }
-    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 450px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(4) { z-index: 25; }
   `
+
+  // Cache for frequently accessed data
+  const cache = {
+    timeslots: null,
+    students: null,
+    schedules: new Map(), // Map weekStart -> { data, timestamp }
+    lastFetch: 0,
+    cacheDuration: 30000, // 30 seconds
+    isValid: (key) => {
+      const cached = cache.schedules.get(key)
+      return cached && Date.now() - cached.timestamp < cache.cacheDuration
+    },
+  }
 
   let weekStart = $state(getWeekStart(new Date()))
   let studentGrid = null
-  let timeslots = []
   let isLoading = $state(false)
+  let abortController = null
+  let scrollPositions = $state({ top: 0, left: 0 })
 
   function getWeekStart(date) {
     const d = new Date(date)
@@ -45,15 +55,42 @@
     return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }
 
+  function getDateFilter(weekDays) {
+    return weekDays.map((d) => `date = "${d}"`).join(' || ')
+  }
+
+  // Save scroll position before any updates
+  const saveScrollPosition = () => {
+    const wrapper = document.querySelector('#studentGrid .gridjs-wrapper')
+    if (wrapper) {
+      scrollPositions = {
+        top: wrapper.scrollTop,
+        left: wrapper.scrollLeft,
+      }
+    }
+  }
+
+  // Restore scroll position after updates
+  const restoreScrollPosition = () => {
+    requestAnimationFrame(() => {
+      const wrapper = document.querySelector('#studentGrid .gridjs-wrapper')
+      if (wrapper) {
+        wrapper.scrollTop = scrollPositions.top
+        wrapper.scrollLeft = scrollPositions.left
+      }
+    })
+  }
+
   const changeWeek = (weeks) => {
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-    loadStudentSchedule()
+    loadStudentSchedule(true) // Force load when changing week
   }
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
+
     return h(
       'div',
       { class: 'text-xs' },
@@ -63,7 +100,7 @@
           { class: 'flex flex-col gap-1 items-center' },
           [
             h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name || ''),
-            h('span', { class: 'badge badge-info badge-xs' }, item.teacher?.name || ''),
+            h('span', { class: 'badge badge-neutral badge-xs' }, item.teacher?.name || ''),
             item.isGroup && h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'),
             h('span', { class: 'badge badge-error badge-xs' }, item.room?.name || ''),
           ].filter(Boolean)
@@ -72,154 +109,242 @@
     )
   }
 
-  async function loadStudentSchedule() {
+  async function loadStudentSchedule(forceRefresh = false) {
     if (isLoading) return
+
+    abortController?.abort()
+    abortController = new AbortController()
+    const { signal } = abortController
+
+    // Save scroll position before loading
+    saveScrollPosition()
+
+    // Check cache first
+    if (!forceRefresh && cache.isValid(weekStart)) {
+      const cached = cache.schedules.get(weekStart)
+      updateGrid(cached.data)
+      return
+    }
+
     isLoading = true
 
     try {
       const weekDays = getWeekDays(weekStart)
-      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
+      const dateFilter = getDateFilter(weekDays)
 
-      const [timeslotsData, allStudents, individualSchedules, groupSchedules] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        pb.collection('student').getFullList({ sort: 'name' }),
-        pb.collection('lessonSchedule').getList(1, 200, {
+      // Load data in parallel like the schedule parent
+      const promises = []
+
+      // Load timeslots only once
+      if (!cache.timeslots) {
+        promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
+      }
+
+      // Load students only once (cached)
+      if (!cache.students) {
+        promises.push(pb.collection('student').getFullList({ sort: 'name' }))
+      }
+
+      // Always load schedules
+      promises.push(
+        pb.collection('lessonSchedule').getFullList({
           filter: dateFilter,
           expand: 'teacher,student,subject,room,timeslot',
-        }),
-        pb.collection('groupLessonSchedule').getList(1, 200, {
+          $autoCancel: false,
+        })
+      )
+
+      promises.push(
+        pb.collection('groupLessonSchedule').getFullList({
           filter: dateFilter,
           expand: 'teacher,student,subject,grouproom,timeslot',
-        }),
-      ])
+          $autoCancel: false,
+        })
+      )
 
-      // Track which students have lessons this week
+      const results = await Promise.all(promises)
+      if (signal.aborted) return
+
+      // Parse results efficiently
+      let idx = 0
+
+      if (!cache.timeslots) {
+        cache.timeslots = results[idx++]
+      }
+
+      if (!cache.students) {
+        cache.students = results[idx++]
+      }
+
+      const individualSchedules = results[idx++]
+      const groupSchedules = results[idx++]
+
+      // Build schedule map using Map for O(1) lookups
+      const scheduleMap = new Map()
+
+      // Track students with lessons for filtering graduated students
       const studentsWithLessons = new Set()
 
-      timeslots = timeslotsData
-
-      // Process individual schedules to track students with lessons
-      for (const s of individualSchedules.items) {
-        const studentId = s.expand?.student?.id
-        if (studentId) studentsWithLessons.add(studentId)
-      }
-
-      // Process group schedules to track students with lessons
-      for (const s of groupSchedules.items) {
-        const students = Array.isArray(s.expand?.student) ? s.expand.student : []
-        students.forEach((student) => studentsWithLessons.add(student.id))
-      }
-
-      // Filter students: include non-graduated OR graduated students WITH lessons this week
-      const students = allStudents.filter((s) => {
-        if (s.status !== 'graduated') return true
-        return studentsWithLessons.has(s.id)
-      })
-
-      // Build schedule map
-      const scheduleMap = {}
-      students.forEach((s) => {
-        scheduleMap[s.id] = {
-          student: s.name,
-          englishName: s.englishName || '',
-          course: s.course || '',
-          level: s.level || '',
-          slots: {},
-        }
-      })
-
       // Process individual schedules
-      for (const s of individualSchedules.items) {
+      for (const s of individualSchedules) {
         const studentId = s.expand?.student?.id
         const timeslotId = s.expand?.timeslot?.id
-        if (!studentId || !timeslotId || !scheduleMap[studentId]) continue
+        if (!studentId || !timeslotId) continue
 
-        scheduleMap[studentId].slots[timeslotId] ??= {
+        studentsWithLessons.add(studentId)
+
+        if (!scheduleMap.has(studentId)) {
+          scheduleMap.set(studentId, new Map())
+        }
+
+        scheduleMap.get(studentId).set(timeslotId, {
           subject: s.expand?.subject,
           teacher: s.expand?.teacher,
           room: s.expand?.room,
           isGroup: false,
-        }
+        })
       }
 
       // Process group schedules
-      for (const s of groupSchedules.items) {
+      for (const s of groupSchedules) {
         const students = Array.isArray(s.expand?.student) ? s.expand.student : []
         const timeslotId = s.expand?.timeslot?.id
         if (!timeslotId) continue
 
-        students.forEach((student) => {
-          if (!scheduleMap[student.id]) return
-          scheduleMap[student.id].slots[timeslotId] ??= {
-            subject: s.expand?.subject,
-            teacher: s.expand?.teacher,
-            room: s.expand?.grouproom,
-            isGroup: true,
+        for (const student of students) {
+          studentsWithLessons.add(student.id)
+
+          if (!scheduleMap.has(student.id)) {
+            scheduleMap.set(student.id, new Map())
           }
-        })
+
+          // Only set if not already exists (individual takes precedence)
+          if (!scheduleMap.get(student.id).has(timeslotId)) {
+            scheduleMap.get(student.id).set(timeslotId, {
+              subject: s.expand?.subject,
+              teacher: s.expand?.teacher,
+              room: s.expand?.grouproom,
+              isGroup: true,
+            })
+          }
+        }
       }
 
-      // Build table data this fucntino wille nablet hef fcuntonality of creaitng a more robut fun
-      const data = Object.values(scheduleMap)
-        .sort((a, b) => a.student.localeCompare(b.student, undefined, { numeric: true }))
-        .map((entry) => [
-          { label: 'Student', value: entry.student },
-          { label: 'English Name', value: entry.englishName },
-          { label: 'Course', value: entry.course },
-          { label: 'Level', value: entry.level },
-          ...timeslots.map((ts) => {
-            const schedule = entry.slots[ts.id]
+      // Filter students: include non-graduated OR graduated students WITH lessons
+      const filteredStudents = cache.students.filter((s) => {
+        if (s.status !== 'graduated') return true
+        return studentsWithLessons.has(s.id)
+      })
+
+      // Build table data efficiently
+      const data = filteredStudents.map((student) => {
+        const studentSchedules = scheduleMap.get(student.id) || new Map()
+
+        const row = [
+          { label: 'Student', value: student.name },
+          { label: 'English Name', value: student.englishName || '' },
+          ...cache.timeslots.map((ts) => {
+            const schedule = studentSchedules.get(ts.id)
             return schedule ? [schedule] : []
           }),
-        ])
+        ]
+
+        return row
+      })
+
+      // Sort by student name
+      data.sort((a, b) => a[0].value.localeCompare(b[0].value))
 
       const columns = [
-        { name: 'Student', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'English Name', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Course', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        { name: 'Level', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
+        {
+          name: 'Student',
+          width: '150px',
+          formatter: (cell) => h('div', { class: 'text-xs' }, cell.value),
+        },
+        {
+          name: 'English Name',
+          width: '150px',
+          formatter: (cell) => h('div', { class: 'text-xs' }, cell.value),
+        },
+        ...cache.timeslots.map((t) => ({
+          name: `${t.start} - ${t.end}`,
+          width: '160px',
+          formatter: formatCell,
+        })),
       ]
 
-      if (studentGrid) {
-        const wrapper = document.querySelector('#studentGrid .gridjs-wrapper')
-        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+      const result = { data, columns }
 
-        studentGrid.updateConfig({ data }).forceRender()
+      // Cache the result
+      cache.schedules.set(weekStart, {
+        data: result,
+        timestamp: Date.now(),
+      })
 
-        requestAnimationFrame(() => {
-          const w = document.querySelector('#studentGrid .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = scroll.top
-            w.scrollLeft = scroll.left
-          }
-        })
-      } else {
-        studentGrid = new Grid({
-          columns,
-          data,
-          search: false,
-          sort: false,
-          pagination: false,
-          className: {
-            table: 'w-full border text-xs',
-            th: 'bg-base-200 p-2 border text-center',
-            td: 'border p-2 align-middle text-center',
-          },
-          style: { table: { 'border-collapse': 'collapse' } },
-        }).render(document.getElementById('studentGrid'))
-      }
+      if (signal.aborted) return
+
+      // Update grid
+      updateGrid(result)
     } catch (error) {
-      console.error('Error loading schedule:', error)
+      if (error.name === 'AbortError' || signal.aborted) {
+        console.log('Request cancelled')
+        return
+      }
+      console.error('Error loading student schedule:', error)
     } finally {
       isLoading = false
+      abortController = null
     }
   }
 
+  function updateGrid({ data, columns }) {
+    if (studentGrid) {
+      studentGrid
+        .updateConfig({
+          data,
+          style: {
+            table: {
+              'border-collapse': 'collapse',
+              'table-layout': 'fixed',
+            },
+          },
+        })
+        .forceRender()
+
+      // Restore scroll position after DOM update
+      restoreScrollPosition()
+    } else {
+      studentGrid = new Grid({
+        columns,
+        data,
+        search: false,
+        sort: false,
+        pagination: false,
+        className: {
+          table: 'w-full border text-xs',
+          th: 'bg-base-200 p-2 border text-center',
+          td: 'border p-2 align-middle text-center',
+        },
+        style: {
+          table: {
+            'border-collapse': 'collapse',
+            'table-layout': 'fixed',
+          },
+        },
+      }).render(document.getElementById('studentGrid'))
+    }
+  }
+
+  // Debounced reload
   let reloadTimeout
   const debouncedReload = () => {
+    if (isLoading) return
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadStudentSchedule, 150)
+    reloadTimeout = setTimeout(() => {
+      // Invalidate cache for current week
+      cache.schedules.delete(weekStart)
+      loadStudentSchedule(true)
+    }, 150)
   }
 
   onMount(() => {
@@ -230,6 +355,7 @@
 
   onDestroy(() => {
     clearTimeout(reloadTimeout)
+    abortController?.abort()
     studentGrid?.destroy()
     pb.collection('lessonSchedule').unsubscribe()
     pb.collection('groupLessonSchedule').unsubscribe()
@@ -254,7 +380,7 @@
         id="filterDate"
         bind:value={weekStart}
         class="input input-bordered input-sm w-40"
-        onchange={loadStudentSchedule}
+        onchange={() => loadStudentSchedule(true)}
         disabled={isLoading}
       />
     </div>
@@ -270,7 +396,7 @@
   <div class="bg-base-200 rounded-lg m-2 p-2">
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
-      <div class="flex gap-1"><span class="badge badge-info badge-xs"></span> Teacher</div>
+      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span> Teacher</div>
       <div class="flex gap-1"><span class="badge badge-secondary badge-xs"></span> Group Class</div>
       <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Room</div>
     </div>

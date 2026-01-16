@@ -121,7 +121,7 @@
 
       // Check for student conflicts
       const studentConflict = allBookings.find((b) => {
-        if (b.collectionName === 'groupAdvanceBooking' || b.collectionId === 'groupAdvanceBooking') {
+        if (b.collectionName === 'groupAdvanceBooking') {
           // For group bookings, student is an array
           return Array.isArray(b.student) && b.student.includes(student.id)
         }

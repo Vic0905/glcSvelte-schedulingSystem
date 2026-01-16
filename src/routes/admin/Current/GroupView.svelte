@@ -54,8 +54,8 @@
     const { schedule, studentName } = cellData
     return h('div', { class: 'text-xs flex flex-col gap-1 items-center' }, [
       h('span', { class: 'badge badge-primary badge-xs p-3' }, schedule.subject?.name ?? 'No Subject'),
-      h('span', { class: 'badge badge-info badge-xs' }, schedule.teacher?.name ?? 'No Teacher'),
       h('span', { class: 'badge badge-neutral badge-xs' }, studentName),
+      h('span', { class: 'badge badge-error badge-xs' }, schedule.teacher?.name ?? 'No Teacher'),
     ])
   }
 
@@ -111,14 +111,29 @@
             ...timeslots.map((ts) => {
               const schedule = roomSchedule[ts.id]
               const student = schedule?.students?.[i]
-              return student ? { schedule, studentName: student.englishName || 'Unknown' } : null
+              return student ? { schedule, studentName: student.englishName || student.name || 'Unknown' } : null
             }),
           ]
         })
 
-        // Add a separator row after each room except the last
+        // Add separator row with room name (matching the template style)
         if (roomIndex < groupRooms.length - 1) {
-          rows.push(['', '', ...timeslots.map(() => h('div', { class: 'h-[3px] w-full rounded-full' }))])
+          rows.push([
+            h(
+              'div',
+              {
+                class: 'text-xs font-bold text-secondary italic opacity-80',
+                innerHTML: `┄┄┄ ${room.name} end ┄┄┄`,
+              },
+              ''
+            ),
+            '',
+            ...timeslots.map(() =>
+              h('div', {
+                class: 'h-[1px] w-full bg-gradient-to-r from-transparent via-primary/20 to-transparent my-1',
+              })
+            ),
+          ])
         }
 
         return rows
@@ -149,7 +164,7 @@
           data,
           search: false,
           sort: false,
-          pagination: { enabled: true, limit: 100, summary: false },
+          pagination: false, // Changed from pagination to match template
           className: {
             table: 'w-full border text-xs',
             th: 'bg-base-200 p-2 border text-center',
@@ -219,11 +234,22 @@
     </div>
   </div>
 
-  <div class="bg-base-200 rounded lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-2 text-xs">
-      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span>Subject</div>
-      <div class="flex gap-1"><span class="badge badge-info badge-xs"></span>Teacher</div>
-      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span>Student Names</div>
+  <div class="p-3 bg-base-200 rounded-lg mb-4">
+    <!-- Updated class to match template -->
+    <div class="flex flex-wrap gap-4 text-xs">
+      <!-- Updated class to match template -->
+      <div class="flex items-center gap-1">
+        <div class="badge badge-primary badge-xs"></div>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-neutral badge-xs"></div>
+        <span>Student</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <div class="badge badge-error badge-xs"></div>
+        <span>Teacher</span>
+      </div>
     </div>
   </div>
 

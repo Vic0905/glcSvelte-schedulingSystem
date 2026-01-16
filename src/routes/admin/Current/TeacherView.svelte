@@ -54,20 +54,15 @@
     return h(
       'div',
       { class: 'text-xs flex flex-col gap-1 items-center' },
-      cell.map((item) => {
-        const badges = [h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject')]
-
-        if (item.isGroup) {
-          badges.push(h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'))
-        } else {
-          badges.push(h('span', { class: 'badge badge-neutral badge-xs' }, item.student?.englishName ?? 'No Student'))
-          if (item.student?.status === 'new') {
-            badges.push(h('span', { class: 'badge badge-success badge-xs' }, 'NEW'))
-          }
-        }
-
-        return h('div', { class: 'flex flex-col gap-1 items-center' }, badges)
-      })
+      cell.map((item) =>
+        h('div', { class: 'flex flex-col gap-1 items-center' }, [
+          h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject'),
+          item.isGroup
+            ? h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class')
+            : h('span', { class: 'badge badge-neutral badge-xs' }, item.student?.englishName ?? 'No Student'),
+          h('span', { class: 'badge badge-error badge-xs' }, item.room?.name ?? 'No Room'),
+        ])
+      )
     )
   }
 
@@ -388,11 +383,23 @@
   </div>
 
   <div class="bg-base-200 rounded-lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-2 text-xs mb-2">
-      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
-      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span> Student</div>
-      <div class="flex gap-1"><span class="badge badge-success badge-xs"></span> New Student</div>
-      <div class="flex gap-1"><span class="badge badge-secondary badge-xs"></span> Group Lesson</div>
+    <div class="flex flex-wrap items-center gap-4 text-xs mb-2">
+      <div class="flex items-center gap-1">
+        <span class="badge badge-primary badge-xs"></span>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="badge badge-neutral badge-xs"></span>
+        <span>Student</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="badge badge-secondary badge-xs"></span>
+        <span>Group Lesson</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="badge badge-error badge-xs"></span>
+        <span>Room</span>
+      </div>
     </div>
   </div>
 
