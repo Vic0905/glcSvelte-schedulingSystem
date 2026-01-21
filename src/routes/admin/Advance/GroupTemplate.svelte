@@ -109,7 +109,7 @@
             h(
               'div',
               {
-                class: 'text-xs font-bold text-secondary italic opacity-80',
+                class: 'text-xs font-bold italic opacity-80',
                 innerHTML: `┄┄┄ ${room.name} end ┄┄┄`,
               },
               ''
@@ -216,12 +216,12 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="mb-4 text-2xl font-bold text-primary">
+  <div class="mb-4 text-2xl font-bold">
     <h2 class="text-center">GRP Room Slot Table (Advance Template)</h2>
   </div>
 
   <div class="mb-6">
-    <h3 class="text-xl font-semibold text-primary text-center">{getCurrentDateDisplay()}</h3>
+    <h3 class="text-xl font-semibold text-center">{getCurrentDateDisplay()}</h3>
   </div>
 
   <div class="p-3 bg-base-200 rounded-lg mb-4">

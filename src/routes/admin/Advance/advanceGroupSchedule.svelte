@@ -375,24 +375,24 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">GRP Schedule Table (Advance Template)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
-    <button class="btn btn-error btn-sm" onclick={deleteAllAdvanceGroupBookings} disabled={isLoading}>
+    <button class="btn btn-ghost btn-sm" onclick={deleteAllAdvanceGroupBookings} disabled={isLoading}>
       Delete All
     </button>
-    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
+    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
       {getWeekRange(currentWeekStart)}
     </h3>
 
     <div class="flex items-center gap-2 ml-auto">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
-      <button class="btn btn-primary btn-sm" onclick={() => (showGoLiveModal = true)} disabled={isLoading}>
-        🚀 Go Live
+      <button class="btn btn-ghost btn-sm" onclick={() => (showGoLiveModal = true)} disabled={isLoading}>
+        Go Live
       </button>
     </div>
   </div>

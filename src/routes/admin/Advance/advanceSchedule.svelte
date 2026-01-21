@@ -335,20 +335,20 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="mb-4 text-2xl font-bold text-primary text-center">
+  <div class="mb-4 text-2xl font-bold text-center">
     <h2>MTM Schedule Table (Advance Template)</h2>
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
-    <button class="btn btn-error btn-sm" onclick={deleteAllAdvanceBookings}>Delete All</button>
-    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
+    <button class="btn btn-ghost btn-sm" onclick={deleteAllAdvanceBookings}>Delete All</button>
+    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
       {getWeekRange(currentWeekStart)}
     </h3>
 
     <div class="flex items-center gap-2 ml-auto">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
-      <button class="btn btn-primary btn-sm" onclick={() => (showGoLiveModal = true)}>🚀 Go Live</button>
+      <button class="btn btn-ghost btn-sm" onclick={() => (showGoLiveModal = true)}>Go Live</button>
     </div>
   </div>
 
