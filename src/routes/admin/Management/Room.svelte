@@ -9,10 +9,13 @@
   let selectedTeacherId = ''
   let editingId = null
   let showModal = false
+  let showCSVModal = false
   let grid
   let teachers = []
   let rooms = []
   let grouprooms = []
+  let csvFile = null
+  let isImporting = false
 
   async function loadTeachers() {
     try {
@@ -39,10 +42,25 @@
     }
   }
 
-  function isTeacherAssigned(teacherId) {
-    if (!teacherId) return false
-    const roomsToCheck = editingId ? rooms.filter((room) => room.id !== editingId) : rooms
-    return roomsToCheck.some((room) => room.teacher === teacherId)
+  // Simplified function to check if teacher is occupied
+  function checkTeacherOccupancy(teacherId) {
+    if (!teacherId) return null
+
+    // Check if teacher is assigned to another room (excluding current room being edited)
+    const roomAssignment = rooms.find((room) => room.teacher === teacherId && room.id !== editingId)
+
+    // Check if teacher is assigned to a grouproom
+    const grouproomAssignment = grouprooms.find((grouproom) => grouproom.teacher === teacherId)
+
+    if (roomAssignment) {
+      return { type: 'room', name: roomAssignment.name }
+    }
+
+    if (grouproomAssignment) {
+      return { type: 'grouproom', name: grouproomAssignment.name }
+    }
+
+    return null
   }
 
   async function loadRoom() {
@@ -98,7 +116,7 @@
           },
           pagination: {
             enabled: true,
-            limit: 10,
+            limit: 50,
           },
           search: true,
           sort: true,
@@ -114,6 +132,16 @@
     if (!name.trim()) {
       toast.error('Room name is required')
       return
+    }
+
+    // Check if teacher is occupied
+    if (selectedTeacherId) {
+      const occupancy = checkTeacherOccupancy(selectedTeacherId)
+      if (occupancy) {
+        const assignment = occupancy.type === 'room' ? 'room' : 'grouproom'
+        toast.error(`Teacher is already assigned to ${assignment}: ${occupancy.name}`)
+        return
+      }
     }
 
     try {
@@ -172,6 +200,109 @@
     showModal = true
   }
 
+  // CSV Functions
+  function downloadTemplate() {
+    const template = `Room Name
+A001
+A002
+A003
+A004
+A005
+B01
+B02
+B03
+B04
+B05
+ST01
+ST02
+ST03
+ST04
+ST05`
+
+    const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = 'rooms_template.csv'
+    link.click()
+  }
+
+  function handleFileSelect(event) {
+    const file = event.target.files[0]
+    if (file) {
+      csvFile = file
+    }
+  }
+
+  async function importCSV() {
+    if (!csvFile) {
+      toast.error('Please select a CSV file first')
+      return
+    }
+
+    isImporting = true
+
+    try {
+      const text = await csvFile.text()
+      const lines = text.split('\n')
+
+      // Get existing room names for duplicate checking
+      const existingRooms = await pb.collection('room').getFullList()
+      const existingRoomNames = new Set(existingRooms.map((room) => room.name.toLowerCase()))
+
+      let importedCount = 0
+      let skippedCount = 0
+
+      // Process each line (skip header if exists)
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim()
+
+        // Skip empty lines and possible header
+        if (!line || line.toLowerCase().includes('room')) continue
+
+        const roomName = line.trim()
+
+        // Skip if room already exists
+        if (existingRoomNames.has(roomName.toLowerCase())) {
+          skippedCount++
+          continue
+        }
+
+        try {
+          // Create new room without teacher
+          await pb.collection('room').create({
+            name: roomName,
+            teacher: null,
+          })
+          importedCount++
+        } catch (err) {
+          console.error(`Error creating room "${roomName}":`, err)
+        }
+      }
+
+      // Reload the rooms list
+      await loadRoom()
+
+      if (importedCount === 0 && skippedCount === 0) {
+        toast.info('No valid rooms found in CSV file')
+      } else {
+        let message = `Imported ${importedCount} new room(s)`
+        if (skippedCount > 0) {
+          message += `, skipped ${skippedCount} duplicate(s)`
+        }
+        toast.success(message)
+      }
+
+      // Close modal and reset
+      showCSVModal = false
+      csvFile = null
+    } catch (err) {
+      console.error('Error importing CSV:', err)
+      toast.error('Failed to import rooms from CSV')
+    } finally {
+      isImporting = false
+    }
+  }
+
   onMount(async () => {
     await loadTeachers()
     await loadGrouprooms()
@@ -188,7 +319,8 @@
           <h1 class="text-2xl font-bold mb-2">Room Management</h1>
         </div>
         <div class="flex gap-3">
-          <button class="btn btn-ghost gap-2" on:click={openAddModal}> Add Room </button>
+          <button class="btn btn-outline gap-2" on:click={() => (showCSVModal = true)}> Import CSV </button>
+          <button class="btn btn-neutral gap-2" on:click={openAddModal}> Add Room </button>
         </div>
       </div>
     </div>
@@ -225,66 +357,104 @@
           <select bind:value={selectedTeacherId} class="select select-bordered w-full">
             <option value="">-- No teacher assigned --</option>
             {#each teachers as teacher}
-              {@const assignedToOtherRoom = rooms.find((room) => room.teacher === teacher.id && room.id !== editingId)}
-              {@const assignedToGrouproom = grouprooms.find((grouproom) => grouproom.teacher === teacher.id)}
-              {@const isAssigned = assignedToOtherRoom || assignedToGrouproom}
-              <option
-                value={teacher.id}
-                disabled={isAssigned}
-                class={isAssigned ? 'text-gray-400 cursor-not-allowed' : ''}
-              >
+              <option value={teacher.id}>
                 {teacher.name}
-                {#if assignedToOtherRoom}
-                  (Already in room: {assignedToOtherRoom.name})
-                {:else if assignedToGrouproom}
-                  (Already in grouproom: {assignedToGrouproom.name})
-                {/if}
               </option>
             {/each}
           </select>
         </div>
-
-        {#if selectedTeacherId && isTeacherAssigned(selectedTeacherId)}
-          {@const assignedRoom = rooms.find((room) => room.teacher === selectedTeacherId && room.id !== editingId)}
-          {@const assignedGrouproom = grouprooms.find((grouproom) => grouproom.teacher === selectedTeacherId)}
-          <div class="alert alert-warning mt-4">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              class="stroke-current shrink-0 w-6 h-6"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
-            <div>
-              <div class="font-semibold">Teacher Already Assigned</div>
-              <div class="text-sm">
-                This teacher is currently assigned to
-                {#if assignedRoom}
-                  <strong>{assignedRoom.name}</strong>
-                {:else if assignedGrouproom}
-                  grouproom <strong>{assignedGrouproom.name}</strong>
-                {:else}
-                  another location
-                {/if}
-              </div>
-            </div>
-          </div>
-        {/if}
       </div>
 
       <div class="modal-action mt-8">
         <button class="btn btn-ghost" on:click={() => (showModal = false)}>Cancel</button>
-        <button class="btn btn-ghost btn-neutral" on:click={saveRoom}>
+        <button class="btn btn-neutral" on:click={saveRoom}>
           {editingId ? 'Update' : 'Add'}
         </button>
       </div>
     </div>
     <div class="modal-backdrop" on:click={() => (showModal = false)}></div>
+  </div>
+{/if}
+
+<!-- CSV Import Modal -->
+{#if showCSVModal}
+  <div class="modal modal-open">
+    <div class="modal-box max-w-md">
+      <h3 class="font-bold text-2xl mb-6 text-base-content">Import Rooms from CSV</h3>
+
+      <div class="space-y-6">
+        <!-- Instructions -->
+        <div class="alert alert-info">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-6 w-6 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <div>
+            <div class="font-semibold">Simple CSV Format</div>
+            <div class="text-sm">One room name per line. Duplicates in database will be skipped.</div>
+          </div>
+        </div>
+
+        <!-- Template Download -->
+        <div class="flex justify-start">
+          <button class="btn btn-outline btn-sm gap-2" on:click={downloadTemplate}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            Download Template
+          </button>
+        </div>
+
+        <!-- File Upload -->
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Select CSV File</span>
+          </label>
+          <input
+            type="file"
+            accept=".csv"
+            on:change={handleFileSelect}
+            class="file-input file-input-bordered w-full"
+            disabled={isImporting}
+          />
+        </div>
+      </div>
+
+      <div class="modal-action mt-8">
+        <button class="btn btn-ghost" on:click={() => !isImporting && (showCSVModal = false)} disabled={isImporting}>
+          Cancel
+        </button>
+        <button class="btn btn-neutral" on:click={importCSV} disabled={!csvFile || isImporting}>
+          {#if isImporting}
+            <span class="loading loading-spinner loading-sm"></span>
+            Importing...
+          {:else}
+            Import Rooms
+          {/if}
+        </button>
+      </div>
+    </div>
+    <div class="modal-backdrop" on:click={() => !isImporting && (showCSVModal = false)}></div>
   </div>
 {/if}
