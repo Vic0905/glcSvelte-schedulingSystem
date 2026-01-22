@@ -18,6 +18,24 @@
   let timeslots = []
   let groupRooms = []
   let isLoading = $state(false)
+  let abortController = null
+  let scrollPositions = $state({ top: 0, left: 0 })
+
+  // Cache for frequently accessed data
+  const cache = {
+    groupSchedules: null,
+    timeslots: null,
+    groupRooms: null,
+    lastFetch: 0,
+    cacheDuration: 30000, // 30 seconds
+    isValid: () => cache.groupSchedules && Date.now() - cache.lastFetch < cache.cacheDuration,
+    invalidate: () => {
+      cache.groupSchedules = null
+      cache.timeslots = null
+      cache.groupRooms = null
+      cache.lastFetch = 0
+    },
+  }
 
   function getWeekStart(date) {
     const d = new Date(date)
@@ -39,14 +57,47 @@
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
-    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+    const opts = { month: 'long', day: 'numeric' }
+    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
   }
 
-  const changeWeek = (weeks) => {
+  function getDateFilter(weekDays) {
+    return weekDays.map((d) => `date = "${d}"`).join(' || ')
+  }
+
+  // Save scroll position before any updates
+  const saveScrollPosition = () => {
+    const wrapper = document.querySelector('#groupGrid .gridjs-wrapper')
+    if (wrapper) {
+      scrollPositions = {
+        top: wrapper.scrollTop,
+        left: wrapper.scrollLeft,
+      }
+    }
+  }
+
+  // Restore scroll position after updates
+  const restoreScrollPosition = () => {
+    requestAnimationFrame(() => {
+      const wrapper = document.querySelector('#groupGrid .gridjs-wrapper')
+      if (wrapper) {
+        wrapper.scrollTop = scrollPositions.top
+        wrapper.scrollLeft = scrollPositions.left
+      }
+    })
+  }
+
+  const changeWeek = async (weeks) => {
+    if (isLoading) return
+    abortController?.abort()
+
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-    loadGroupSchedule()
+
+    // Invalidate cache on week change
+    cache.invalidate()
+    await loadGroupSchedule(true)
   }
 
   const formatCell = (cellData) => {
@@ -59,61 +110,116 @@
     ])
   }
 
-  async function loadGroupSchedule() {
+  async function loadGroupSchedule(forceRefresh = false) {
     if (isLoading) return
+
+    abortController?.abort()
+    abortController = new AbortController()
+    const { signal } = abortController
+
+    // Save scroll position before loading
+    saveScrollPosition()
+
     isLoading = true
 
     try {
       const weekDays = getWeekDays(weekStart)
-      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
+      const dateFilter = getDateFilter(weekDays)
 
-      const [timeslotsData, groupRoomsData, schedules] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        groupRooms.length ? groupRooms : pb.collection('grouproom').getFullList({ sort: 'name' }),
-        pb.collection('groupLessonSchedule').getList(1, 500, {
-          filter: dateFilter,
-          expand: 'teacher,student,subject,grouproom,timeslot',
-        }),
-      ])
+      // Use cache if available and not forcing refresh
+      let schedules, timeslotsData, groupRoomsData
 
-      timeslots = timeslotsData
-      groupRooms = groupRoomsData
+      if (!forceRefresh && cache.isValid()) {
+        schedules = cache.groupSchedules
+        timeslotsData = cache.timeslots
+        groupRoomsData = cache.groupRooms
+      } else {
+        // Parallel fetching with caching
+        const promises = []
 
-      // Build schedule map
-      const scheduleMap = {}
-      for (const s of schedules.items) {
+        if (!timeslots.length || !cache.timeslots) {
+          promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
+        } else {
+          promises.push(Promise.resolve(timeslots))
+        }
+
+        if (!groupRooms.length || !cache.groupRooms) {
+          promises.push(pb.collection('grouproom').getFullList({ sort: 'name' }))
+        } else {
+          promises.push(Promise.resolve(groupRooms))
+        }
+
+        promises.push(
+          pb.collection('groupLessonSchedule').getList(1, 500, {
+            filter: dateFilter,
+            expand: 'teacher,student,subject,grouproom,timeslot',
+            $autoCancel: false,
+          })
+        )
+
+        const results = await Promise.all(promises)
+        if (signal.aborted) return
+
+        // Parse results
+        let idx = 0
+        timeslotsData = results[idx++]
+        groupRoomsData = results[idx++]
+        const scheduleResult = results[idx]
+
+        // Update cache
+        cache.groupSchedules = scheduleResult.items
+        cache.timeslots = timeslotsData
+        cache.groupRooms = groupRoomsData
+        cache.lastFetch = Date.now()
+
+        timeslots = timeslotsData
+        groupRooms = groupRoomsData
+        schedules = scheduleResult.items
+      }
+
+      // Build schedule map using Map for better performance
+      const scheduleMap = new Map()
+      for (const s of schedules) {
         const roomId = s.expand?.grouproom?.id
         const timeslotId = s.expand?.timeslot?.id
         if (!roomId || !timeslotId) continue
 
-        scheduleMap[roomId] ??= {}
+        if (!scheduleMap.has(roomId)) {
+          scheduleMap.set(roomId, new Map())
+        }
+        const roomMap = scheduleMap.get(roomId)
+
         const students = Array.isArray(s.expand?.student) ? s.expand.student : []
-        const existing = scheduleMap[roomId][timeslotId]
+        const existing = roomMap.get(timeslotId)
 
         if (!existing || students.length > (existing.students?.length || 0)) {
-          scheduleMap[roomId][timeslotId] = {
+          roomMap.set(timeslotId, {
             subject: s.expand?.subject,
             teacher: s.expand?.teacher,
             students,
-          }
+          })
         }
       }
 
+      if (signal.aborted) return
+
+      // Build table data efficiently
       const data = groupRooms.flatMap((room, roomIndex) => {
         const maxSlots = Math.min(room.maxstudents || 30, 50)
-        const roomSchedule = scheduleMap[room.id] || {}
+        const roomSchedule = scheduleMap.get(room.id) || new Map()
 
         const rows = Array.from({ length: maxSlots }, (_, i) => {
           const slot = i + 1
-          return [
+          const rowData = [
             room.name,
             `Slot ${slot}`,
             ...timeslots.map((ts) => {
-              const schedule = roomSchedule[ts.id]
+              const schedule = roomSchedule.get(ts.id)
               const student = schedule?.students?.[i]
               return student ? { schedule, studentName: student.englishName || student.name || 'Unknown' } : null
             }),
           ]
+          return rowData
         })
 
         // Add separator row with room name (matching the template style)
@@ -122,7 +228,7 @@
             h(
               'div',
               {
-                class: 'text-xs font-bold text-secondary italic opacity-80',
+                class: 'text-xs font-bold italic opacity-80',
                 innerHTML: `┄┄┄ ${room.name} end ┄┄┄`,
               },
               ''
@@ -139,6 +245,8 @@
         return rows
       })
 
+      if (signal.aborted) return
+
       const columns = [
         { name: 'Group Room', width: '120px' },
         { name: 'S-Slot', width: '120px' },
@@ -146,44 +254,67 @@
       ]
 
       if (groupGrid) {
-        const wrapper = document.querySelector('#groupGrid .gridjs-wrapper')
-        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+        groupGrid
+          .updateConfig({
+            data,
+            style: {
+              table: {
+                'border-collapse': 'collapse',
+                'table-layout': 'fixed', // Prevents layout shifts
+              },
+            },
+          })
+          .forceRender()
 
-        groupGrid.updateConfig({ data }).forceRender()
-
-        requestAnimationFrame(() => {
-          const w = document.querySelector('#groupGrid .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = scroll.top
-            w.scrollLeft = scroll.left
-          }
-        })
+        // Restore scroll position after DOM update
+        restoreScrollPosition()
       } else {
         groupGrid = new Grid({
           columns,
           data,
           search: false,
           sort: false,
-          pagination: false, // Changed from pagination to match template
+          pagination: false,
           className: {
             table: 'w-full border text-xs',
             th: 'bg-base-200 p-2 border text-center',
             td: 'border p-2 text-center align-middle',
           },
-          style: { table: { 'border-collapse': 'collapse' } },
+          style: {
+            table: {
+              'border-collapse': 'collapse',
+              'table-layout': 'fixed',
+            },
+          },
         }).render(document.getElementById('groupGrid'))
       }
     } catch (error) {
+      if (error.name === 'AbortError' || signal.aborted) {
+        console.log('Request cancelled')
+        return
+      }
       console.error('Error loading group schedule:', error)
     } finally {
       isLoading = false
+      abortController = null
     }
   }
 
+  // Handle date input change
+  const handleDateChange = () => {
+    cache.invalidate()
+    loadGroupSchedule(true)
+  }
+
+  // Debounced reload with cache invalidation
   let reloadTimeout
   const debouncedReload = () => {
+    if (isLoading) return
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadGroupSchedule, 150)
+    reloadTimeout = setTimeout(() => {
+      cache.invalidate()
+      loadGroupSchedule(true)
+    }, 150)
   }
 
   onMount(() => {
@@ -191,15 +322,23 @@
     pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
     pb.collection('grouproom').subscribe('*', () => {
       groupRooms = []
+      cache.invalidate()
+      debouncedReload()
+    })
+    pb.collection('timeSlot').subscribe('*', () => {
+      timeslots = []
+      cache.invalidate()
       debouncedReload()
     })
   })
 
   onDestroy(() => {
     clearTimeout(reloadTimeout)
+    abortController?.abort()
     groupGrid?.destroy()
     pb.collection('groupLessonSchedule').unsubscribe()
     pb.collection('grouproom').unsubscribe()
+    pb.collection('timeSlot').unsubscribe()
   })
 </script>
 
@@ -208,7 +347,7 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">GRP Room Slot Table (Current)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
@@ -221,12 +360,12 @@
         id="filterDate"
         bind:value={weekStart}
         class="input input-bordered input-sm w-40"
-        onchange={loadGroupSchedule}
+        onchange={handleDateChange}
         disabled={isLoading}
       />
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-50">{getWeekRangeDisplay(weekStart)}</h3>
+    <h3 class="text-xl font-semibold text-center mr-50">{getWeekRangeDisplay(weekStart)}</h3>
 
     <div class="flex items-center gap-2">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
@@ -235,9 +374,7 @@
   </div>
 
   <div class="p-3 bg-base-200 rounded-lg mb-4">
-    <!-- Updated class to match template -->
     <div class="flex flex-wrap gap-4 text-xs">
-      <!-- Updated class to match template -->
       <div class="flex items-center gap-1">
         <div class="badge badge-primary badge-xs"></div>
         <span>Subject</span>

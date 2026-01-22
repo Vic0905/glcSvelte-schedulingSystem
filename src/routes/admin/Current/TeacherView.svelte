@@ -356,7 +356,7 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">Teacher View Table</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
@@ -374,7 +374,7 @@
       />
     </div>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-50">{getWeekRangeDisplay(weekStart)}</h3>
+    <h3 class="text-xl font-semibold text-center mr-50">{getWeekRangeDisplay(weekStart)}</h3>
 
     <div class="flex items-center gap-2">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>

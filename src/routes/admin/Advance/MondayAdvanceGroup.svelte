@@ -441,14 +441,14 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">Monday GRP Table (Advance Template)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-2">
-      <button class="btn btn-success btn-sm" onclick={copyFromAdvanceBooking} disabled={isLoading}>
+      <button class="btn btn-ghost btn-sm" onclick={copyFromAdvanceBooking} disabled={isLoading}>
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             stroke-linecap="round"
@@ -459,20 +459,20 @@
         </svg>
         Copy from advance
       </button>
-      <button class="btn btn-error btn-sm" onclick={deleteAllAdvanceGroupBookings} disabled={isLoading}>
+      <button class="btn btn-ghost btn-sm" onclick={deleteAllAdvanceGroupBookings} disabled={isLoading}>
         Delete All
       </button>
     </div>
 
-    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
+    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
       {getMondayDisplay(currentMonday)}
     </h3>
 
     <div class="flex items-center gap-2 ml-auto">
       <button class="btn btn-outline btn-sm" onclick={() => changeMonday(-1)} disabled={isLoading}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeMonday(1)} disabled={isLoading}>&rarr;</button>
-      <button class="btn btn-primary btn-sm" onclick={() => (showGoLiveModal = true)} disabled={isLoading}>
-        🚀 Go Live
+      <button class="btn btn-ghoat btn-sm" onclick={() => (showGoLiveModal = true)} disabled={isLoading}>
+        Go Live
       </button>
     </div>
   </div>

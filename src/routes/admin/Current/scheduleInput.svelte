@@ -20,6 +20,7 @@
   let timeslots = []
   let rooms = []
   let isCopying = $state(false)
+  let isDeleting = $state(false)
   let isLoading = $state(false)
   let abortController = null
   let scrollPositions = $state({ top: 0, left: 0 })
@@ -190,6 +191,97 @@
       })
     } finally {
       isCopying = false
+    }
+  }
+
+  // Delete current week schedules using batch API
+  const deleteCurrentWeekSchedules = async () => {
+    try {
+      const weekDays = getWeekDays(weekStart)
+      const weekRangeDisplay = getWeekRangeDisplay(weekStart)
+
+      // First, get all schedule IDs for this week
+      const schedules = await pb.collection('lessonSchedule').getFullList({
+        filter: getDateFilter(weekDays),
+        fields: 'id',
+      })
+
+      if (!schedules.length) {
+        toast.info('No schedules found for this week', { position: 'bottom-right', duration: 3000 })
+        return
+      }
+
+      const scheduleIds = schedules.map((s) => s.id)
+      const scheduleCount = scheduleIds.length
+
+      const confirmMsg = [
+        `Delete ALL schedules for this week?`,
+        `Week: ${weekRangeDisplay}`,
+        `This will delete ${scheduleCount} schedule(s).`,
+        'This action cannot be undone!',
+      ].join('\n\n')
+
+      if (!confirm(confirmMsg)) return
+
+      isDeleting = true
+
+      // Use PocketBase's send method for batch deletion
+      // PocketBase doesn't have a direct batch delete method, so we need to use send
+      const batchSize = 50 // Delete in batches
+      let deletedCount = 0
+      let errors = []
+
+      for (let i = 0; i < scheduleIds.length; i += batchSize) {
+        const batch = scheduleIds.slice(i, i + batchSize)
+
+        // Delete each record in the batch
+        const deletePromises = batch.map((id) =>
+          pb
+            .collection('lessonSchedule')
+            .delete(id)
+            .catch((error) => {
+              errors.push({ id, error: error.message })
+              return null
+            })
+        )
+
+        const results = await Promise.all(deletePromises)
+        deletedCount += results.filter((r) => r !== null).length
+
+        // Optional: show progress for large deletions
+        if (scheduleCount > 100) {
+          console.log(`Deleted ${deletedCount}/${scheduleCount} schedules...`)
+        }
+      }
+
+      if (errors.length > 0) {
+        console.warn(`Some schedules failed to delete:`, errors)
+        toast.warning(`Partially deleted schedules`, {
+          position: 'bottom-right',
+          duration: 5000,
+          description: `Deleted ${deletedCount}/${scheduleCount} schedules. ${errors.length} failed.`,
+        })
+      } else {
+        toast.success('Schedules deleted successfully!', {
+          position: 'bottom-right',
+          duration: 3000,
+          description: `${deletedCount} schedule(s) deleted for ${weekRangeDisplay}`,
+        })
+      }
+
+      // Refresh the grid
+      saveScrollPosition()
+      cache.schedules = null
+      await loadSchedules(true)
+    } catch (error) {
+      console.error('Error deleting schedules:', error)
+      toast.error('Failed to delete schedules', {
+        position: 'bottom-right',
+        duration: 5000,
+        description: error.message,
+      })
+    } finally {
+      isDeleting = false
     }
   }
 
@@ -454,30 +546,53 @@
 </svelte:head>
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">MTM Schedule Table (Current)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
-    <button class="btn btn-success btn-sm flex items-center gap-2" onclick={copyToAdvanceBooking} disabled={isCopying}>
-      {#if isCopying}
-        <span class="loading loading-spinner loading-sm"></span>
-        Copying...
-      {:else}
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-          />
-        </svg>
-        Copy to Advance Booking
-      {/if}
-    </button>
+    <div class="flex gap-2">
+      <button class="btn btn-ghost btn-sm flex items-center gap-2" onclick={copyToAdvanceBooking} disabled={isCopying}>
+        {#if isCopying}
+          <span class="loading loading-spinner loading-sm"></span>
+          Copying...
+        {:else}
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+            />
+          </svg>
+          Copy to Advance Booking
+        {/if}
+      </button>
 
-    <h3 class="text-xl font-semibold text-primary text-center mr-20">{getWeekRangeDisplay(weekStart)}</h3>
+      <!-- <button
+        class="btn btn-error btn-outline btn-sm flex items-center gap-2"
+        onclick={deleteCurrentWeekSchedules}
+        disabled={isDeleting || isLoading}
+      >
+        {#if isDeleting}
+          <span class="loading loading-spinner loading-sm"></span>
+          Deleting...
+        {:else}
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+            />
+          </svg>
+          Delete This Week
+        {/if}
+      </button> -->
+    </div>
+
+    <h3 class="text-xl font-semibold text-center mr-20">{getWeekRangeDisplay(weekStart)}</h3>
 
     <div class="flex items-center gap-2">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>

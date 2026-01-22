@@ -13,36 +13,33 @@
     #mondayGroupGrid th:nth-child(2) { z-index: 25; }
   `
 
-  let weekStart = $state(getMondayWeekStart(new Date()))
   let mondayGroupGrid = null
   let timeslots = []
   let groupRooms = []
   let isLoading = $state(false)
 
-  function getMondayWeekStart(date) {
-    const d = new Date(date)
-    // Get Monday of the current week
-    const day = d.getDay()
-    const diff = day === 0 ? -6 : 1 - day // If Sunday, go back 6 days, otherwise go to Monday
-    d.setDate(d.getDate() + diff)
-    return d.toISOString().split('T')[0]
-  }
+  // Get Monday of current week (always shows Monday regardless of today's day)
+  function getMondayDateDisplay() {
+    const today = new Date()
+    const day = today.getDay() // 0 = Sunday, 1 = Monday, etc.
 
-  function getWeekDays(startDate) {
-    // Return only Monday (single day)
-    const start = new Date(startDate)
-    return [start.toISOString().split('T')[0]]
-  }
+    // Calculate difference to get to Monday (Monday is 1)
+    // If today is Sunday (0), go back 6 days. If today is Monday (1), no change.
+    // If today is Tuesday (2), go back 1 day, etc.
+    const diff = day === 0 ? 6 : day - 1
 
-  function getWeekRangeDisplay(startDate) {
-    const start = new Date(startDate)
-    return `Monday, ${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-  }
+    const monday = new Date(today)
+    monday.setDate(today.getDate() - diff)
 
-  const changeWeek = (weeks) => {
-    const d = new Date(weekStart)
-    d.setDate(d.getDate() + weeks * 7)
-    weekStart = getMondayWeekStart(d)
+    return {
+      display: monday.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+      dateObj: monday,
+    }
   }
 
   const formatCell = (cellData) => {
@@ -56,8 +53,8 @@
 
     return h('div', { class: 'text-xs flex flex-col gap-1 items-center' }, [
       h('span', { class: 'badge badge-primary badge-xs p-3' }, schedule.subject?.name ?? 'No Subject'),
-      h('span', { class: 'badge badge-info badge-xs' }, schedule.teacher?.name ?? 'No Teacher'),
       h('span', { class: 'badge badge-neutral badge-xs' }, studentName),
+      h('span', { class: 'badge badge-error badge-xs' }, schedule.teacher?.name ?? 'No Teacher'),
     ])
   }
 
@@ -66,8 +63,7 @@
     isLoading = true
 
     try {
-      const weekDays = getWeekDays(weekStart)
-      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
+      const mondayDate = getMondayDateDisplay()
 
       const [timeslotsData, groupRoomsData, bookings] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
@@ -124,7 +120,14 @@
         // Add a separator after each room except the last
         if (roomIndex < groupRooms.length - 1) {
           rows.push([
-            '',
+            h(
+              'div',
+              {
+                class: 'text-xs font-bold italic opacity-80',
+                innerHTML: `┄┄┄ ${room.name} end ┄┄┄`,
+              },
+              ''
+            ),
             '',
             ...timeslots.map(() =>
               h('div', {
@@ -162,7 +165,7 @@
           data,
           search: false,
           sort: false,
-          pagination: { enabled: true, limit: 100, summary: false },
+          pagination: false,
           className: {
             table: 'w-full border text-xs',
             th: 'bg-base-200 p-2 border text-center',
@@ -207,29 +210,14 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">Monday GRP Room Slot Table (Advance Template)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
-  <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
-      <label for="filterDate" class="text-sm font-semibold">Week Starting (Monday):</label>
-      <input
-        type="date"
-        id="filterDate"
-        bind:value={weekStart}
-        class="input input-bordered input-sm w-40"
-        disabled={isLoading}
-      />
-    </div>
-
-    <h3 class="text-xl font-semibold text-primary text-center mr-50">{getWeekRangeDisplay(weekStart)}</h3>
-
-    <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
-    </div>
+  <div class="mb-6">
+    <!-- Simplified display showing Monday of current week -->
+    <h3 class="text-xl font-semibold text-center">{getMondayDateDisplay().display}</h3>
   </div>
 
   <div class="p-3 bg-base-200 rounded-lg mb-4">
@@ -239,12 +227,12 @@
         <span>Subject</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-info badge-xs"></div>
-        <span>Teacher</span>
+        <div class="badge badge-neutral badge-xs"></div>
+        <span>Student</span>
       </div>
       <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
-        <span>Student Names</span>
+        <div class="badge badge-error badge-xs"></div>
+        <span>Teacher</span>
       </div>
     </div>
   </div>
