@@ -44,53 +44,59 @@
         weekDates.push(date.toISOString().split('T')[0])
       }
 
-      // Step 1: Load advance bookings
-      loadingProgress.currentStep = 'Loading advance bookings...'
+      // Step 1: Load group bookings from groupAdvanceBooking
+      loadingProgress.currentStep = 'Loading group bookings...'
       await new Promise((resolve) => setTimeout(resolve, 500))
 
-      const advanceBookings = await pb.collection('advanceBooking').getFullList({
-        filter: `teacher != "" && student != "" && subject != ""`,
-        expand: 'teacher,student,subject,room,timeslot',
+      const groupBookings = await pb.collection('groupAdvanceBooking').getFullList({
+        filter: `teacher != "" && subject != ""`,
+        expand: 'teacher,student,subject,grouproom,timeslot',
       })
 
-      if (advanceBookings.length === 0) {
+      if (groupBookings.length === 0) {
         loadingProgress.show = false
-        toast.error('No complete bookings found to publish')
+        toast.error('No complete group bookings found to publish')
         return
       }
 
-      loadingProgress.totalBookings = advanceBookings.length
-      loadingProgress.totalSchedules = advanceBookings.length * weekDates.length
+      loadingProgress.totalBookings = groupBookings.length
+      loadingProgress.totalSchedules = groupBookings.length * weekDates.length
       loadingProgress.currentStep = 'Checking for conflicts...'
 
-      // Step 2: Fetch all existing schedules for the week at once
+      // Step 2: Fetch all existing GROUP schedules for the week at once
       const dateFilters = weekDates.map((d) => `date = "${d}"`).join(' || ')
-      const existingSchedules = await pb.collection('lessonSchedule').getFullList({
+      const existingSchedules = await pb.collection('groupLessonSchedule').getFullList({
         filter: dateFilters,
       })
 
-      // Create a Set for quick conflict checking
-      const existingScheduleKeys = new Set(existingSchedules.map((s) => `${s.date}_${s.room}_${s.timeslot}`))
-      const studentConflicts = new Set(existingSchedules.map((s) => `${s.date}_${s.student}_${s.timeslot}`))
+      // Create conflict checking sets
+      const existingScheduleKeys = new Set(existingSchedules.map((s) => `${s.date}_${s.grouproom}_${s.timeslot}`))
       const teacherConflicts = new Set(existingSchedules.map((s) => `${s.date}_${s.teacher}_${s.timeslot}`))
-      const roomConflicts = new Set(existingSchedules.map((s) => `${s.date}_${s.room}_${s.timeslot}`))
+
+      // For student conflicts, we need to check each student in the array
+      const studentConflicts = new Set()
+      existingSchedules.forEach((schedule) => {
+        if (schedule.student && Array.isArray(schedule.student)) {
+          schedule.student.forEach((studentId) => {
+            studentConflicts.add(`${schedule.date}_${studentId}_${schedule.timeslot}`)
+          })
+        }
+      })
 
       // Step 3: Build batch of schedules to create
       const schedulesToCreate = []
       let skippedCount = 0
       const conflicts = []
 
-      for (let bookingIndex = 0; bookingIndex < advanceBookings.length; bookingIndex++) {
-        const booking = advanceBookings[bookingIndex]
+      for (let bookingIndex = 0; bookingIndex < groupBookings.length; bookingIndex++) {
+        const booking = groupBookings[bookingIndex]
 
-        loadingProgress.currentBooking = `${booking.expand?.teacher?.name} - ${booking.expand?.student?.name} (${booking.expand?.subject?.name})`
+        loadingProgress.currentBooking = `${booking.expand?.teacher?.name} - Group (${booking.expand?.subject?.name})`
         loadingProgress.processedBookings = bookingIndex + 1
 
         for (const date of weekDates) {
-          const scheduleKey = `${date}_${booking.room}_${booking.timeslot}`
-          const studentKey = `${date}_${booking.student}_${booking.timeslot}`
+          const scheduleKey = `${date}_${booking.grouproom}_${booking.timeslot}`
           const teacherKey = `${date}_${booking.teacher}_${booking.timeslot}`
-          const roomKey = `${date}_${booking.room}_${booking.timeslot}`
 
           // Check for conflicts
           if (existingScheduleKeys.has(scheduleKey)) {
@@ -99,15 +105,23 @@
           }
 
           let hasConflict = false
-          if (studentConflicts.has(studentKey)) {
-            conflicts.push(`${date} - Student conflict`)
+
+          // Check teacher conflict
+          if (teacherConflicts.has(teacherKey)) {
+            conflicts.push(`${date} - Teacher ${booking.expand?.teacher?.name} already booked`)
             hasConflict = true
-          } else if (teacherConflicts.has(teacherKey)) {
-            conflicts.push(`${date} - Teacher conflict`)
-            hasConflict = true
-          } else if (roomConflicts.has(roomKey)) {
-            conflicts.push(`${date} - Room conflict`)
-            hasConflict = true
+          }
+
+          // Check each student for conflicts (FIXED: no else if, check all)
+          if (booking.student && Array.isArray(booking.student)) {
+            for (const studentId of booking.student) {
+              const studentKey = `${date}_${studentId}_${booking.timeslot}`
+              if (studentConflicts.has(studentKey)) {
+                conflicts.push(`${date} - Student conflict`)
+                hasConflict = true
+                break // No need to check other students if one has conflict
+              }
+            }
           }
 
           if (hasConflict) {
@@ -117,20 +131,20 @@
             continue
           }
 
-          // Add to batch
+          // Add to batch - note the field names match groupLessonSchedule
           schedulesToCreate.push({
             date: date,
             teacher: booking.teacher,
-            student: booking.student,
+            student: booking.student || [], // Array of student IDs
             subject: booking.subject,
-            room: booking.room,
+            grouproom: booking.grouproom, // Note: field is grouproom, not room
             timeslot: booking.timeslot,
             status: 'scheduled',
           })
         }
       }
 
-      loadingProgress.currentStep = `Creating ${schedulesToCreate.length} schedules...`
+      loadingProgress.currentStep = `Creating ${schedulesToCreate.length} group schedules...`
 
       // Step 4: Use PocketBase Batch API (50 operations per batch max)
       const BATCH_SIZE = 50
@@ -144,9 +158,9 @@
           // Create a new batch instance
           const batch = pb.createBatch()
 
-          // Add all creates to the batch
+          // Add all creates to the batch - writing to groupLessonSchedule
           chunk.forEach((schedule) => {
-            batch.collection('lessonSchedule').create(schedule)
+            batch.collection('groupLessonSchedule').create(schedule)
           })
 
           // Execute the batch - sends all operations in ONE HTTP request
@@ -154,7 +168,7 @@
 
           createdCount += chunk.length
           loadingProgress.createdSchedules = createdCount
-          loadingProgress.currentStep = `Created ${createdCount} / ${schedulesToCreate.length} schedules...`
+          loadingProgress.currentStep = `Created ${createdCount} / ${schedulesToCreate.length} group schedules...`
         } catch (error) {
           console.error('Batch create failed:', error)
           failedBatches++
@@ -163,10 +177,10 @@
           console.warn('Falling back to individual creates for failed batch')
           for (const schedule of chunk) {
             try {
-              await pb.collection('lessonSchedule').create(schedule)
+              await pb.collection('groupLessonSchedule').create(schedule)
               createdCount++
             } catch (err) {
-              console.error('Failed to create schedule:', err)
+              console.error('Failed to create group schedule:', err)
             }
           }
           loadingProgress.createdSchedules = createdCount
@@ -188,14 +202,14 @@
 
       const conflictSummary = conflicts.length > 0 ? ` ${conflicts.length} conflicts were skipped.` : ''
       toast.success(
-        `Published ${createdCount} schedules to live system. ${skippedCount > 0 ? `Skipped ${skippedCount} existing/conflicting schedules.` : ''}${conflictSummary}`
+        `Published ${createdCount} GROUP schedules to live system. ${skippedCount > 0 ? `Skipped ${skippedCount} existing/conflicting schedules.` : ''}${conflictSummary}`
       )
 
       closeModal()
       loadingProgress.show = false
     } catch (error) {
-      console.error('Error going live:', error)
-      toast.error('Failed to publish schedules')
+      console.error('Error going live with groups:', error)
+      toast.error('Failed to publish group schedules')
       loadingProgress.show = false
     } finally {
       isGoingLive = false
@@ -211,13 +225,13 @@
 {#if loadingProgress.show}
   <div class="modal modal-open" style="z-index: 9999;">
     <div class="modal-box max-w-2xl">
-      <h3 class="font-bold text-lg mb-4">🚀 Publishing Schedules to Live System</h3>
+      <h3 class="font-bold text-lg mb-4">🚀 Publishing GROUP Schedules to Live System</h3>
 
       <!-- Overall Progress -->
       <div class="mb-6">
         <div class="flex justify-between text-sm mb-2">
           <span>Overall Progress</span>
-          <span>{loadingProgress.createdSchedules} / {loadingProgress.totalSchedules} schedules created</span>
+          <span>{loadingProgress.createdSchedules} / {loadingProgress.totalSchedules} group schedules created</span>
         </div>
         <progress
           class="progress progress-primary w-full"
@@ -229,7 +243,7 @@
       <!-- Booking Progress -->
       <div class="mb-6">
         <div class="flex justify-between text-sm mb-2">
-          <span>Processing Bookings</span>
+          <span>Processing Group Bookings</span>
           <span>{loadingProgress.processedBookings} / {loadingProgress.totalBookings} bookings</span>
         </div>
         <progress
@@ -243,8 +257,8 @@
       <div class="bg-base-200 p-4 rounded-lg mb-4">
         <div class="text-sm font-semibold mb-2">Current Status:</div>
         <div class="text-sm">{loadingProgress.currentStep}</div>
-        {#if loadingProgress.currentDate}
-          <div class="text-xs text-gray-600 mt-1">Date: {loadingProgress.currentDate}</div>
+        {#if loadingProgress.currentBooking}
+          <div class="text-xs text-gray-600 mt-1">Processing: {loadingProgress.currentBooking}</div>
         {/if}
       </div>
 
@@ -290,13 +304,13 @@
 {#if show}
   <div class="modal modal-open">
     <div class="modal-box">
-      <h3 class="font-bold text-lg">Publish Week to Live Schedule</h3>
+      <h3 class="font-bold text-lg">Publish Group Week to Live Schedule</h3>
       <p class="py-4">
-        Publish all complete bookings for <strong>{getWeekRange(currentWeekStart)}</strong>?
+        Publish all complete GROUP bookings for <strong>{getWeekRange(currentWeekStart)}</strong>?
       </p>
       <div class="alert alert-warning">
         <span
-          >⚠️ This will create Tuesday to Friday schedules for each template and make them visible to students and
+          >⚠️ This will create Tuesday to Friday schedules for each group template and make them visible to students and
           teachers</span
         >
       </div>
@@ -306,7 +320,7 @@
           {#if isGoingLive}
             <span class="loading loading-spinner loading-sm"></span>
           {/if}
-          {isGoingLive ? 'Publishing...' : '🚀 Publish'}
+          {isGoingLive ? 'Publishing Groups...' : '🚀 Publish Groups'}
         </button>
       </div>
     </div>

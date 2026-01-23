@@ -423,7 +423,6 @@
   onSave={() => {
     saveScrollPosition()
     cache.bookings = null // Invalidate cache
-    loadAdvanceGroupBookings(true)
   }}
 />
 <GroupGoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} />
