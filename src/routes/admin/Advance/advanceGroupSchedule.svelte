@@ -7,12 +7,52 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
 
   const stickyStyles = `
-    #advance-group-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #advance-group-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-group-grid th:nth-child(1), #advance-group-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-group-grid th:nth-child(1) { z-index: 25; }
-    #advance-group-grid th:nth-child(2), #advance-group-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-group-grid th:nth-child(2) { z-index: 25; }
+    #advance-group-grid .gridjs-wrapper { 
+      max-height: 700px; 
+      overflow: auto;
+      scroll-behavior: auto !important; 
+    }
+    #advance-group grid table {
+      border-collapse; collapse !important;  
+    }
+
+    #advance-group-grid th { 
+      position: sticky; 
+      top: 0; 
+      z-index: 20; 
+      background: var(--b2, #fafcff);
+      border-bottom 2px solid #ddd !important;
+      outline: 1px solid #ddd;
+      outline-offset: -1px; 
+    }
+
+    #advance-group-grid th:nth-child(1), 
+    #advance-group-grid td:nth-child(1) { 
+      position: sticky; 
+      left: 0; 
+      z-index: 15; 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px; 
+    }
+
+    #advance-group-grid th:nth-child(1) { 
+      z-index: 25; 
+    }
+
+    #advance-group-grid th:nth-child(2), 
+    #advance-group-grid td:nth-child(2) { 
+      position: sticky; 
+      left: 120px; 
+      z-index: 15; 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px;
+    }
+
+    #advance-group-grid th:nth-child(2) { 
+      z-index: 25; 
+    }
   `
 
   let currentWeekStart = $state('')

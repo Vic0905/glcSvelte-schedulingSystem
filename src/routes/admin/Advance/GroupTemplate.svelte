@@ -6,12 +6,43 @@
   import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
-    #groupGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #groupGrid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
-    #groupGrid th:nth-child(1), #groupGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #groupGrid th:nth-child(1) { z-index: 25; }
-    #groupGrid th:nth-child(2), #groupGrid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #groupGrid th:nth-child(2) { z-index: 25; }
+    #groupGrid .gridjs-wrapper { 
+      max-height: 700px; 
+      overflow: auto; 
+    }
+
+    #groupGrid th { 
+      position: sticky; 
+      top: 0; 
+      z-index: 20; 
+      box-shadow: 
+      inset -1px 0 0 #ddd; 
+    }
+    #groupGrid th:nth-child(1), 
+    #groupGrid td:nth-child(1) { 
+      position: sticky; 
+      left: 0; 
+      z-index: 15; 
+      box-shadow: 
+      inset -1px 0 0 #ddd; 
+    }
+
+    #groupGrid th:nth-child(1) { 
+      z-index: 25; 
+    }
+
+    #groupGrid th:nth-child(2), 
+    #groupGrid td:nth-child(2) { 
+      position: sticky; 
+      left: 120px; 
+      z-index: 10; 
+      box-shadow: 
+      inset -1px 0 0 #ddd; 
+    }
+
+    #groupGrid th:nth-child(2) { 
+      z-index: 25; 
+    }
   `
 
   let groupGrid = null
