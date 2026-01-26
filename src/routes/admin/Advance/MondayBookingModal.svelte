@@ -21,8 +21,8 @@
   const loadAllData = async () => {
     try {
       const [teachersData, studentsData, subjectsData, timeslotsData] = await Promise.all([
-        pb.collection('teacher').getFullList({ sort: 'name', fields: 'id,name,status' }),
-        pb.collection('student').getFullList({ sort: 'englishName', fields: 'id,englishName,status' }),
+        pb.collection('teacher').getFullList({ sort: 'name', fields: 'id,name,status' }), // KEEP status field
+        pb.collection('student').getFullList({ sort: 'englishName', fields: 'id,englishName,status' }), // KEEP status field
         pb.collection('subject').getFullList({ sort: 'name', fields: 'id,name' }),
         pb.collection('timeSlot').getFullList({ sort: 'start', fields: 'id,start,end' }),
       ])
@@ -43,39 +43,32 @@
     if (!teacher?.id || !student?.id || !timeslot?.id) return true // No conflicts yet
 
     try {
-      // 1. Check Monday advance bookings
-      let mondayFilter = `timeslot = "${timeslot.id}" && (teacher = "${teacher.id}" || student = "${student.id}")`
+      // 1. Check Monday individual advance bookings
+      let mondayIndividualFilter = `timeslot = "${timeslot.id}" && (teacher = "${teacher.id}" || student = "${student.id}")`
 
       if (mondayBooking.mode === 'edit' && mondayBooking.id) {
-        mondayFilter += ` && id != "${mondayBooking.id}"`
+        mondayIndividualFilter += ` && id != "${mondayBooking.id}"`
       }
 
-      const [mondayBookings, mondayGroupBookings, studentRecords] = await Promise.all([
+      const [mondayIndividualBookings, mondayGroupBookings, studentRecords] = await Promise.all([
         pb.collection('mondayAdvanceBooking').getFullList({
-          filter: mondayFilter,
+          filter: mondayIndividualFilter,
           expand: 'teacher,student',
           $autoCancel: false,
         }),
 
         // 2. Check Monday group advance bookings
-        pb
-          .collection('mondayAdvanceGroupBooking')
-          .getFullList({
-            filter: `timeslot = "${timeslot.id}"`,
-            expand: 'teacher',
-            $autoCancel: false,
-          })
-          .catch(() => []), // Handle case if collection doesn't exist or error
+        pb.collection('mondayAdvanceGroupBooking').getFullList({
+          filter: `timeslot = "${timeslot.id}"`,
+          expand: 'teacher,student',
+          $autoCancel: false,
+        }),
 
         // 3. Get student names for reference
-        pb
-          .collection('student')
-          .getFullList({
-            filter: 'id != ""', // Get all students
-            fields: 'id,englishName',
-            $autoCancel: false,
-          })
-          .catch(() => []),
+        pb.collection('student').getFullList({
+          fields: 'id,englishName',
+          $autoCancel: false,
+        }),
       ])
 
       // Create a map of student IDs to names for quick lookup
@@ -83,14 +76,10 @@
       studentRecords.forEach((s) => studentMap.set(s.id, s.englishName))
 
       // Combine both types of Monday bookings for conflict checking
-      const allMondayBookings = [...mondayBookings, ...mondayGroupBookings]
+      const allMondayBookings = [...mondayIndividualBookings, ...mondayGroupBookings]
 
       // Check for teacher conflicts in Monday bookings
       const teacherConflict = allMondayBookings.find((b) => {
-        // Check based on collection type or structure
-        if (b.collectionName === 'mondayAdvanceGroupBooking' || b.collectionId === 'mondayAdvanceGroupBooking') {
-          return b.teacher === teacher.id
-        }
         return b.teacher === teacher.id
       })
 
@@ -100,19 +89,16 @@
           teachers.find((t) => t.id === teacherConflict.teacher)?.name ||
           'Unknown Teacher'
 
-        // Determine if it's a group lesson
-        const isGroupLesson =
-          teacherConflict.collectionName === 'mondayAdvanceGroupBooking' ||
-          teacherConflict.collectionId === 'mondayAdvanceGroupBooking' ||
-          Array.isArray(teacherConflict.student)
+        // Determine if it's a group booking
+        const isGroupBooking = Array.isArray(teacherConflict.student)
 
-        if (isGroupLesson) {
+        if (isGroupBooking) {
           const studentCount = Array.isArray(teacherConflict.student) ? teacherConflict.student.length : 0
           toast.error(
             `${teacherName} is already teaching a Monday group lesson (${studentCount} students) for this timeslot`
           )
         } else {
-          // For individual Monday booking
+          // Individual booking conflict
           const studentId = teacherConflict.student
           const studentName =
             teacherConflict.expand?.student?.englishName || studentMap.get(studentId) || 'Unknown Student'
@@ -123,30 +109,28 @@
 
       // Check for student conflicts in Monday bookings
       const studentConflict = allMondayBookings.find((b) => {
-        if (b.collectionName === 'mondayAdvanceGroupBooking' || b.collectionId === 'mondayAdvanceGroupBooking') {
-          // For group bookings, student is an array
-          return Array.isArray(b.student) && b.student.includes(student.id)
-        }
-        // For individual bookings
-        return b.student === student.id
+        // Check for individual booking conflict
+        if (b.student === student.id) return true
+
+        // Check for group booking conflict
+        if (Array.isArray(b.student) && b.student.includes(student.id)) return true
+
+        return false
       })
 
       if (studentConflict) {
         const currentStudentName = mondayBooking.student?.englishName || studentMap.get(student.id) || 'Unknown Student'
 
-        // Determine if it's a group lesson
-        const isGroupLesson =
-          studentConflict.collectionName === 'mondayAdvanceGroupBooking' ||
-          studentConflict.collectionId === 'mondayAdvanceGroupBooking' ||
-          Array.isArray(studentConflict.student)
+        // Check if it's a group booking
+        const isGroupBooking = Array.isArray(studentConflict.student)
 
-        if (isGroupLesson) {
+        if (isGroupBooking) {
           const teacherId = studentConflict.teacher
           const teacherName =
             studentConflict.expand?.teacher?.name || teachers.find((t) => t.id === teacherId)?.name || 'Unknown Teacher'
           toast.error(`${currentStudentName} is already in a Monday group lesson with ${teacherName} for this timeslot`)
         } else {
-          // For individual Monday booking
+          // Individual booking conflict
           const teacherId = studentConflict.teacher
           const teacherName =
             studentConflict.expand?.teacher?.name || teachers.find((t) => t.id === teacherId)?.name || 'Unknown Teacher'
