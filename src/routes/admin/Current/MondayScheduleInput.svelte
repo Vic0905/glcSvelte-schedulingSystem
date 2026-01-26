@@ -24,12 +24,27 @@
   let isLoading = $state(false)
   let scrollPositions = $state({ top: 0, left: 0 })
 
+  // ADDED: AbortController for request cancellation
+  let abortController = null
+
   // Cache for better performance
   const cache = {
     schedules: null,
     lastFetch: 0,
     cacheDuration: 30000, // 30 seconds
     isValid: () => cache.schedules && Date.now() - cache.lastFetch < cache.cacheDuration,
+  }
+
+  // ADDED: Cache for reference data (timeslots, rooms)
+  let referenceDataCache = {
+    timeslots: null,
+    rooms: null,
+    lastFetch: 0,
+    cacheDuration: 5 * 60 * 1000, // 5 minutes
+    isValid: () =>
+      referenceDataCache.timeslots &&
+      referenceDataCache.rooms &&
+      Date.now() - referenceDataCache.lastFetch < referenceDataCache.cacheDuration,
   }
 
   let mondaySchedule = $state({
@@ -67,6 +82,10 @@
 
   const changeWeek = async (weeks) => {
     if (isLoading) return
+
+    // ADDED: Cancel any ongoing request
+    abortController?.abort()
+
     const monday = new Date(currentMonday)
     monday.setDate(monday.getDate() + weeks * 7)
     currentMonday = monday.toISOString().split('T')[0]
@@ -106,16 +125,11 @@
         .getFullList()
         .catch(() => [])
 
-      // Filter out existing bookings
+      // Filter out existing bookings using Set for O(1) lookup
+      const existingSet = new Set(existingBookings.map((b) => `${b.timeslot}-${b.teacher}-${b.student}-${b.room}`))
+
       const schedulesToCopy = uniqueSchedules.filter(
-        (schedule) =>
-          !existingBookings.some(
-            (booking) =>
-              booking.timeslot === schedule.timeslot &&
-              booking.teacher === schedule.teacher &&
-              booking.student === schedule.student &&
-              booking.room === schedule.room
-          )
+        (schedule) => !existingSet.has(`${schedule.timeslot}-${schedule.teacher}-${schedule.student}-${schedule.room}`)
       )
 
       if (schedulesToCopy.length === 0) {
@@ -139,9 +153,11 @@
 
       // Batch create for better performance
       const batchSize = 10
+      let createdCount = 0
+
       for (let i = 0; i < schedulesToCopy.length; i += batchSize) {
         const batch = schedulesToCopy.slice(i, i + batchSize)
-        await Promise.all(
+        const results = await Promise.allSettled(
           batch.map((schedule) =>
             pb.collection('mondayAdvanceBooking').create({
               timeslot: schedule.timeslot,
@@ -153,12 +169,15 @@
             })
           )
         )
+
+        // Count successful creations
+        createdCount += results.filter((r) => r.status === 'fulfilled').length
       }
 
       toast.success('Monday schedules copied successfully!', {
         position: 'bottom-right',
         duration: 3000,
-        description: `${schedulesToCopy.length} unique record(s) copied to Monday Advance Booking`,
+        description: `${createdCount}/${schedulesToCopy.length} record(s) copied to Monday Advance Booking`,
       })
     } catch (error) {
       console.error('Error copying to Monday advance booking:', error)
@@ -176,11 +195,13 @@
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
 
     if (Array.isArray(cell)) {
-      // Multiple schedules in this cell
-      return h(
-        'div',
-        { class: 'flex flex-col gap-1 text-xs items-center' },
-        cell.map((schedule) => {
+      // Multiple schedules in this cell - limit display for performance
+      const displayCount = Math.min(cell.length, 3) // Show max 3
+      const hasMore = cell.length > 3
+
+      return h('div', { class: 'flex flex-col gap-1 text-xs items-center' }, [
+        // Show first few schedules
+        ...cell.slice(0, displayCount).map((schedule) => {
           if (schedule.hiddenDetails) {
             return h('div', { class: 'badge badge-success badge-sm mb-1' }, 'Scheduled')
           }
@@ -188,10 +209,23 @@
             h('div', { class: 'badge badge-primary badge-xs p-2 mb-1' }, schedule.subject.name),
             h('div', { class: 'badge badge-neutral badge-xs mb-1' }, schedule.student.englishName),
             h('div', { class: 'badge badge-error badge-xs mb-1' }, schedule.teacher.name),
-            // h('div', { class: 'badge badge-error badge-xs' }, schedule.room.name),
           ])
-        })
-      )
+        }),
+
+        // Show "more" indicator if needed
+        ...(hasMore
+          ? [
+              h(
+                'div',
+                {
+                  class: 'badge badge-warning badge-sm',
+                  title: `${cell.length - displayCount} more schedules`,
+                },
+                `+${cell.length - displayCount}`
+              ),
+            ]
+          : []),
+      ])
     }
 
     if (cell.hiddenDetails) {
@@ -203,7 +237,6 @@
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name),
       h('div', { class: 'badge badge-neutral badge-xs' }, cell.student.englishName),
       h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name),
-      // h('div', { class: 'badge badge-error badge-xs' }, cell.room.name),
     ])
   }
 
@@ -229,8 +262,40 @@
     })
   }
 
+  // Load reference data (timeslots, rooms) with caching
+  const loadReferenceData = async (force = false) => {
+    if (!force && referenceDataCache.isValid()) {
+      timeslots = referenceDataCache.timeslots
+      rooms = referenceDataCache.rooms
+      return
+    }
+
+    try {
+      const [timeslotsData, roomsData] = await Promise.all([
+        pb.collection('timeSlot').getFullList({ sort: 'start' }),
+        pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
+      ])
+
+      timeslots = timeslotsData
+      rooms = roomsData
+
+      // Update cache
+      referenceDataCache.timeslots = timeslotsData
+      referenceDataCache.rooms = roomsData
+      referenceDataCache.lastFetch = Date.now()
+    } catch (error) {
+      console.error('Error loading reference data:', error)
+      throw error
+    }
+  }
+
   async function loadMondaySchedules(forceRefresh = false) {
     if (isLoading) return
+
+    // ADDED: Cancel any ongoing request
+    abortController?.abort()
+    abortController = new AbortController()
+    const { signal } = abortController
 
     // Save scroll position before loading
     saveScrollPosition()
@@ -238,32 +303,31 @@
     isLoading = true
 
     try {
+      // Load reference data if needed
+      if (timeslots.length === 0 || rooms.length === 0 || forceRefresh) {
+        await loadReferenceData(forceRefresh)
+        if (signal.aborted) return
+      }
+
       // Use cache if available and not forcing refresh
       let schedules
       if (!forceRefresh && cache.isValid()) {
         schedules = cache.schedules
       } else {
-        // Parallel fetching
-        const [schedulesData, timeslotsData, roomsData] = await Promise.all([
-          pb.collection('mondayLessonSchedule').getFullList({
-            // Changed to getFullList to get ALL records
-            filter: `date = "${currentMonday}"`,
-            expand: 'teacher,student,subject,room,timeslot',
-          }),
-          timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-          rooms.length ? rooms : pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }),
-        ])
+        // Fetch schedules with abort signal
+        schedules = await pb.collection('mondayLessonSchedule').getFullList({
+          filter: `date = "${currentMonday}"`,
+          expand: 'teacher,student,subject,room,timeslot',
+        })
 
-        schedules = schedulesData
-        if (!timeslots.length) timeslots = timeslotsData
-        if (!rooms.length) rooms = roomsData
-
-        console.log(`Loaded ${schedules.length} schedules for ${currentMonday}`)
+        if (signal.aborted) return
 
         // Update cache
         cache.schedules = schedules
         cache.lastFetch = Date.now()
       }
+
+      console.log(`Loaded ${schedules.length} schedules for ${currentMonday}`)
 
       // Build schedule map using Map for better performance
       const scheduleMap = new Map()
@@ -344,6 +408,8 @@
         return row
       })
 
+      if (signal.aborted) return
+
       const columns = [
         {
           name: 'Teacher',
@@ -385,7 +451,7 @@
           style: {
             table: {
               'border-collapse': 'collapse',
-              'table-layout': 'fixed', // Prevents layout shifts
+              'table-layout': 'fixed',
             },
           },
         }).render(document.getElementById('monday-current-grid'))
@@ -419,10 +485,15 @@
         })
       }
     } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('Request cancelled')
+        return
+      }
       console.error('Error loading Monday schedules:', error)
       toast.error('Failed to load Monday schedules')
     } finally {
       isLoading = false
+      abortController = null
     }
   }
 
@@ -443,6 +514,7 @@
 
   onDestroy(() => {
     clearTimeout(reloadTimeout)
+    abortController?.abort() // ADDED: Cancel any ongoing requests
     mondayCurrentGrid?.destroy()
     mondayCurrentGrid = null
     pb.collection('mondayLessonSchedule').unsubscribe()
@@ -454,14 +526,14 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">Monday Schedule Table (Current)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="relative mb-2 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-4">
-      <button class="btn btn-success btn-sm" onclick={copyToMondayAdvance} disabled={isCopying || isLoading}>
+      <button class="btn btn-ghost btn-sm" onclick={copyToMondayAdvance} disabled={isCopying || isLoading}>
         {#if isCopying}
           <span class="loading loading-spinner loading-sm"></span>
           Copying...
@@ -479,7 +551,7 @@
       </button>
     </div>
 
-    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold text-primary">
+    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
       {getMondayDisplay(currentMonday)}
     </h3>
 

@@ -134,7 +134,7 @@
         timeslotsData = cache.timeslots
         groupRoomsData = cache.groupRooms
       } else {
-        // Parallel fetching with caching
+        // Parallel fetching with caching - ALL using getFullList()
         const promises = []
 
         if (!timeslots.length || !cache.timeslots) {
@@ -149,8 +149,10 @@
           promises.push(Promise.resolve(groupRooms))
         }
 
+        // CHANGED: getList to getFullList for groupLessonSchedule
         promises.push(
-          pb.collection('groupLessonSchedule').getList(1, 500, {
+          pb.collection('groupLessonSchedule').getFullList({
+            // CHANGED HERE
             filter: dateFilter,
             expand: 'teacher,student,subject,grouproom,timeslot',
             $autoCancel: false,
@@ -164,17 +166,17 @@
         let idx = 0
         timeslotsData = results[idx++]
         groupRoomsData = results[idx++]
-        const scheduleResult = results[idx]
+        const scheduleResult = results[idx] // Now it's the full array, not {items, page, etc.}
 
         // Update cache
-        cache.groupSchedules = scheduleResult.items
+        cache.groupSchedules = scheduleResult // CHANGED: No .items needed
         cache.timeslots = timeslotsData
         cache.groupRooms = groupRoomsData
         cache.lastFetch = Date.now()
 
         timeslots = timeslotsData
         groupRooms = groupRoomsData
-        schedules = scheduleResult.items
+        schedules = scheduleResult // CHANGED: No .items needed
       }
 
       // Build schedule map using Map for better performance

@@ -1,12 +1,12 @@
 <script>
   import { createEventDispatcher } from 'svelte'
   import { toast } from 'svelte-sonner'
-  import { booking } from './schedule.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
   const dispatch = createEventDispatcher()
 
-  let show = $state(false)
+  let { show = $bindable(false), groupBooking = $bindable() } = $props()
+
   let subjects = $state([])
   let students = $state([])
   let teachers = $state([])
@@ -21,9 +21,9 @@
 
   // Consolidated conflict detection using $derived
   const conflicts = $derived({
-    teacher: existingSchedules.find((s) => s.teacher === booking.mondayData?.teacher?.id),
+    teacher: existingSchedules.find((s) => s.teacher === groupBooking?.teacher?.id),
     grouproom: existingSchedules.find(
-      (s) => s.room === booking.mondayData?.groupRoom?.id || s.grouproom === booking.mondayData?.groupRoom?.id
+      (s) => s.room === groupBooking?.groupRoom?.id || s.grouproom === groupBooking?.groupRoom?.id
     ),
     students: selectedStudents.filter((studentId) =>
       existingSchedules.some(
@@ -37,9 +37,9 @@
     show = true
     loadAllData()
 
-    // Initialize selected students from booking data
-    if (booking?.mondayData?.mode === 'edit' && Array.isArray(booking.mondayData.students)) {
-      selectedStudents = booking.mondayData.students.map((student) => student.id || student)
+    // Initialize selected students from groupBooking data
+    if (groupBooking?.mode === 'edit' && Array.isArray(groupBooking.students)) {
+      selectedStudents = groupBooking.students.map((student) => student.id || student)
     } else {
       selectedStudents = []
     }
@@ -47,7 +47,7 @@
     setMaxStudentsAllowed()
 
     // Reload existing schedules when modal opens
-    if (booking?.mondayData?.selectedDate && booking?.mondayData?.timeslot?.id) {
+    if (groupBooking?.date && groupBooking?.timeslot?.id) {
       loadExistingSchedules()
     }
   }
@@ -85,8 +85,8 @@
 
   const loadExistingSchedules = async () => {
     try {
-      const selectedDate = booking?.mondayData?.selectedDate
-      const timeslotId = booking?.mondayData?.timeslot?.id
+      const selectedDate = groupBooking?.date
+      const timeslotId = groupBooking?.timeslot?.id
 
       if (!selectedDate || !timeslotId) {
         existingSchedules = []
@@ -96,13 +96,13 @@
       // Exclude schedules being edited
       let excludeFilter = ''
       if (
-        booking?.mondayData?.mode === 'edit' &&
-        booking?.mondayData?.originalTeacherId &&
-        booking?.mondayData?.originalGroupRoomId &&
-        booking?.mondayData?.originalTimeslotId
+        groupBooking?.mode === 'edit' &&
+        groupBooking?.originalTeacherId &&
+        groupBooking?.originalGroupRoomId &&
+        groupBooking?.originalTimeslotId
       ) {
         const editingSchedules = await pb.collection('mondayGroupLessonSchedule').getFullList({
-          filter: `teacher = "${booking.mondayData.originalTeacherId}" && timeslot = "${booking.mondayData.originalTimeslotId}" && grouproom = "${booking.mondayData.originalGroupRoomId}" && date = "${selectedDate}"`,
+          filter: `teacher = "${groupBooking.originalTeacherId}" && timeslot = "${groupBooking.originalTimeslotId}" && grouproom = "${groupBooking.originalGroupRoomId}" && date = "${selectedDate}"`,
           fields: 'id',
         })
 
@@ -165,17 +165,17 @@
 
   // Reload schedules when date/timeslot changes
   $effect(() => {
-    if (booking?.mondayData?.selectedDate && booking?.mondayData?.timeslot?.id) {
+    if (groupBooking?.date && groupBooking?.timeslot?.id) {
       loadExistingSchedules()
     }
   })
 
   function setMaxStudentsAllowed() {
-    if (booking?.mondayData?.groupRoom?.id && groupRooms.length > 0) {
-      const selectedRoom = groupRooms.find((room) => room.id === booking.mondayData.groupRoom.id)
+    if (groupBooking?.groupRoom?.id && groupRooms.length > 0) {
+      const selectedRoom = groupRooms.find((room) => room.id === groupBooking.groupRoom.id)
       maxStudentsAllowed = selectedRoom?.maxstudents || 0
     } else {
-      maxStudentsAllowed = booking?.mondayData?.groupRoom?.maxstudents || 0
+      maxStudentsAllowed = groupBooking?.groupRoom?.maxstudents || 0
     }
   }
 
@@ -217,7 +217,7 @@
   }
 
   const validateSchedule = () => {
-    if (!booking?.mondayData?.subject?.id) {
+    if (!groupBooking?.subject?.id) {
       toast.error('Please select a subject')
       return false
     }
@@ -225,15 +225,15 @@
       toast.error('Please select at least one student')
       return false
     }
-    if (!booking?.mondayData?.groupRoom?.id) {
+    if (!groupBooking?.groupRoom?.id) {
       toast.error('Please select a group room')
       return false
     }
-    if (!booking?.mondayData?.teacher?.id) {
+    if (!groupBooking?.teacher?.id) {
       toast.error('Please select a teacher')
       return false
     }
-    if (!booking?.mondayData?.timeslot?.id) {
+    if (!groupBooking?.timeslot?.id) {
       toast.error('Please select a timeslot')
       return false
     }
@@ -242,7 +242,7 @@
     if (conflicts.teacher) {
       const conflictInfo = getConflictLabel(conflicts.teacher, 'teacher')
       toast.error('Teacher conflict', {
-        description: `${booking.mondayData.teacher.name || 'Teacher'} is already booked with ${conflictInfo}`,
+        description: `${groupBooking.teacher.name || 'Teacher'} is already booked with ${conflictInfo}`,
       })
       return false
     }
@@ -260,7 +260,7 @@
     if (conflicts.grouproom) {
       const conflictInfo = getConflictLabel(conflicts.grouproom, 'grouproom')
       toast.error('Room conflict', {
-        description: `${booking.mondayData.groupRoom.name || 'Room'} is already occupied by ${conflictInfo}`,
+        description: `${groupBooking.groupRoom.name || 'Room'} is already occupied by ${conflictInfo}`,
       })
       return false
     }
@@ -271,21 +271,19 @@
   async function saveSchedule() {
     if (!validateSchedule()) return
 
-    const { mondayData } = booking
-
     const scheduleData = {
-      date: mondayData.selectedDate,
-      timeslot: mondayData.timeslot.id,
-      teacher: mondayData.teacher.id,
+      date: groupBooking.date,
+      timeslot: groupBooking.timeslot.id,
+      teacher: groupBooking.teacher.id,
       student: selectedStudents,
-      subject: mondayData.subject.id,
-      grouproom: mondayData.groupRoom.id,
+      subject: groupBooking.subject.id,
+      grouproom: groupBooking.groupRoom.id,
     }
 
     saving = true
     try {
-      if (mondayData.mode === 'edit' && mondayData.id) {
-        await pb.collection('mondayGroupLessonSchedule').update(mondayData.id, scheduleData)
+      if (groupBooking.mode === 'edit' && groupBooking.id) {
+        await pb.collection('mondayGroupLessonSchedule').update(groupBooking.id, scheduleData)
         toast.success('Monday group schedule updated!', {
           description: 'Schedule updated successfully',
         })
@@ -307,28 +305,26 @@
   }
 
   async function deleteSchedule() {
-    const { mondayData } = booking
-
-    if (!mondayData?.id) {
+    if (!groupBooking?.id) {
       toast.error('No schedule selected to delete')
       return
     }
 
     const confirmMessage =
       `Are you sure you want to delete this Monday group schedule?\n\n` +
-      `Date: ${new Date(mondayData.selectedDate).toLocaleDateString()}\n` +
-      `Subject: ${mondayData.subject.name}\n` +
-      `Teacher: ${mondayData.teacher.name}\n` +
+      `Date: ${new Date(groupBooking.date).toLocaleDateString()}\n` +
+      `Subject: ${groupBooking.subject.name}\n` +
+      `Teacher: ${groupBooking.teacher.name}\n` +
       `Students: ${selectedStudents.length} selected\n` +
-      `Room: ${mondayData.groupRoom.name}\n` +
-      `Time: ${mondayData.timeslot.start} - ${mondayData.timeslot.end}\n\n` +
+      `Room: ${groupBooking.groupRoom.name}\n` +
+      `Time: ${groupBooking.timeslot.start} - ${groupBooking.timeslot.end}\n\n` +
       `This action cannot be undone.`
 
     if (!confirm(confirmMessage)) return
 
     deleting = true
     try {
-      await pb.collection('mondayGroupLessonSchedule').delete(mondayData.id)
+      await pb.collection('mondayGroupLessonSchedule').delete(groupBooking.id)
 
       toast.success('Monday group schedule deleted!', {
         description: 'Schedule deleted successfully',
@@ -352,7 +348,7 @@
   <div class="modal modal-open">
     <div class="modal-box max-w-4xl w-full space-y-6 rounded-xl">
       <h3 class="text-xl font-bold text-center">
-        {booking.mondayData?.mode === 'edit' ? 'Edit' : 'Create'} Monday Group Schedule
+        {groupBooking?.mode === 'edit' ? 'Edit' : 'Create'} Monday Group Schedule
       </h3>
 
       <div class="alert alert-info text-sm">
@@ -365,7 +361,7 @@
           ></path>
         </svg>
         <span>
-          This will {booking.mondayData?.mode === 'edit' ? 'update' : 'create'} a group schedule for Monday only
+          This will {groupBooking?.mode === 'edit' ? 'update' : 'create'} a group schedule for Monday only
         </span>
       </div>
 
@@ -375,7 +371,7 @@
           <!-- Subject -->
           <div class="form-control">
             <label class="label"><span class="label-text">Subject</span></label>
-            <select bind:value={booking.mondayData.subject.id} class="select select-bordered w-full" required>
+            <select bind:value={groupBooking.subject.id} class="select select-bordered w-full" required>
               <option value="">-- Select Subject --</option>
               {#each subjects as s}
                 <option value={s.id}>{s.name}</option>
@@ -454,7 +450,7 @@
           <!-- Teacher -->
           <div class="form-control">
             <label class="label"><span class="label-text">Teacher</span></label>
-            <select bind:value={booking.mondayData.teacher.id} class="select select-bordered w-full" required>
+            <select bind:value={groupBooking.teacher.id} class="select select-bordered w-full" required>
               <option value="">-- Select Teacher --</option>
               {#each teachers as teacher}
                 {@const conflictSchedule = existingSchedules.find((s) => s.teacher === teacher.id)}
@@ -477,7 +473,7 @@
           <div class="form-control">
             <label class="label"><span class="label-text">Group Room</span></label>
             <select
-              bind:value={booking.mondayData.groupRoom.id}
+              bind:value={groupBooking.groupRoom.id}
               class="select select-bordered w-full"
               required
               onchange={onGroupRoomChange}
@@ -503,7 +499,7 @@
           <!-- Timeslot -->
           <div class="form-control">
             <label class="label"><span class="label-text">Timeslot</span></label>
-            <select bind:value={booking.mondayData.timeslot.id} class="select select-bordered w-full" required>
+            <select bind:value={groupBooking.timeslot.id} class="select select-bordered w-full" required>
               <option value="">-- Select Timeslot --</option>
               {#each timeslots as ts}
                 <option value={ts.id}>{ts.start} - {ts.end}</option>
@@ -517,8 +513,8 @@
             <div class="bg-base-200 rounded-lg p-4 space-y-2">
               <div class="text-sm">
                 <span class="font-medium">Date:</span>
-                {booking.mondayData?.selectedDate
-                  ? new Date(booking.mondayData.selectedDate).toLocaleDateString('en-US', {
+                {groupBooking?.date
+                  ? new Date(groupBooking.date).toLocaleDateString('en-US', {
                       weekday: 'long',
                       month: 'long',
                       day: 'numeric',
@@ -528,12 +524,12 @@
               </div>
               <div class="text-sm">
                 <span class="font-medium">Room:</span>
-                {booking.mondayData?.groupRoom?.name || 'Not selected'}
+                {groupBooking?.groupRoom?.name || 'Not selected'}
               </div>
               <div class="text-sm">
                 <span class="font-medium">Timeslot:</span>
-                {booking.mondayData?.timeslot?.start && booking.mondayData?.timeslot?.end
-                  ? `${booking.mondayData.timeslot.start} - ${booking.mondayData.timeslot.end}`
+                {groupBooking?.timeslot?.start && groupBooking?.timeslot?.end
+                  ? `${groupBooking.timeslot.start} - ${groupBooking.timeslot.end}`
                   : 'Not selected'}
               </div>
               <div class="text-sm">
@@ -550,7 +546,7 @@
 
       <!-- Buttons -->
       <div class="modal-action">
-        {#if booking.mondayData?.mode === 'edit'}
+        {#if groupBooking?.mode === 'edit'}
           <button class="btn btn-error mr-auto" onclick={deleteSchedule} disabled={deleting || saving}>
             {#if deleting}
               <span class="loading loading-spinner loading-sm"></span>
@@ -566,7 +562,7 @@
             <span class="loading loading-spinner loading-sm"></span>
             Saving...
           {:else}
-            {booking.mondayData?.mode === 'edit' ? 'Update' : 'Save'} Schedule
+            {groupBooking?.mode === 'edit' ? 'Update' : 'Save'} Schedule
           {/if}
         </button>
 

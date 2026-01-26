@@ -7,13 +7,72 @@
   import GoLiveModal from './GoLiveModal.svelte'
 
   const stickyStyles = `
-    #advance-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #advance-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-grid th:nth-child(1), #advance-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-grid th:nth-child(1) { z-index: 25; }
-    #advance-grid th:nth-child(2), #advance-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-grid th:nth-child(2) { z-index: 25; }
-  `
+  #advance-grid .gridjs-wrapper { 
+    max-height: 700px; 
+    overflow: auto; 
+    scroll-behavior: auto !important;
+  }
+  
+  /* Fix table border rendering */
+  #advance-grid table {
+    border-collapse: collapse !important;
+  }
+  
+  /* All headers - top sticky with bottom border */
+  #advance-grid th { 
+    position: sticky; 
+    top: 0; 
+    z-index: 15; 
+    background: var(--b2, #fafcff);
+    border-bottom: 2px solid #ddd !important;
+    outline: 1px solid #ddd;
+    outline-offset: -1px;
+  }
+  
+  /* First sticky column - cells AND headers */
+  #advance-grid th:nth-child(1), 
+  #advance-grid td:nth-child(1) { 
+    position: sticky; 
+    left: 0; 
+    z-index: 15; 
+    background: var(--b2, #fafcff);
+    outline: 1px solid #ddd;
+    outline-offset: -1px;
+  }
+  
+  /* First column header - higher z-index */
+  #advance-grid th:nth-child(1) { 
+    z-index: 25; 
+  }
+  
+  /* Second sticky column - cells AND headers */
+  #advance-grid th:nth-child(2), 
+  #advance-grid td:nth-child(2) { 
+    position: sticky; 
+    left: 120px; 
+    z-index: 10; 
+    background: var(--b2, #fafcff);
+    outline: 1px solid #ddd;
+    outline-offset: -1px;
+  }
+  
+  /* Second column header - higher z-index */
+  #advance-grid th:nth-child(2) { 
+    z-index: 25; 
+  }
+  
+  /* Data cells - add bottom borders for rows */
+  #advance-grid td {
+    border-bottom: 1px solid #eee !important;
+  }
+  
+  /* Optional: Remove duplicate borders between sticky columns */
+  #advance-grid th:nth-child(2),
+  #advance-grid td:nth-child(2) {
+    border-left: none !important;
+    margin-left: -1px; /* Compensate for outline overlap */
+  }
+`
 
   let currentWeekStart = $state('')
   let timeslots = []
