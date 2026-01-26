@@ -23,9 +23,17 @@
   let isLoading = $state(false)
 
   // Keep only this date display function
-  function getCurrentDateDisplay() {
+  function getMondayOfCurrentWeek() {
     const today = new Date()
-    return today.toLocaleDateString('en-US', {
+    const day = today.getDay() // 0 = Sunday, 1 = Monday, etc.
+
+    // Calculate difference to get to Monday
+    const diff = day === 0 ? 6 : day - 1
+
+    const monday = new Date(today)
+    monday.setDate(today.getDate() - diff)
+
+    return monday.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -256,14 +264,14 @@
 </svelte:head>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold text-primary">
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">Monday Student Schedule (Advance Template)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <!-- Simplified date display only -->
   <div class="mb-6">
-    <h3 class="text-xl font-semibold text-primary text-center">{getCurrentDateDisplay()}</h3>
+    <h3 class="text-xl font-semibold text-center">{getMondayOfCurrentWeek()}</h3>
   </div>
 
   <div class="bg-base-200 rounded-lg m-2 p-2 mb-4">

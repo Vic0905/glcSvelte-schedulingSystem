@@ -19,7 +19,15 @@
 
   function getCurrentDateDisplay() {
     const today = new Date()
-    return today.toLocaleDateString('en-US', {
+    const day = today.getDay() // 0 = Sunday, 1 = Monday, etc.
+
+    // Calculate difference to get to Monday
+    const diff = day === 0 ? 6 : day - 1
+
+    const monday = new Date(today)
+    monday.setDate(today.getDate() - diff)
+
+    return monday.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
