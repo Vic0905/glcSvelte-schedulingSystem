@@ -6,12 +6,61 @@
   import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
-    #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #studentGrid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
-    #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #studentGrid th:nth-child(1) { z-index: 25; }
-    #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #studentGrid th:nth-child(2) { z-index: 25; }
+    #studentGrid .gridjs-wrapper { 
+      max-height: 700px; 
+      overflow: auto; 
+      scroll-behavior: auto !important;
+    }
+    
+    #studentGrid table {
+      border-collapse: collapse !important:
+    }
+
+    #studentGrid th {
+      position: sticky; 
+      top: 0; 
+      z-index: 20; 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px;
+     }
+
+    #studentGrid th:nth-child(1), 
+    #studentGrid td:nth-child(1) { 
+      position: sticky; 
+      left: 0; 
+      z-index: 15; 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px; 
+    }
+
+    #studentGrid th:nth-child(1) { 
+      z-index: 25; 
+    }
+
+    #studentGrid th:nth-child(2), 
+    #studentGrid td:nth-child(2) { 
+      position: sticky; 
+      left: 150px; 
+      z-index: 10; 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px; 
+    }
+
+    #studentGrid th:nth-child(2) { 
+      z-index: 25; 
+    }
+
+    #studentGridd td {
+      border-bottom: 1px solid #eee !important;
+    }
+
+    #studentGrid th:nth-child(2),
+    #studentGrid td:nth-child(2) {
+      border-left: none !important;
+      margin-left: -1px; 
   `
 
   // #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
@@ -147,7 +196,7 @@
         ])
 
       const columns = [
-        { name: 'Student', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
+        { name: 'Student', width: '150px', formatter: (cell) => h('div', { class: 'text-xs truncate' }, cell.value) },
         { name: 'English Name', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
         // { name: 'Course', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
         // { name: 'Level', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },

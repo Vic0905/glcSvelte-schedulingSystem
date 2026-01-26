@@ -8,23 +8,31 @@
   const stickyStyles = `
     #groupGrid .gridjs-wrapper { 
       max-height: 700px; 
-      overflow: auto; 
+      overflow: auto;
+      scroll-behavior: auto !important; 
+    }
+    
+    #groupGrid table {
+      border-collapse: collapse !important:
     }
 
     #groupGrid th { 
       position: sticky; 
       top: 0; 
       z-index: 20; 
-      box-shadow: 
-      inset -1px 0 0 #ddd; 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px;
     }
+
     #groupGrid th:nth-child(1), 
     #groupGrid td:nth-child(1) { 
       position: sticky; 
       left: 0; 
       z-index: 15; 
-      box-shadow: 
-      inset -1px 0 0 #ddd; 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px; 
     }
 
     #groupGrid th:nth-child(1) { 
@@ -36,13 +44,24 @@
       position: sticky; 
       left: 120px; 
       z-index: 10; 
-      box-shadow: 
-      inset -1px 0 0 #ddd; 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px; 
     }
 
     #groupGrid th:nth-child(2) { 
       z-index: 25; 
     }
+
+    #groupGrid td {
+      border-bottom: 1px solid #eee !important;
+    }
+
+    #groupGrid th:nth-child(2),
+    #groupGrid td:nth-child(2) {
+      border-left: none !important;
+      margin-left: -1px; 
+  }
   `
 
   let groupGrid = null

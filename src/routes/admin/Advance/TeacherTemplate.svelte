@@ -280,7 +280,7 @@
           columns,
           data,
           search: false,
-          sort: true,
+          sort: false,
           pagination: false,
           className: {
             table: 'w-full border text-xs',
