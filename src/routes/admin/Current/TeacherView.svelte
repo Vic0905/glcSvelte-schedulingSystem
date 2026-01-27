@@ -181,13 +181,15 @@
 
       const [timeslotsData, individualSchedules, groupSchedules, allTeachers] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        pb.collection('lessonSchedule').getList(1, 200, {
+        pb.collection('lessonSchedule').getFullList({
           filter: dateFilter,
           expand: 'teacher,student,subject,room,timeslot',
+          $autoCancel: false,
         }),
-        pb.collection('groupLessonSchedule').getList(1, 200, {
+        pb.collection('groupLessonSchedule').getFullList({
           filter: dateFilter,
           expand: 'teacher,student,subject,grouproom,timeslot',
+          $autoCancel: false,
         }),
         pb.collection('teacher').getFullList({ sort: 'name' }),
       ])
@@ -198,13 +200,13 @@
       const teachersWithBookings = new Set()
 
       // Count individual schedule bookings
-      for (const s of individualSchedules.items) {
+      for (const s of individualSchedules) {
         const teacherId = s.expand?.teacher?.id
         if (teacherId) teachersWithBookings.add(teacherId)
       }
 
       // Count group schedule bookings
-      for (const s of groupSchedules.items) {
+      for (const s of groupSchedules) {
         const teacherId = s.expand?.teacher?.id
         if (teacherId) teachersWithBookings.add(teacherId)
       }
@@ -260,7 +262,7 @@
       const scheduleMap = {}
 
       // Process individual lessons - filter out graduated students without bookings
-      for (const s of individualSchedules.items) {
+      for (const s of individualSchedules) {
         const teacherId = s.expand?.teacher?.id
         const timeslotId = s.expand?.timeslot?.id
         const studentId = s.expand?.student?.id
@@ -280,7 +282,7 @@
       }
 
       // Process group lessons
-      for (const s of groupSchedules.items) {
+      for (const s of groupSchedules) {
         const teacherId = s.expand?.teacher?.id
         const timeslotId = s.expand?.timeslot?.id
         const subjectId = s.expand?.subject?.id
@@ -460,7 +462,7 @@
       </div>
       <div class="flex items-center gap-1">
         <span class="badge badge-neutral badge-xs"></span>
-        <span>Student (graduated without bookings are hidden)</span>
+        <span>Student</span>
       </div>
       <div class="flex items-center gap-1">
         <span class="badge badge-secondary badge-xs"></span>

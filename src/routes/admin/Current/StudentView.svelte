@@ -17,6 +17,7 @@
   const cache = {
     timeslots: null,
     students: null,
+    teachers: null,
     schedules: new Map(), // Map weekStart -> { data, timestamp }
     lastFetch: 0,
     cacheDuration: 30000, // 30 seconds
@@ -100,7 +101,15 @@
           { class: 'flex flex-col gap-1 items-center' },
           [
             h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name || ''),
-            h('span', { class: 'badge badge-neutral badge-xs' }, item.teacher?.name || ''),
+            item.teacher &&
+              h(
+                'span',
+                {
+                  class: 'badge badge-neutral badge-xs',
+                  title: item.teacher.status === 'disabled' ? 'Disabled teacher' : '',
+                },
+                item.teacher.name || ''
+              ),
             item.isGroup && h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'),
             h('span', { class: 'badge badge-error badge-xs' }, item.room?.name || ''),
           ].filter(Boolean)
@@ -132,7 +141,7 @@
       const weekDays = getWeekDays(weekStart)
       const dateFilter = getDateFilter(weekDays)
 
-      // Load data in parallel like the schedule parent
+      // Load data in parallel
       const promises = []
 
       // Load timeslots only once
@@ -142,7 +151,22 @@
 
       // Load students only once (cached)
       if (!cache.students) {
-        promises.push(pb.collection('student').getFullList({ sort: 'name' }))
+        promises.push(
+          pb.collection('student').getFullList({
+            sort: 'name',
+            fields: 'id,name,englishName,status',
+          })
+        )
+      }
+
+      // Load teachers only once (cached)
+      if (!cache.teachers) {
+        promises.push(
+          pb.collection('teacher').getFullList({
+            sort: 'name',
+            fields: 'id,name,status',
+          })
+        )
       }
 
       // Always load schedules
@@ -176,30 +200,49 @@
         cache.students = results[idx++]
       }
 
+      if (!cache.teachers) {
+        cache.teachers = results[idx++]
+      }
+
       const individualSchedules = results[idx++]
       const groupSchedules = results[idx++]
+
+      // Create maps for quick lookups
+      const teacherMap = new Map()
+      cache.teachers.forEach((teacher) => {
+        teacherMap.set(teacher.id, teacher)
+      })
 
       // Build schedule map using Map for O(1) lookups
       const scheduleMap = new Map()
 
-      // Track students with lessons for filtering graduated students
-      const studentsWithLessons = new Set()
+      // Track teachers with lessons for filtering disabled teachers
+      const teachersWithLessons = new Set()
 
       // Process individual schedules
       for (const s of individualSchedules) {
         const studentId = s.expand?.student?.id
         const timeslotId = s.expand?.timeslot?.id
+        const teacherId = s.expand?.teacher?.id
         if (!studentId || !timeslotId) continue
 
-        studentsWithLessons.add(studentId)
+        if (teacherId) {
+          teachersWithLessons.add(teacherId)
+        }
 
         if (!scheduleMap.has(studentId)) {
           scheduleMap.set(studentId, new Map())
         }
 
+        const teacher = teacherMap.get(teacherId)
         scheduleMap.get(studentId).set(timeslotId, {
           subject: s.expand?.subject,
-          teacher: s.expand?.teacher,
+          teacher: teacher
+            ? {
+                ...s.expand?.teacher,
+                status: teacher.status,
+              }
+            : null,
           room: s.expand?.room,
           isGroup: false,
         })
@@ -209,20 +252,30 @@
       for (const s of groupSchedules) {
         const students = Array.isArray(s.expand?.student) ? s.expand.student : []
         const timeslotId = s.expand?.timeslot?.id
+        const teacherId = s.expand?.teacher?.id
+
+        if (teacherId) {
+          teachersWithLessons.add(teacherId)
+        }
+
         if (!timeslotId) continue
 
         for (const student of students) {
-          studentsWithLessons.add(student.id)
-
           if (!scheduleMap.has(student.id)) {
             scheduleMap.set(student.id, new Map())
           }
 
           // Only set if not already exists (individual takes precedence)
           if (!scheduleMap.get(student.id).has(timeslotId)) {
+            const teacher = teacherMap.get(teacherId)
             scheduleMap.get(student.id).set(timeslotId, {
               subject: s.expand?.subject,
-              teacher: s.expand?.teacher,
+              teacher: teacher
+                ? {
+                    ...s.expand?.teacher,
+                    status: teacher.status,
+                  }
+                : null,
               room: s.expand?.grouproom,
               isGroup: true,
             })
@@ -230,15 +283,50 @@
         }
       }
 
+      // Filter teachers: show non-disabled OR disabled with lessons
+      const filteredTeachers = new Map()
+      cache.teachers.forEach((teacher) => {
+        if (teacher.status !== 'disabled') {
+          filteredTeachers.set(teacher.id, teacher)
+        } else if (teachersWithLessons.has(teacher.id)) {
+          // Show disabled teachers only if they have lessons
+          filteredTeachers.set(teacher.id, teacher)
+        }
+      })
+
       // Filter students: include non-graduated OR graduated students WITH lessons
-      const filteredStudents = cache.students.filter((s) => {
-        if (s.status !== 'graduated') return true
-        return studentsWithLessons.has(s.id)
+      const filteredStudents = []
+      const studentsWithLessons = new Set(scheduleMap.keys())
+
+      cache.students.forEach((student) => {
+        if (student.status !== 'graduated') {
+          filteredStudents.push(student)
+        } else if (studentsWithLessons.has(student.id)) {
+          // Show graduated students only if they have lessons
+          filteredStudents.push(student)
+        }
+      })
+
+      // Filter schedule data to exclude disabled teachers without lessons
+      const filteredScheduleMap = new Map()
+      scheduleMap.forEach((timeslotMap, studentId) => {
+        const filteredTimeslotMap = new Map()
+
+        timeslotMap.forEach((schedule, timeslotId) => {
+          // Only include schedule if teacher is not disabled OR is disabled but has lessons
+          if (!schedule.teacher || filteredTeachers.has(schedule.teacher.id)) {
+            filteredTimeslotMap.set(timeslotId, schedule)
+          }
+        })
+
+        if (filteredTimeslotMap.size > 0) {
+          filteredScheduleMap.set(studentId, filteredTimeslotMap)
+        }
       })
 
       // Build table data efficiently
       const data = filteredStudents.map((student) => {
-        const studentSchedules = scheduleMap.get(student.id) || new Map()
+        const studentSchedules = filteredScheduleMap.get(student.id) || new Map()
 
         const row = [
           { label: 'Student', value: student.name },
@@ -259,7 +347,7 @@
         {
           name: 'Student',
           width: '150px',
-          formatter: (cell) => h('div', { class: 'text-xs' }, cell.value),
+          formatter: (cell) => h('div', { class: 'text-xs truncate' }, cell.value),
         },
         {
           name: 'English Name',
@@ -351,6 +439,8 @@
     loadStudentSchedule()
     pb.collection('lessonSchedule').subscribe('*', debouncedReload)
     pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
+    pb.collection('teacher').subscribe('*', debouncedReload)
+    pb.collection('student').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
@@ -359,6 +449,8 @@
     studentGrid?.destroy()
     pb.collection('lessonSchedule').unsubscribe()
     pb.collection('groupLessonSchedule').unsubscribe()
+    pb.collection('teacher').unsubscribe()
+    pb.collection('student').unsubscribe()
   })
 </script>
 
@@ -394,11 +486,23 @@
   </div>
 
   <div class="bg-base-200 rounded-lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-2 text-xs">
-      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
-      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span> Teacher</div>
-      <div class="flex gap-1"><span class="badge badge-secondary badge-xs"></span> Group Class</div>
-      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Room</div>
+    <div class="flex flex-wrap items-center gap-4 text-xs mb-2">
+      <div class="flex items-center gap-1">
+        <span class="badge badge-primary badge-xs"></span>
+        <span>Subject</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="badge badge-neutral badge-xs"></span>
+        <span>Teacher</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="badge badge-secondary badge-xs"></span>
+        <span>Group Class</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="badge badge-error badge-xs"></span>
+        <span>Room</span>
+      </div>
     </div>
   </div>
 
