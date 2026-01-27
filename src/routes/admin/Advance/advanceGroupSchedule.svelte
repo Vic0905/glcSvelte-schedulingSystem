@@ -201,9 +201,76 @@
         allGroupRooms = groupRoomsData
         records = bookingsData
 
-        // Update cache
-        cache.bookings = records
+        // FILTERING LOGIC: Hide graduated students and disabled teachers unless they have bookings
+        const existingBookings = records
+
+        // Create maps for faster lookups
+        const studentBookingCount = new Map()
+        const teacherBookingCount = new Map()
+
+        // Count bookings per user
+        existingBookings.forEach((booking) => {
+          const teacherId = booking.expand?.teacher?.id || booking.teacher
+
+          // Count teacher bookings
+          if (teacherId) {
+            teacherBookingCount.set(teacherId, (teacherBookingCount.get(teacherId) || 0) + 1)
+          }
+
+          // Count student bookings - students are an array in group bookings
+          const studentIds = booking.expand?.student || booking.student || []
+          if (Array.isArray(studentIds)) {
+            studentIds.forEach((studentId) => {
+              if (studentId && typeof studentId === 'string') {
+                studentBookingCount.set(studentId, (studentBookingCount.get(studentId) || 0) + 1)
+              } else if (studentId && typeof studentId === 'object' && studentId.id) {
+                studentBookingCount.set(studentId.id, (studentBookingCount.get(studentId.id) || 0) + 1)
+              }
+            })
+          }
+        })
+
+        // Filter bookings - show graduated students and disabled teachers if they have ANY bookings
+        const activeBookings = records.filter((booking) => {
+          const teacher = booking.expand?.teacher
+
+          // Check teacher: if disabled, only show if they have at least 1 booking
+          if (teacher && teacher.status === 'disabled') {
+            const hasAnyBookings = (teacherBookingCount.get(teacher.id) || 0) >= 1
+            return hasAnyBookings
+          }
+
+          // For group bookings, we also need to check each student
+          // But we'll filter students separately in the modal
+          // For now, keep the booking if the teacher is valid
+
+          return true // Keep all bookings with active teachers or teachers with bookings
+        })
+
+        // Also filter group rooms based on assigned teacher status
+        const activeGroupRooms = groupRoomsData.filter((groupRoom) => {
+          const assignedTeacher = groupRoom.expand?.teacher
+          if (!assignedTeacher) return true
+
+          // Check if teacher is disabled
+          if (assignedTeacher.status === 'disabled') {
+            // Check if teacher has any bookings
+            const hasBookings = teacherBookingCount.has(assignedTeacher.id)
+            return hasBookings
+          }
+
+          return true
+        })
+
+        // Update cache with filtered data
+        cache.bookings = activeBookings
         cache.lastFetch = Date.now()
+
+        // Update group rooms with filtered list
+        allGroupRooms = activeGroupRooms
+
+        // Use filtered bookings for building the schedule
+        records = activeBookings
       }
 
       // Build schedule map using Map for better performance
@@ -252,9 +319,12 @@
             if (item.expand?.student && Array.isArray(item.expand.student)) {
               // Use for loop for better performance
               for (const student of item.expand.student) {
+                // Filter out graduated students unless they have other bookings
+                // We'll do this filtering in the modal for selection
                 studentsData.push({
                   englishName: student.englishName || '',
                   id: student.id || '',
+                  status: student.status || 'active',
                 })
               }
             } else if (item.student && Array.isArray(item.student)) {
@@ -263,6 +333,7 @@
                 studentsData.push({
                   englishName: `Student ${studentId}`,
                   id: studentId,
+                  status: 'unknown', // We don't have status info here
                 })
               }
             }
@@ -277,6 +348,7 @@
               teacher: {
                 name: item.expand?.teacher?.name || '',
                 id: item.expand?.teacher?.id || '',
+                status: item.expand?.teacher?.status || 'active',
               },
               students: studentsData,
               groupRoom: {

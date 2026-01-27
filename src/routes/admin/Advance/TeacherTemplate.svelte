@@ -6,10 +6,38 @@
   import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
-    #teacherGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #teacherGrid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
-    #teacherGrid th:nth-child(1), #teacherGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #teacherGrid th:nth-child(1) { z-index: 25; }
+    #teacherGrid .gridjs-wrapper { 
+      max-height: 700px; 
+      overflow: auto; 
+      scroll-behavior: auto !important;
+    }
+
+    #teacherGrid table {
+      border-collapse: collapse !important:
+    }
+
+    #teacherGrid th { 
+      position: sticky; 
+      top: 0; 
+      z-index: 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px; 
+    }
+
+    #teacherGrid th:nth-child(1), 
+    #teacherGrid td:nth-child(1) { 
+      position: sticky; 
+      left: 0; 
+      z-index: 15; 
+      background: var(--b2, #fafcff);
+      outline: 1px solid #ddd;
+      outline-offset: -1px; 
+    }
+
+    #teacherGrid th:nth-child(1) { 
+      z-index: 25; 
+    }
   `
 
   let teacherGrid = null

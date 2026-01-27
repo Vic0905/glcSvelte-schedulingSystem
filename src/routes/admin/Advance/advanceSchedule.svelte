@@ -195,9 +195,71 @@
         rooms = roomsData
         bookings = bookingsData
 
-        // Update cache
-        cache.bookings = bookings
+        // Filter out bookings with graduated students or disabled teachers
+        // unless they have any bookings (show if they have at least 1 booking)
+        const existingBookings = bookings
+
+        // Create maps for faster lookups (performance optimization)
+        const studentBookingCount = new Map()
+        const teacherBookingCount = new Map()
+
+        // Count bookings per user
+        existingBookings.forEach((booking) => {
+          const studentId = booking.expand?.student?.id || booking.student
+          const teacherId = booking.expand?.teacher?.id || booking.teacher
+
+          if (studentId) {
+            studentBookingCount.set(studentId, (studentBookingCount.get(studentId) || 0) + 1)
+          }
+          if (teacherId) {
+            teacherBookingCount.set(teacherId, (teacherBookingCount.get(teacherId) || 0) + 1)
+          }
+        })
+
+        // Filter bookings - show graduated students and disabled teachers if they have ANY bookings
+        const activeBookings = bookings.filter((booking) => {
+          const student = booking.expand?.student
+          const teacher = booking.expand?.teacher
+
+          // Check student: if graduated, only show if they have at least 1 booking
+          if (student && student.status === 'graduated') {
+            const hasAnyBookings = (studentBookingCount.get(student.id) || 0) >= 1
+            return hasAnyBookings // Keep if they have ANY bookings (not just "other" bookings)
+          }
+
+          // Check teacher: if disabled, only show if they have at least 1 booking
+          if (teacher && teacher.status === 'disabled') {
+            const hasAnyBookings = (teacherBookingCount.get(teacher.id) || 0) >= 1
+            return hasAnyBookings // Keep if they have ANY bookings (not just "other" bookings)
+          }
+
+          return true // Keep all active users
+        })
+
+        // Also filter rooms based on assigned teacher status
+        const activeRooms = rooms.filter((room) => {
+          const assignedTeacher = room.expand?.teacher
+          if (!assignedTeacher) return true
+
+          // Check if teacher is disabled
+          if (assignedTeacher.status === 'disabled') {
+            // Check if teacher has any bookings
+            const hasBookings = teacherBookingCount.has(assignedTeacher.id)
+            return hasBookings
+          }
+
+          return true
+        })
+
+        // Update cache with filtered data
+        cache.bookings = activeBookings
         cache.lastFetch = Date.now()
+
+        // Update rooms with filtered list
+        rooms = activeRooms
+
+        // Use activeBookings for building the schedule
+        bookings = activeBookings
       }
 
       // Build schedule map using Map for better performance

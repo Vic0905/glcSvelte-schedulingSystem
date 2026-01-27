@@ -11,6 +11,9 @@
   let subjects = $state([])
   let timeslots = $state([])
 
+  // Cache for existing bookings
+  let existingBookings = $state([])
+
   // Load reference data ONCE
   onMount(async () => {
     if (teachers.length === 0) {
@@ -20,15 +23,60 @@
 
   const loadAllData = async () => {
     try {
-      const [teachersData, studentsData, subjectsData, timeslotsData] = await Promise.all([
+      const [teachersData, studentsData, subjectsData, timeslotsData, bookingsData] = await Promise.all([
         pb.collection('teacher').getFullList({ sort: 'name', fields: 'id,name,status' }),
         pb.collection('student').getFullList({ sort: 'englishName', fields: 'id,englishName,status' }),
         pb.collection('subject').getFullList({ sort: 'name', fields: 'id,name' }),
         pb.collection('timeSlot').getFullList({ sort: 'start', fields: 'id,start,end' }),
+        pb.collection('advanceBooking').getFullList({
+          expand: 'teacher,student',
+          $autoCancel: false,
+        }),
       ])
 
-      teachers = teachersData
-      students = studentsData
+      // Store all bookings for filtering
+      existingBookings = bookingsData
+
+      // Count bookings per user for filtering
+      const studentBookingCount = new Map()
+      const teacherBookingCount = new Map()
+
+      existingBookings.forEach((booking) => {
+        const studentId = booking.expand?.student?.id || booking.student
+        const teacherId = booking.expand?.teacher?.id || booking.teacher
+
+        if (studentId) {
+          studentBookingCount.set(studentId, (studentBookingCount.get(studentId) || 0) + 1)
+        }
+        if (teacherId) {
+          teacherBookingCount.set(teacherId, (teacherBookingCount.get(teacherId) || 0) + 1)
+        }
+      })
+
+      // Filter students: show non-graduated OR graduated with existing bookings
+      students = studentsData.filter((student) => {
+        if (student.status !== 'graduated') return true
+
+        // For graduated students, only show if they have existing bookings
+        // OR if this is the currently selected student (for editing)
+        const hasBookings = studentBookingCount.has(student.id)
+        const isCurrentlySelected = advanceBooking?.student?.id === student.id
+
+        return hasBookings || isCurrentlySelected
+      })
+
+      // Filter teachers: show non-disabled OR disabled with existing bookings
+      teachers = teachersData.filter((teacher) => {
+        if (teacher.status !== 'disabled') return true
+
+        // For disabled teachers, only show if they have existing bookings
+        // OR if this is the currently selected teacher (for editing)
+        const hasBookings = teacherBookingCount.has(teacher.id)
+        const isCurrentlySelected = advanceBooking?.teacher?.id === teacher.id
+
+        return hasBookings || isCurrentlySelected
+      })
+
       subjects = subjectsData
       timeslots = timeslotsData
     } catch (error) {
@@ -269,6 +317,14 @@
   const closeModal = () => {
     show = false
   }
+
+  // Watch for changes to advanceBooking to reload data if needed
+  $effect(() => {
+    if (show) {
+      // Refresh data when modal opens to get latest status
+      loadAllData()
+    }
+  })
 </script>
 
 {#if show}
@@ -277,10 +333,6 @@
       <h3 class="text-xl font-bold text-center">
         {advanceBooking.mode === 'edit' ? 'Edit' : 'Create'} Weekly Template
       </h3>
-
-      <div class="alert alert-info">
-        <span>ℹ️ This template will be used to create schedules for Tuesday-Friday when published</span>
-      </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Left column -->
@@ -295,18 +347,21 @@
             >
               <option value="">Select Student</option>
               {#each students as student (student.id)}
-                {#if student.status !== 'graduated' || student.id === advanceBooking.student.id}
-                  <option
-                    value={student.id}
-                    disabled={student.status === 'graduated'}
-                    class:italic={student.status === 'graduated'}
-                  >
-                    {student.englishName}
-                    {#if student.status === 'graduated'}(Graduated){/if}
-                  </option>
-                {/if}
+                <option
+                  value={student.id}
+                  disabled={student.status === 'graduated' && student.id !== advanceBooking.student?.id}
+                  class:italic={student.status === 'graduated'}
+                >
+                  {student.englishName}
+                  {#if student.status === 'graduated'}
+                    (Graduated)
+                  {/if}
+                </option>
               {/each}
             </select>
+            {#if advanceBooking.student?.id && students.find((s) => s.id === advanceBooking.student.id)?.status === 'graduated'}
+              <div class="text-xs text-warning mt-1">⚠️ This student is graduated but has existing bookings</div>
+            {/if}
           </fieldset>
 
           <fieldset class="fieldset">
@@ -334,18 +389,21 @@
             >
               <option value="">Select Teacher</option>
               {#each teachers as teacher}
-                {#if teacher.status !== 'disabled' || teacher.id === advanceBooking.teacher.id}
-                  <option
-                    value={teacher.id}
-                    disabled={teacher.status === 'disabled'}
-                    class:italic={teacher.status === 'disabled'}
-                  >
-                    {teacher.name}
-                    {#if teacher.status === 'disabled'}(Disabled){/if}
-                  </option>
-                {/if}
+                <option
+                  value={teacher.id}
+                  disabled={teacher.status === 'disabled' && teacher.id !== advanceBooking.teacher?.id}
+                  class:italic={teacher.status === 'disabled'}
+                >
+                  {teacher.name}
+                  {#if teacher.status === 'disabled'}
+                    (Disabled)
+                  {/if}
+                </option>
               {/each}
             </select>
+            {#if advanceBooking.teacher?.id && teachers.find((t) => t.id === advanceBooking.teacher.id)?.status === 'disabled'}
+              <div class="text-xs text-warning mt-1">⚠️ This teacher is disabled but has existing bookings</div>
+            {/if}
           </fieldset>
         </div>
 
