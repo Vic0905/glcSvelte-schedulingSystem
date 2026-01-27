@@ -16,6 +16,12 @@
   let searchTerm = $state('')
   let dataLoaded = $state(false)
 
+  // Track which graduated students to remove when saving
+  let graduatedStudentsToRemove = $state(new Set())
+
+  // Store existing bookings for filtering
+  let existingBookings = $state([])
+
   // Load reference data ONCE globally
   onMount(async () => {
     if (!dataLoaded) {
@@ -26,6 +32,9 @@
   // Initialize selected students when modal opens
   $effect(() => {
     if (show) {
+      // Reset graduated students to remove
+      graduatedStudentsToRemove = new Set()
+
       // Initialize selected students from booking data
       if (
         advanceGroupBooking.mode === 'edit' &&
@@ -44,34 +53,64 @@
     if (dataLoaded) return
 
     try {
-      const [subjectsData, studentsData, teachersData, groupRoomsData, timeslotsData] = await Promise.all([
-        pb.collection('subject').getFullList({
-          sort: 'name',
-          fields: 'id,name',
-        }),
-        pb.collection('student').getFullList({
-          sort: 'englishName',
-          fields: 'id,englishName,status',
-        }),
-        pb.collection('teacher').getFullList({
-          sort: 'name',
-          fields: 'id,name',
-        }),
-        pb.collection('groupRoom').getFullList({
-          sort: 'name',
-          fields: 'id,name,maxstudents',
-        }),
-        pb.collection('timeslot').getFullList({
-          sort: 'start',
-          fields: 'id,start,end',
-        }),
-      ])
+      const [subjectsData, studentsData, teachersData, groupRoomsData, timeslotsData, bookingsData] = await Promise.all(
+        [
+          pb.collection('subject').getFullList({
+            sort: 'name',
+            fields: 'id,name',
+          }),
+          pb.collection('student').getFullList({
+            sort: 'englishName',
+            fields: 'id,englishName,status',
+          }),
+          pb.collection('teacher').getFullList({
+            sort: 'name',
+            fields: 'id,name,status',
+          }),
+          pb.collection('groupRoom').getFullList({
+            sort: 'name',
+            fields: 'id,name,maxstudents',
+          }),
+          pb.collection('timeslot').getFullList({
+            sort: 'start',
+            fields: 'id,start,end',
+          }),
+          pb.collection('groupAdvanceBooking').getFullList({
+            expand: 'teacher',
+            $autoCancel: false,
+          }),
+        ]
+      )
 
       subjects = subjectsData
-      students = studentsData
-      teachers = teachersData
       groupRooms = groupRoomsData
       timeslots = timeslotsData
+      existingBookings = bookingsData
+
+      // Create map for teacher booking counts
+      const teacherBookingCount = new Map()
+      bookingsData.forEach((booking) => {
+        const teacherId = booking.expand?.teacher?.id || booking.teacher
+        if (teacherId) {
+          teacherBookingCount.set(teacherId, (teacherBookingCount.get(teacherId) || 0) + 1)
+        }
+      })
+
+      // Filter students: show all for now (we handle in checkbox)
+      students = studentsData
+
+      // Filter teachers: show non-disabled OR disabled with existing bookings OR currently selected
+      teachers = teachersData.filter((teacher) => {
+        if (teacher.status !== 'disabled') return true
+
+        // For disabled teachers, only show if they have existing bookings
+        // OR if this is the currently selected teacher (for editing)
+        const hasBookings = teacherBookingCount.has(teacher.id)
+        const isCurrentlySelected = advanceGroupBooking.teacher?.id === teacher.id
+
+        return hasBookings || isCurrentlySelected
+      })
+
       dataLoaded = true
     } catch (err) {
       console.error('Error loading reference data:', err)
@@ -250,8 +289,11 @@
       return false
     }
 
-    if (!Array.isArray(selectedStudents) || selectedStudents.length === 0) {
-      toast.error('Please select at least one student')
+    // Filter out graduated students that are marked for removal
+    const activeStudents = selectedStudents.filter((id) => !graduatedStudentsToRemove.has(id))
+
+    if (!Array.isArray(activeStudents) || activeStudents.length === 0) {
+      toast.error('Please select at least one active student')
       return false
     }
 
@@ -263,6 +305,7 @@
     selectedStudents = []
     maxStudentsAllowed = 0
     searchTerm = ''
+    graduatedStudentsToRemove = new Set()
   }
 
   function setMaxStudentsAllowed() {
@@ -284,22 +327,43 @@
 
   function toggleStudent(studentId) {
     const student = students.find((s) => s.id === studentId)
+    const isSelected = selectedStudents.includes(studentId)
+    const isGraduated = student?.status === 'graduated'
 
-    // Check if trying to ADD a graduated student
-    if (student?.status === 'graduated' && !selectedStudents.includes(studentId)) {
-      toast.error('Cannot select graduated student')
+    // If trying to ADD a graduated student, show error
+    if (!isSelected && isGraduated) {
+      toast.error('Cannot add graduated student')
       return
     }
 
-    // Always allow REMOVING a student (even if graduated)
-    if (selectedStudents.includes(studentId)) {
-      selectedStudents = selectedStudents.filter((id) => id !== studentId)
-    } else {
-      if (maxStudentsAllowed > 0 && selectedStudents.length >= maxStudentsAllowed) {
-        toast.warning(`Maximum ${maxStudentsAllowed} students allowed for this room`)
-        return
+    // For non-graduated students, normal toggle logic
+    if (!isGraduated) {
+      if (!isSelected) {
+        // Check if trying to ADD when at max capacity
+        if (maxStudentsAllowed > 0 && selectedStudents.length >= maxStudentsAllowed) {
+          toast.warning(`Maximum ${maxStudentsAllowed} students allowed for this room`)
+          return
+        }
+        selectedStudents = [...selectedStudents, studentId]
+      } else {
+        // Remove non-graduated student
+        selectedStudents = selectedStudents.filter((id) => id !== studentId)
       }
+      return
+    }
+
+    // For graduated students: just toggle selection
+    if (isSelected) {
+      // Mark graduated student for removal when saving
+      graduatedStudentsToRemove.add(studentId)
+      // Deselect immediately
+      selectedStudents = selectedStudents.filter((id) => id !== studentId)
+      toast.info(`Graduated student "${student?.englishName}" will be removed when you save`)
+    } else {
+      // If re-selecting a graduated student that was marked for removal
+      graduatedStudentsToRemove.delete(studentId)
       selectedStudents = [...selectedStudents, studentId]
+      toast.info(`Graduated student "${student?.englishName}" will be kept when you save`)
     }
   }
 
@@ -315,10 +379,14 @@
     } else {
       selectedStudents = availableStudents.map((s) => s.id)
     }
+
+    // Clear any graduated students marked for removal
+    graduatedStudentsToRemove = new Set()
   }
 
   function clearAllStudents() {
     selectedStudents = []
+    graduatedStudentsToRemove = new Set()
   }
 
   const saveSchedule = async () => {
@@ -330,12 +398,15 @@
 
     const { subject, groupRoom, teacher, timeslot, mode, id } = advanceGroupBooking
 
+    // Filter out graduated students marked for removal
+    const finalStudentList = selectedStudents.filter((id) => !graduatedStudentsToRemove.has(id))
+
     const payload = {
       grouproom: groupRoom.id,
       timeslot: timeslot.id,
       subject: subject.id,
       teacher: teacher.id,
-      student: selectedStudents,
+      student: finalStudentList,
     }
 
     toast.promise(
@@ -354,6 +425,15 @@
         success: () => {
           closeModal()
           onSave()
+
+          // Show summary of removed graduated students
+          if (graduatedStudentsToRemove.size > 0) {
+            const removedNames = Array.from(graduatedStudentsToRemove)
+              .map((id) => students.find((s) => s.id === id)?.englishName || 'Unknown')
+              .join(', ')
+            toast.success(`Updated successfully. Removed graduated students: ${removedNames}`)
+          }
+
           return 'Advance booking saved successfully!'
         },
         error: (error) => {
@@ -410,6 +490,27 @@
       <h3 class="text-xl font-bold text-center">
         {advanceGroupBooking.mode === 'edit' ? 'Edit' : 'Create'} Advance Group Schedule Template
       </h3>
+
+      {#if graduatedStudentsToRemove.size > 0}
+        <div class="alert alert-warning">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="stroke-current shrink-0 h-6 w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            ><path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.998-.833-2.732 0L4.346 16.5c-.77.833.192 2.5 1.732 2.5z"
+            /></svg
+          >
+          <span>
+            {graduatedStudentsToRemove.size} graduated student{graduatedStudentsToRemove.size !== 1 ? 's' : ''} will be removed
+            when you save
+          </span>
+        </div>
+      {/if}
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Left column -->
@@ -471,37 +572,43 @@
 
             <div class="border border-base-300 rounded-lg p-4 max-h-80 overflow-y-auto">
               {#each filteredStudents as student (student.id)}
-                {#if student.status !== 'graduated' || selectedStudents.includes(student.id)}
-                  {@const isGraduated = student.status === 'graduated'}
-                  {@const isSelected = selectedStudents.includes(student.id)}
+                {@const isSelected = selectedStudents.includes(student.id)}
+                {@const isGraduated = student.status === 'graduated'}
+                {@const willBeRemoved = graduatedStudentsToRemove.has(student.id)}
 
-                  <!-- Updated: Only disable if trying to ADD a graduated student -->
-                  {@const isDisabled =
-                    (isGraduated && !isSelected) || // Only disable checkbox for ADDING graduated students
-                    (maxStudentsAllowed > 0 && !isSelected && selectedStudents.length >= maxStudentsAllowed) ||
-                    saving}
-
-                  <div class="form-control">
-                    <label class="label cursor-pointer justify-start gap-3">
-                      <input
-                        type="checkbox"
-                        class="checkbox checkbox-sm"
-                        checked={isSelected}
-                        disabled={isDisabled}
-                        onchange={() => toggleStudent(student.id)}
-                      />
-                      <span class="label-text" class:opacity-10={isDisabled && !isSelected}>
-                        {student.englishName}
-                        {#if isGraduated}
-                          <span class="text-xs text-warning ml-2 opacity-90">(Graduated - click to remove)</span>
-                        {/if}
-                      </span>
-                    </label>
-                  </div>
-                {/if}
+                <div class="form-control">
+                  <label class="label cursor-pointer justify-start gap-3">
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-sm"
+                      checked={isSelected && !willBeRemoved}
+                      disabled={(!isSelected && isGraduated) || saving}
+                      onchange={() => toggleStudent(student.id)}
+                    />
+                    <span
+                      class="label-text"
+                      class:opacity-50={!isSelected && isGraduated}
+                      class:line-through={willBeRemoved}
+                      class:text-warning={willBeRemoved}
+                    >
+                      {student.englishName}
+                      {#if isGraduated}
+                        <span class="text-xs ml-2">
+                          {#if willBeRemoved}
+                            (Graduated - will be removed)
+                          {:else if isSelected}
+                            (Graduated - click to mark for removal)
+                          {:else}
+                            (Graduated)
+                          {/if}
+                        </span>
+                      {/if}
+                    </span>
+                  </label>
+                </div>
               {/each}
 
-              {#if filteredStudents.filter((s) => s.status !== 'graduated' || selectedStudents.includes(s.id)).length === 0}
+              {#if filteredStudents.length === 0}
                 <p class="text-sm text-base-content/100 text-center py-4">No matching students</p>
               {/if}
             </div>
@@ -521,14 +628,19 @@
             >
               <option value="">-- Select Teacher --</option>
               {#each teachers as t}
-                {#if t.status !== 'disabled' || t.id === advanceGroupBooking.teacher.id}
-                  <option value={t.id} disabled={t.status === 'disabled'} class:italic={t.status === 'disabled'}>
-                    {t.name}
-                    {#if t.status === 'disabled'}(Disabled){/if}
-                  </option>
-                {/if}
+                <option
+                  value={t.id}
+                  disabled={t.status === 'disabled' && t.id !== advanceGroupBooking.teacher?.id}
+                  class:italic={t.status === 'disabled'}
+                >
+                  {t.name}
+                  {#if t.status === 'disabled'}(Disabled){/if}
+                </option>
               {/each}
             </select>
+            {#if advanceGroupBooking.teacher?.id && teachers.find((t) => t.id === advanceGroupBooking.teacher.id)?.status === 'disabled'}
+              <div class="text-xs text-warning mt-1">⚠️ This teacher is disabled but has existing bookings</div>
+            {/if}
           </div>
 
           <!-- Group Room -->
@@ -579,8 +691,14 @@
                   : 'Not selected'}
               </div>
               <div class="text-sm">
-                <span class="font-medium">Students:</span>
-                {selectedStudents.length} selected
+                <span class="font-medium">Active Students:</span>
+                {selectedStudents.filter((id) => !graduatedStudentsToRemove.has(id)).length} selected
+                {#if graduatedStudentsToRemove.size > 0}
+                  <div class="text-xs text-warning mt-1">
+                    ({graduatedStudentsToRemove.size} graduated student{graduatedStudentsToRemove.size !== 1 ? 's' : ''}
+                    marked for removal)
+                  </div>
+                {/if}
                 {#if maxStudentsAllowed > 0}
                   (Max: {maxStudentsAllowed})
                 {/if}
@@ -597,7 +715,11 @@
         {/if}
 
         <button class="btn btn-primary" onclick={saveSchedule} disabled={saving}>
-          {advanceGroupBooking.mode === 'edit' ? 'Update' : 'Save'} Template
+          {#if graduatedStudentsToRemove.size > 0}
+            Update (Remove {graduatedStudentsToRemove.size} Graduated)
+          {:else}
+            {advanceGroupBooking.mode === 'edit' ? 'Update' : 'Save'} Template
+          {/if}
         </button>
 
         <button class="btn" onclick={closeModal} disabled={saving}>Cancel</button>

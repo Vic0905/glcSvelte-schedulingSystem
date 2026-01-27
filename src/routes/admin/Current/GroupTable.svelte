@@ -18,6 +18,7 @@
 
   let weekStart = $state(getWeekStart(new Date()))
   let timeslots = []
+  let allGroupRooms = []
   let groupModal
   let isCopying = $state(false)
   let isLoading = $state(false)
@@ -229,7 +230,7 @@
     return h('div', { class: 'flex flex-col gap-1 items-center text-xs' }, elements)
   }
 
-  // Enhanced load function with caching
+  // Enhanced load function with caching and filtering
   async function loadGroupSchedules(forceRefresh = false) {
     if (isLoading) return
 
@@ -269,12 +270,78 @@
         // Parse results
         let idx = 0
         if (!timeslots.length) timeslots = results[idx++]
-        const groupRooms = results[idx++]
+        let groupRooms = results[idx++]
         schedules = results[idx]
 
-        // Update cache
-        cache.groupSchedules = schedules
+        // FILTERING LOGIC: Hide graduated students and disabled teachers unless they have bookings
+
+        // Create maps for booking counts
+        const studentBookingCount = new Map()
+        const teacherBookingCount = new Map()
+
+        // Count bookings per user
+        schedules.forEach((schedule) => {
+          const teacherId = schedule.expand?.teacher?.id || schedule.teacher
+
+          // Count teacher bookings
+          if (teacherId) {
+            teacherBookingCount.set(teacherId, (teacherBookingCount.get(teacherId) || 0) + 1)
+          }
+
+          // Count student bookings - students are an array in group bookings
+          const studentIds = schedule.expand?.student || schedule.student || []
+          if (Array.isArray(studentIds)) {
+            studentIds.forEach((studentId) => {
+              if (studentId && typeof studentId === 'string') {
+                studentBookingCount.set(studentId, (studentBookingCount.get(studentId) || 0) + 1)
+              } else if (studentId && typeof studentId === 'object' && studentId.id) {
+                studentBookingCount.set(studentId.id, (studentBookingCount.get(studentId.id) || 0) + 1)
+              }
+            })
+          }
+        })
+
+        // Filter bookings - hide graduated students and disabled teachers unless they have ANY bookings
+        const activeSchedules = schedules.filter((schedule) => {
+          const teacher = schedule.expand?.teacher
+
+          // Check teacher: if disabled, only show if they have at least 1 booking
+          if (teacher && teacher.status === 'disabled') {
+            const hasAnyBookings = (teacherBookingCount.get(teacher.id) || 0) >= 1
+            return hasAnyBookings
+          }
+
+          // For group bookings, we'll filter students in the display
+          // Keep the booking if the teacher is valid
+
+          return true // Keep all bookings with active teachers or teachers with bookings
+        })
+
+        // Also filter group rooms based on assigned teacher status
+        const activeGroupRooms = groupRooms.filter((groupRoom) => {
+          const assignedTeacher = groupRoom.expand?.teacher
+          if (!assignedTeacher) return true
+
+          // Check if teacher is disabled
+          if (assignedTeacher.status === 'disabled') {
+            // Check if teacher has any bookings
+            const hasBookings = teacherBookingCount.has(assignedTeacher.id)
+            return hasBookings
+          }
+
+          return true
+        })
+
+        // Update cache with filtered data
+        cache.groupSchedules = activeSchedules
         cache.lastFetch = Date.now()
+
+        // Update group rooms with filtered list
+        allGroupRooms = activeGroupRooms
+
+        // Use filtered schedules for building the table
+        schedules = activeSchedules
+        groupRooms = activeGroupRooms
 
         // Build schedule map using Map for better performance
         const scheduleMap = new Map()
@@ -329,19 +396,35 @@
                 studentsData = s.expand.student.map((student) => ({
                   englishName: student.englishName || '',
                   id: student.id || '',
+                  status: student.status || 'active',
                 }))
               } else if (s.student && Array.isArray(s.student)) {
-                studentsData = s.student.map((id) => ({ name: `Student ${id}`, id }))
+                studentsData = s.student.map((id) => ({
+                  englishName: `Student ${id}`,
+                  id,
+                  status: 'unknown',
+                }))
               }
 
               row.push({
                 label: 'Schedule',
                 id: s.id || '',
                 date: weekStart,
-                subject: { name: s.expand?.subject?.name || '', id: s.expand?.subject?.id || '' },
-                teacher: { name: s.expand?.teacher?.name || '', id: s.expand?.teacher?.id || '' },
+                subject: {
+                  name: s.expand?.subject?.name || '',
+                  id: s.expand?.subject?.id || '',
+                },
+                teacher: {
+                  name: s.expand?.teacher?.name || '',
+                  id: s.expand?.teacher?.id || '',
+                  status: s.expand?.teacher?.status || 'active',
+                },
                 students: studentsData,
-                groupRoom: { name: gr.name, id: gr.id, maxstudents: gr.maxstudents || 0 },
+                groupRoom: {
+                  name: gr.name,
+                  id: gr.id,
+                  maxstudents: gr.maxstudents || 0,
+                },
                 timeslot: { id: ts.id, start: ts.start, end: ts.end },
                 assignedTeacher: teacher,
               })
@@ -438,6 +521,7 @@
               booking.data.teacher = {
                 id: cellData.assignedTeacher.id,
                 name: cellData.assignedTeacher.name,
+                status: cellData.assignedTeacher.status || 'active',
               }
             }
 
@@ -530,6 +614,20 @@
       <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
       <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Teacher</div>
       <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span> Student(s)</div>
+    </div>
+    <!-- Add info about filtering for group schedule -->
+    <div class="alert alert-info alert-sm mt-2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"
+        ><path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        /></svg
+      >
+      <span class="text-xs"
+        >Note: Graduated students and disabled teachers remain visible as long as they have existing bookings.</span
+      >
     </div>
   </div>
 
