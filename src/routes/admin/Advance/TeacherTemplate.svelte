@@ -44,6 +44,7 @@
   let timeslots = $state([])
   let rooms = []
   let grouprooms = []
+  let filteredStudents = new Map() // Store filtered students
 
   function getCurrentDateDisplay() {
     const today = new Date()
@@ -73,7 +74,14 @@
           h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject'),
           item.isGroup
             ? h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class')
-            : h('span', { class: 'badge badge-neutral badge-xs' }, item.student?.englishName ?? 'No Student'),
+            : h(
+                'span',
+                {
+                  class: 'badge badge-neutral badge-xs',
+                  title: filteredStudents.get(item.student?.id) ? '' : 'Graduated student with no bookings',
+                },
+                filteredStudents.get(item.student?.id) || 'Unknown Student'
+              ),
           h('span', { class: 'badge badge-error badge-xs' }, item.room?.name ?? 'No Room'),
         ])
       )
@@ -87,6 +95,43 @@
     } catch (error) {
       console.error('Error loading timeslots:', error)
       toast.error('Failed to load timeslots')
+    }
+  }
+
+  async function loadAndFilterStudents() {
+    try {
+      // Load all students with their status
+      const allStudents = await pb.collection('student').getFullList({
+        fields: 'id,englishName,status',
+      })
+
+      // Get student bookings count from advanceBooking collection
+      const studentBookings = await pb.collection('advanceBooking').getFullList({
+        fields: 'student',
+      })
+
+      // Count bookings per student
+      const studentBookingCount = new Map()
+      studentBookings.forEach((booking) => {
+        const studentId = booking.student
+        studentBookingCount.set(studentId, (studentBookingCount.get(studentId) || 0) + 1)
+      })
+
+      // Create filtered student map
+      filteredStudents.clear()
+      allStudents.forEach((student) => {
+        if (student.status !== 'graduated') {
+          // Show all non-graduated students
+          filteredStudents.set(student.id, student.englishName)
+        } else if (studentBookingCount.has(student.id)) {
+          // Show graduated students only if they have bookings
+          filteredStudents.set(student.id, student.englishName)
+        }
+        // Graduated students without bookings are filtered out
+      })
+    } catch (error) {
+      console.error('Error loading and filtering students:', error)
+      toast.error('Failed to load students')
     }
   }
 
@@ -142,6 +187,9 @@
       if (timeslots.length === 0) {
         await loadTimeslots()
       }
+
+      // Load and filter students first
+      await loadAndFilterStudents()
 
       const teacherAssignmentMap = await loadRoomsAndGrouprooms()
       const [allTeachers, individualBookings, groupBookings] = await Promise.all([
@@ -202,11 +250,14 @@
 
       const scheduleMap = {}
 
+      // Process individual bookings
       for (const b of individualBookings) {
         const teacherId = b.expand?.teacher?.id
         const timeslotId = b.expand?.timeslot?.id
         const studentId = b.expand?.student?.id
-        if (!teacherId || !timeslotId) continue
+
+        // Only include if student is in filteredStudents (non-graduated or graduated with bookings)
+        if (!teacherId || !timeslotId || !studentId || !filteredStudents.has(studentId)) continue
 
         scheduleMap[teacherId] ??= {}
         scheduleMap[teacherId][timeslotId] ??= {}
@@ -219,6 +270,7 @@
         }
       }
 
+      // Process group bookings
       for (const b of groupBookings) {
         const teacherId = b.expand?.teacher?.id
         const timeslotId = b.expand?.timeslot?.id

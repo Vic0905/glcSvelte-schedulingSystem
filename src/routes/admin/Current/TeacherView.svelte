@@ -18,6 +18,7 @@
   let rooms = []
   let grouprooms = []
   let isLoading = $state(false)
+  let filteredStudents = new Map() // Store filtered students
 
   function getWeekStart(date) {
     const d = new Date(date)
@@ -59,11 +60,54 @@
           h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject'),
           item.isGroup
             ? h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class')
-            : h('span', { class: 'badge badge-neutral badge-xs' }, item.student?.englishName ?? 'No Student'),
+            : h(
+                'span',
+                {
+                  class: 'badge badge-neutral badge-xs',
+                  title: filteredStudents.get(item.student?.id) ? '' : 'Graduated student with no bookings',
+                },
+                filteredStudents.get(item.student?.id) || 'Unknown Student'
+              ),
           h('span', { class: 'badge badge-error badge-xs' }, item.room?.name ?? 'No Room'),
         ])
       )
     )
+  }
+
+  async function loadAndFilterStudents() {
+    try {
+      // Load all students with their status
+      const allStudents = await pb.collection('student').getFullList({
+        fields: 'id,englishName,status',
+      })
+
+      // Get student bookings count from lessonSchedule collection
+      const studentBookings = await pb.collection('lessonSchedule').getFullList({
+        fields: 'student',
+      })
+
+      // Count bookings per student
+      const studentBookingCount = new Map()
+      studentBookings.forEach((booking) => {
+        const studentId = booking.student
+        studentBookingCount.set(studentId, (studentBookingCount.get(studentId) || 0) + 1)
+      })
+
+      // Create filtered student map
+      filteredStudents.clear()
+      allStudents.forEach((student) => {
+        if (student.status !== 'graduated') {
+          // Show all non-graduated students
+          filteredStudents.set(student.id, student.englishName)
+        } else if (studentBookingCount.has(student.id)) {
+          // Show graduated students only if they have bookings
+          filteredStudents.set(student.id, student.englishName)
+        }
+        // Graduated students without bookings are filtered out
+      })
+    } catch (error) {
+      console.error('Error loading and filtering students:', error)
+    }
   }
 
   async function loadRoomsAndGrouprooms() {
@@ -114,9 +158,61 @@
         }
       })
 
-      // Load teachers
-      const teacherRecords = await pb.collection('teacher').getFullList({
-        sort: 'name',
+      return teacherAssignmentMap
+    } catch (error) {
+      console.error('Error loading rooms and grouprooms:', error)
+      return {}
+    }
+  }
+
+  async function loadTeacherSchedule() {
+    if (isLoading) return
+    isLoading = true
+
+    try {
+      const weekDays = getWeekDays(weekStart)
+      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
+
+      // Load and filter students first
+      await loadAndFilterStudents()
+
+      // Load rooms, grouprooms and teachers first for sorting
+      const teacherAssignmentMap = await loadRoomsAndGrouprooms()
+
+      const [timeslotsData, individualSchedules, groupSchedules, allTeachers] = await Promise.all([
+        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
+        pb.collection('lessonSchedule').getList(1, 200, {
+          filter: dateFilter,
+          expand: 'teacher,student,subject,room,timeslot',
+        }),
+        pb.collection('groupLessonSchedule').getList(1, 200, {
+          filter: dateFilter,
+          expand: 'teacher,student,subject,grouproom,timeslot',
+        }),
+        pb.collection('teacher').getFullList({ sort: 'name' }),
+      ])
+
+      timeslots = timeslotsData
+
+      // Count teacher bookings to filter disabled teachers
+      const teachersWithBookings = new Set()
+
+      // Count individual schedule bookings
+      for (const s of individualSchedules.items) {
+        const teacherId = s.expand?.teacher?.id
+        if (teacherId) teachersWithBookings.add(teacherId)
+      }
+
+      // Count group schedule bookings
+      for (const s of groupSchedules.items) {
+        const teacherId = s.expand?.teacher?.id
+        if (teacherId) teachersWithBookings.add(teacherId)
+      }
+
+      // Filter teachers: show non-disabled OR disabled with bookings
+      let filteredTeachers = allTeachers.filter((teacher) => {
+        if (teacher.status !== 'disabled') return true
+        return teachersWithBookings.has(teacher.id)
       })
 
       // Categorize teachers based on assignments
@@ -124,7 +220,7 @@
       const teachersWithGrouproomsOnly = []
       const teachersWithoutAssignments = []
 
-      teacherRecords.forEach((teacher) => {
+      filteredTeachers.forEach((teacher) => {
         const assignment = teacherAssignmentMap[teacher.id]
 
         if (assignment) {
@@ -160,47 +256,17 @@
         ...teachersWithoutAssignments.map((item) => item.teacher),
       ]
 
-      return teacherAssignmentMap
-    } catch (error) {
-      console.error('Error loading rooms and grouprooms:', error)
-      return {}
-    }
-  }
-
-  async function loadTeacherSchedule() {
-    if (isLoading) return
-    isLoading = true
-
-    try {
-      const weekDays = getWeekDays(weekStart)
-      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
-
-      // Load rooms, grouprooms and teachers first for sorting
-      const teacherAssignmentMap = await loadRoomsAndGrouprooms()
-
-      const [timeslotsData, individualSchedules, groupSchedules] = await Promise.all([
-        timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
-        pb.collection('lessonSchedule').getList(1, 200, {
-          filter: dateFilter,
-          expand: 'teacher,student,subject,room,timeslot',
-        }),
-        pb.collection('groupLessonSchedule').getList(1, 200, {
-          filter: dateFilter,
-          expand: 'teacher,student,subject,grouproom,timeslot',
-        }),
-      ])
-
-      timeslots = timeslotsData
-
       // Build schedule map
       const scheduleMap = {}
 
-      // Process individual lessons
+      // Process individual lessons - filter out graduated students without bookings
       for (const s of individualSchedules.items) {
         const teacherId = s.expand?.teacher?.id
         const timeslotId = s.expand?.timeslot?.id
         const studentId = s.expand?.student?.id
-        if (!teacherId || !timeslotId) continue
+
+        // Only include if student is in filteredStudents (non-graduated or graduated with bookings)
+        if (!teacherId || !timeslotId || !studentId || !filteredStudents.has(studentId)) continue
 
         scheduleMap[teacherId] ??= {}
         scheduleMap[teacherId][timeslotId] ??= {}
@@ -339,6 +405,8 @@
     pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
     pb.collection('room').subscribe('*', debouncedReload)
     pb.collection('grouproom').subscribe('*', debouncedReload)
+    pb.collection('teacher').subscribe('*', debouncedReload)
+    pb.collection('student').subscribe('*', debouncedReload)
   })
 
   onDestroy(() => {
@@ -348,6 +416,8 @@
     pb.collection('groupLessonSchedule').unsubscribe()
     pb.collection('room').unsubscribe()
     pb.collection('grouproom').unsubscribe()
+    pb.collection('teacher').unsubscribe()
+    pb.collection('student').unsubscribe()
   })
 </script>
 
@@ -390,7 +460,7 @@
       </div>
       <div class="flex items-center gap-1">
         <span class="badge badge-neutral badge-xs"></span>
-        <span>Student</span>
+        <span>Student (graduated without bookings are hidden)</span>
       </div>
       <div class="flex items-center gap-1">
         <span class="badge badge-secondary badge-xs"></span>
