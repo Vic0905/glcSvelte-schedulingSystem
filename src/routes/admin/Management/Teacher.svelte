@@ -4,6 +4,7 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import { teacherRoutes } from '../../../lib/Routes.svelte'
 
   let name = ''
   let status = 'enabled'
@@ -16,6 +17,9 @@
   let grid
   let selectedTeachers = new Set()
   let showBulkActions = false
+  let totalTeachers = 0
+  let enabledTeachers = 0
+  let disabledTeachers = 0
 
   const statusOptions = ['enabled', 'disabled']
   const statusColors = {
@@ -27,6 +31,11 @@
     const records = await pb.collection('teacher').getFullList({
       sort: '-created',
     })
+
+    //Calcute statistics
+    totalTeachers = records.length
+    enabledTeachers = records.filter((teacher) => teacher.status === 'enabled').length
+    disabledTeachers = records.filter((teacher) => teacher.status === 'disabled').length
 
     const data = records.map((t) => [
       h('input', {
@@ -63,21 +72,21 @@
       grid = new Grid({
         columns: [
           { name: 'Select', width: '50px' },
-          { name: 'Name', width: '150px' },
-          { name: 'Status', width: '120px' },
-          { name: 'Actions', width: '120px' },
+          { name: 'Name', width: '100px' },
+          { name: 'Status', width: '100px' },
+          { name: 'Actions', width: '100px' },
         ],
         data,
         className: {
-          table: 'w-full text-xs',
-          th: 'bg-base-200 p-3 border text-center font-semibold',
-          td: 'p-3 border align-middle text-center',
+          table: 'w-full text-xs !border-collapse',
+          th: 'bg-base-200 p-3 border-t border-b !border-x-0 text-center font-semibold',
+          td: 'p-3 border-t border-b !border-x-0 align-middle text-center',
         },
         pagination: {
           enabled: true,
           limit: 10,
         },
-        sort: true,
+        sort: false,
         search: {
           enabled: true,
           selector: (cell, rowIndex, cellIndex) => {
@@ -101,7 +110,35 @@
     }
 
     try {
-      const payload = { name, status }
+      const payload = { name: name.trim(), status }
+
+      // Get all existing teachers
+      const existingTeachers = await pb.collection('teacher').getFullList({
+        fields: 'name,id',
+      })
+
+      // Check if name already exists (case-insensitive)
+      const normalizedInput = name.trim().toLowerCase()
+
+      if (!editingId) {
+        // For NEW teachers: check if any teacher has this name
+        const exists = existingTeachers.some((teacher) => teacher.name.toLowerCase() === normalizedInput)
+
+        if (exists) {
+          toast.error(`Teacher "${name}" already exists!`)
+          return
+        }
+      } else {
+        // For EDITING teachers: check if OTHER teacher has this name
+        const exists = existingTeachers.some(
+          (teacher) => teacher.name.toLowerCase() === normalizedInput && teacher.id !== editingId
+        )
+
+        if (exists) {
+          toast.error(`Teacher "${name}" already exists!`)
+          return
+        }
+      }
 
       if (editingId) {
         await pb.collection('teacher').update(editingId, payload)
@@ -228,11 +265,15 @@
     let errorCount = 0
 
     try {
-      const existingTeachers = await pb.collection('teacher').getFullList()
+      // Get all existing teachers first
+      const existingTeachers = await pb.collection('teacher').getFullList({
+        fields: 'name',
+      })
       const existingNames = existingTeachers.map((t) => t.name.toLowerCase().trim())
 
       for (const teacher of csvPreview) {
         try {
+          // Check if name already exists (case-insensitive)
           if (existingNames.includes(teacher.name.toLowerCase().trim())) {
             console.log(`Skipping duplicate: ${teacher.name}`)
             skippedCount++
@@ -242,6 +283,7 @@
           await pb.collection('teacher').create(teacher)
           successCount++
 
+          // Add to existing names to prevent duplicates in same batch
           existingNames.push(teacher.name.toLowerCase().trim())
         } catch (err) {
           console.error(`Error adding ${teacher.name}:`, err)
@@ -349,6 +391,30 @@
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 class="text-2xl font-bold mb-2">Teacher Management</h1>
+          <div class="flex gap-2 mt-2">
+            <!-- Total Teachers Card -->
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">Total Teachers</p>
+                <p class="text-lg font-bold">{totalTeachers}</p>
+              </div>
+            </div>
+
+            <!-- Enabled Teachers Card -->
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">Enabled</p>
+                <p class="text-lg font-bold text-success">{enabledTeachers}</p>
+              </div>
+            </div>
+            <!-- Disabled Teachers Card (optional) -->
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">Disabled</p>
+                <p class="text-lg font-bold text-error">{disabledTeachers}</p>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-ghost gap-2" onclick={openCSVModal}>

@@ -14,6 +14,7 @@
   let teachers = []
   let groupRooms = []
   let rooms = []
+  let totalRooms = 0
 
   async function loadTeachers() {
     try {
@@ -56,6 +57,7 @@
       })
 
       groupRooms = records
+      totalRooms = records.length
 
       const data = records.map((t) => [
         t.name,
@@ -88,9 +90,9 @@
           columns: ['Group Room Name', 'Assigned Teacher', 'Max Students', 'Actions'],
           data,
           className: {
-            table: 'w-full text-xs',
-            th: 'bg-base-200 p-3 border text-center font-semibold',
-            td: 'p-3 border align-middle text-center',
+            table: 'w-full text-xs !border-collapse',
+            th: 'bg-base-200 p-3 border-t border-d !border-x-0 text-center font-semibold',
+            td: 'p-3 border-t border-d !border-x-0 align-middle text-center',
           },
           pagination: {
             enabled: true,
@@ -118,6 +120,35 @@
     }
 
     try {
+      // 1. Check if group room name already exists
+      const existingGroupRooms = await pb.collection('grouproom').getFullList({
+        fields: 'name,id',
+      })
+
+      const normalizedInput = name.trim().toLowerCase()
+
+      if (!editingId) {
+        const exists = existingGroupRooms.some((groupRoom) => groupRoom.name.toLowerCase() === normalizedInput)
+        if (exists) {
+          toast.error(`Group Room "${name}" already exists!`)
+          return
+        }
+      } else {
+        const exists = existingGroupRooms.some(
+          (groupRoom) => groupRoom.name.toLowerCase() === normalizedInput && groupRoom.id !== editingId
+        )
+        if (exists) {
+          toast.error(`Group Room "${name}" already exists!`)
+          return
+        }
+      }
+
+      // 2. Check if teacher is already assigned
+      if (selectedTeacherId && isTeacherAssigned(selectedTeacherId)) {
+        toast.error('This teacher is already assigned to another room or grouproom!')
+        return
+      }
+
       const groupRoomData = {
         name: name.trim(),
         teacher: selectedTeacherId || null,
@@ -187,6 +218,14 @@
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 class="text-2xl font-bold mb-2">GRP Room Management</h1>
+          <div class="flex gap-2 mt-2">
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">Total Rooms</p>
+                <p class="text-lg font-bold">{totalRooms}</p>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-ghost gap-2" onclick={openAddModal}> Add GRP Room </button>

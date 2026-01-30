@@ -19,6 +19,10 @@
   let grid
   let selectedStudents = new Set()
   let showBulkActions = false
+  let totalStudents = 0
+  let newStudent = 0
+  let oldStudent = 0
+  let graduatedStudent = 0
 
   const statusOptions = ['new', 'old', 'graduated']
   const statusColors = {
@@ -31,6 +35,11 @@
     const records = await pb.collection('student').getFullList({
       sort: '-created',
     })
+
+    totalStudents = records.length
+    newStudent = records.filter((student) => student.status === 'new').length
+    oldStudent = records.filter((student) => student.status === 'old').length
+    graduatedStudent = records.filter((student) => student.status === 'graduated').length
 
     const data = records.map((t) => [
       h('input', {
@@ -79,9 +88,9 @@
         ],
         data,
         className: {
-          table: 'w-full text-xs',
-          th: 'bg-base-200 p-3 border text-center font-semibold',
-          td: 'p-3 border align-middle text-center',
+          table: 'w-full text-xs !border-collapse',
+          th: 'bg-base-200 p-3 border-t border-d !border-x-0 text-center font-semibold',
+          td: 'p-3 border-t border-d !border-x-0 align-middle text-center',
         },
         pagination: {
           enabled: true,
@@ -111,7 +120,37 @@
     }
 
     try {
-      const payload = { name, englishName, course, level, status }
+      const payload = { name, englishName: englishName.trim(), course, level, status }
+
+      // Get all existing students
+      const existingStudents = await pb.collection('student').getFullList({
+        fields: 'englishName,id',
+      })
+
+      const normalizedInput = englishName.trim().toLowerCase()
+
+      if (!editingId) {
+        // For NEW students: check if any student has this English Name
+        const exists = existingStudents.some(
+          (student) => student.englishName && student.englishName.toLowerCase() === normalizedInput
+        )
+
+        if (exists) {
+          toast.error(`Student with English Name "${englishName}" already exists!`)
+          return
+        }
+      } else {
+        // For EDITING students: check if OTHER student has this English Name
+        const exists = existingStudents.some(
+          (student) =>
+            student.englishName && student.englishName.toLowerCase() === normalizedInput && student.id !== editingId
+        )
+
+        if (exists) {
+          toast.error(`Student with English Name "${englishName}" already exists!`)
+          return
+        }
+      }
 
       if (editingId) {
         await pb.collection('student').update(editingId, payload)
@@ -376,6 +415,35 @@
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 class="text-2xl font-bold mb-2">Student Management</h1>
+          <div class="flex gap-2 mt-2">
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">Total Student</p>
+                <p class="text-lg font-bold">{totalStudents}</p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">New</p>
+                <p class="text-lg font-bold text-success">{newStudent}</p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">old</p>
+                <p class="text-lg font-bold text-info">{oldStudent}</p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">Graduated</p>
+                <p class="text-lg font-bold text-warning">{graduatedStudent}</p>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-ghost gap-2" onclick={openCSVModal}>

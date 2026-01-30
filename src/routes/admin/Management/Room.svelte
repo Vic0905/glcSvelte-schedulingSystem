@@ -16,6 +16,7 @@
   let grouprooms = []
   let csvFile = null
   let isImporting = false
+  let totalRooms = 0
 
   async function loadTeachers() {
     try {
@@ -71,6 +72,7 @@
       })
 
       rooms = records
+      totalRooms = records.length
 
       // Ensure we always have valid data structure
       const data = records.map((t) => {
@@ -110,9 +112,9 @@
           ],
           data,
           className: {
-            table: 'w-full text-xs',
-            th: 'bg-base-200 p-3 border text-center font-semibold',
-            td: 'p-3 border align-middle text-center',
+            table: 'w-full text-xs !border-collapse',
+            th: 'bg-base-200 p-3 border-t border-b !border-x-0 text-center font-semibold',
+            td: 'p-3 border-r border-t !border-x-0 align-middle text-center',
           },
           pagination: {
             enabled: true,
@@ -132,6 +134,31 @@
     if (!name.trim()) {
       toast.error('Room name is required')
       return
+    }
+
+    // Check if room name already exists (case-insensitive)
+    const existingRooms = await pb.collection('room').getFullList({
+      fields: 'name,id',
+    })
+
+    const normalizedInput = name.trim().toLowerCase()
+
+    if (!editingId) {
+      // For NEW rooms: check if any room has this name
+      const exists = existingRooms.some((room) => room.name.toLowerCase() === normalizedInput)
+
+      if (exists) {
+        toast.error(`Room "${name}" already exists!`)
+        return
+      }
+    } else {
+      // For EDITING rooms: check if OTHER room has this name
+      const exists = existingRooms.some((room) => room.name.toLowerCase() === normalizedInput && room.id !== editingId)
+
+      if (exists) {
+        toast.error(`Room "${name}" already exists!`)
+        return
+      }
     }
 
     // Check if teacher is occupied
@@ -317,6 +344,14 @@ ST05`
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 class="text-2xl font-bold mb-2">Room Management</h1>
+          <div class="flex gap-2 mt-2">
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">Total Room</p>
+                <p class="text-lg font-bold">{totalRooms}</p>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-outline gap-2" on:click={() => (showCSVModal = true)}> Import CSV </button>

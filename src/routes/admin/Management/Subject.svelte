@@ -9,11 +9,15 @@
   let editingId = null
   let showModal = false
   let grid
+  let totalSubjects = 0
 
   async function loadSubject() {
     const records = await pb.collection('subject').getFullList({
       sort: '-created',
     })
+
+    //calculate the total subjects
+    totalSubjects = records.length
 
     const data = records.map((t) => [
       t.name,
@@ -47,9 +51,9 @@
         ],
         data,
         className: {
-          table: 'w-full text-xs',
-          th: 'bg-base-200 p-3 border text-center font-semibold',
-          td: 'p-3 border align-middle text-center',
+          table: 'w-full text-xs !border-collapse',
+          th: 'bg-base-200 p-3 border-t border-b !border-x-0 text-center font-semibold',
+          td: 'p-3 border-t border-b !border-x-0 align-middle text-center',
         },
         pagination: {
           enabled: true,
@@ -68,6 +72,42 @@
     }
 
     try {
+      // Check if subject name already exists (only for new subjects, not editing)
+      if (!editingId) {
+        // Get all existing subjects
+        const existingSubjects = await pb.collection('subject').getFullList({
+          fields: 'name',
+        })
+
+        // Check if name already exists (case-insensitive)
+        const normalizedInput = name.trim().toLowerCase()
+        const exists = existingSubjects.some((subject) => subject.name.toLowerCase() === normalizedInput)
+
+        if (exists) {
+          toast.error(`Subject "${name}" already exists!`)
+          return
+        }
+      }
+
+      // For editing: check if other subjects have this name
+      if (editingId) {
+        // Get all existing subjects
+        const existingSubjects = await pb.collection('subject').getFullList({
+          fields: 'name,id',
+        })
+
+        // Check if name already exists (case-insensitive) and it's not the current subject
+        const normalizedInput = name.trim().toLowerCase()
+        const exists = existingSubjects.some(
+          (subject) => subject.name.toLowerCase() === normalizedInput && subject.id !== editingId
+        )
+
+        if (exists) {
+          toast.error(`Subject "${name}" already exists!`)
+          return
+        }
+      }
+
       if (editingId) {
         await pb.collection('subject').update(editingId, { name })
         toast.success('Subject updated successfully!')
@@ -121,6 +161,14 @@
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 class="text-2xl font-bold mb-2">Subject Management</h1>
+          <div class="flex gap=2 mt-2">
+            <div class="flex items-center gap-3">
+              <div>
+                <p class="text-xs text-base-content/60">Total Subjects</p>
+                <p class="text-lg font-bold">{totalSubjects}</p>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="flex gap-3">
           <button class="btn btn-ghost gap-2" on:click={openAddModal}> Add Subject </button>

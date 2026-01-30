@@ -7,52 +7,12 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
 
   const stickyStyles = `
-    #advance-group-grid .gridjs-wrapper { 
-      max-height: 700px; 
-      overflow: auto;
-      scroll-behavior: auto !important; 
-    }
-    #advance-group grid table {
-      border-collapse; collapse !important;  
-    }
-
-    #advance-group-grid th { 
-      position: sticky; 
-      top: 0; 
-      z-index: 20; 
-      background: var(--b2, #fafcff);
-      border-bottom 2px solid #ddd !important;
-      outline: 1px solid #ddd;
-      outline-offset: -1px; 
-    }
-
-    #advance-group-grid th:nth-child(1), 
-    #advance-group-grid td:nth-child(1) { 
-      position: sticky; 
-      left: 0; 
-      z-index: 15; 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px; 
-    }
-
-    #advance-group-grid th:nth-child(1) { 
-      z-index: 25; 
-    }
-
-    #advance-group-grid th:nth-child(2), 
-    #advance-group-grid td:nth-child(2) { 
-      position: sticky; 
-      left: 120px; 
-      z-index: 15; 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px;
-    }
-
-    #advance-group-grid th:nth-child(2) { 
-      z-index: 25; 
-    }
+    #advance-group-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+    #advance-group-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #advance-group-grid th:nth-child(1), #advance-group-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
+    #advance-group-grid th:nth-child(1) { z-index: 25; }
+    #advance-group-grid th:nth-child(2), #advance-group-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+    #advance-group-grid th:nth-child(2) { z-index: 25; }
   `
 
   let currentWeekStart = $state('')
@@ -118,7 +78,6 @@
     const monday = new Date(currentWeekStart)
     monday.setDate(monday.getDate() + weeks * 7)
     currentWeekStart = monday.toISOString().split('T')[0]
-    // Removed the loadAdvanceGroupBookings(true) call - just update the date
   }
 
   const formatCell = (cell) => {
@@ -127,10 +86,9 @@
     const elements = [
       h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
       h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name || 'No Teacher'),
-      // h('div', { class: 'badge badge-error badge-xs' }, cell.groupRoom.name || 'No Room'),
     ]
 
-    // Add student count badge like in advance group
+    // Add student count badge
     const studentCount = cell.students?.length || 0
     if (studentCount > 0) {
       elements.push(
@@ -201,15 +159,13 @@
         allGroupRooms = groupRoomsData
         records = bookingsData
 
-        // FILTERING LOGIC: Hide graduated students and disabled teachers unless they have bookings
-        const existingBookings = records
-
-        // Create maps for faster lookups
+        // ========== FILTERING LOGIC START ==========
+        // Create maps for counting bookings
         const studentBookingCount = new Map()
         const teacherBookingCount = new Map()
 
         // Count bookings per user
-        existingBookings.forEach((booking) => {
+        records.forEach((booking) => {
           const teacherId = booking.expand?.teacher?.id || booking.teacher
 
           // Count teacher bookings
@@ -240,14 +196,10 @@
             return hasAnyBookings
           }
 
-          // For group bookings, we also need to check each student
-          // But we'll filter students separately in the modal
-          // For now, keep the booking if the teacher is valid
-
-          return true // Keep all bookings with active teachers or teachers with bookings
+          return true
         })
 
-        // Also filter group rooms based on assigned teacher status
+        // Filter group rooms based on assigned teacher status
         const activeGroupRooms = groupRoomsData.filter((groupRoom) => {
           const assignedTeacher = groupRoom.expand?.teacher
           if (!assignedTeacher) return true
@@ -271,6 +223,7 @@
 
         // Use filtered bookings for building the schedule
         records = activeBookings
+        // ========== FILTERING LOGIC END ==========
       }
 
       // Build schedule map using Map for better performance
@@ -319,8 +272,6 @@
             if (item.expand?.student && Array.isArray(item.expand.student)) {
               // Use for loop for better performance
               for (const student of item.expand.student) {
-                // Filter out graduated students unless they have other bookings
-                // We'll do this filtering in the modal for selection
                 studentsData.push({
                   englishName: student.englishName || '',
                   id: student.id || '',
@@ -333,7 +284,7 @@
                 studentsData.push({
                   englishName: `Student ${studentId}`,
                   id: studentId,
-                  status: 'unknown', // We don't have status info here
+                  status: 'unknown',
                 })
               }
             }
@@ -395,14 +346,14 @@
           sort: false,
           pagination: false,
           className: {
-            table: 'w-full border text-xs',
-            th: 'bg-base-200 p-2 border text-center',
-            td: 'border p-2 align-middle text-center',
+            table: 'w-full border text-xs !border-collapse',
+            th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
+            td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
           },
           style: {
             table: {
               'border-collapse': 'collapse',
-              'table-layout': 'fixed', // Prevents layout shifts
+              'table-layout': 'fixed',
             },
           },
         }).render(document.getElementById('advance-group-grid'))
@@ -452,30 +403,26 @@
       cache.bookings = null
 
       alert(`✅ Successfully deleted ${allBookings.length} advance group bookings.`)
-      loadAdvanceGroupBookings(true) // Force refresh
+      loadAdvanceGroupBookings(true)
     } catch (error) {
       console.error('Error deleting advance group bookings:', error)
-      alert('❌ Failed to delete advance group bookings. Check console for details.')
+      alert('❌ Failed to delete advance group bookings.')
     }
   }
 
-  let reloadTimeout
-  const debouncedReload = () => {
-    clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(() => {
-      cache.bookings = null // Invalidate cache on updates
-      loadAdvanceGroupBookings(true)
-    }, 150)
+  // Instant refresh (0ms) for rapid scheduling
+  const immediateReload = () => {
+    cache.bookings = null
+    loadAdvanceGroupBookings(true)
   }
 
   onMount(() => {
     initializeWeek()
     loadAdvanceGroupBookings()
-    pb.collection('groupAdvanceBooking').subscribe('*', debouncedReload)
+    pb.collection('groupAdvanceBooking').subscribe('*', immediateReload)
   })
 
   onDestroy(() => {
-    clearTimeout(reloadTimeout)
     advanceGroupGrid?.destroy()
     advanceGroupGrid = null
     pb.collection('groupAdvanceBooking').unsubscribe()
@@ -534,7 +481,7 @@
   bind:advanceGroupBooking
   onSave={() => {
     saveScrollPosition()
-    cache.bookings = null // Invalidate cache
+    cache.bookings = null
   }}
 />
 <GroupGoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} />

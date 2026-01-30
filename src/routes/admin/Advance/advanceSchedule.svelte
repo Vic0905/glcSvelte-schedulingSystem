@@ -7,72 +7,13 @@
   import GoLiveModal from './GoLiveModal.svelte'
 
   const stickyStyles = `
-  #advance-grid .gridjs-wrapper { 
-    max-height: 700px; 
-    overflow: auto; 
-    scroll-behavior: auto !important;
-  }
-  
-  /* Fix table border rendering */
-  #advance-grid table {
-    border-collapse: collapse !important;
-  }
-  
-  /* All headers - top sticky with bottom border */
-  #advance-grid th { 
-    position: sticky; 
-    top: 0; 
-    z-index: 15; 
-    background: var(--b2, #fafcff);
-    border-bottom: 2px solid #ddd !important;
-    outline: 1px solid #ddd;
-    outline-offset: -1px;
-  }
-  
-  /* First sticky column - cells AND headers */
-  #advance-grid th:nth-child(1), 
-  #advance-grid td:nth-child(1) { 
-    position: sticky; 
-    left: 0; 
-    z-index: 15; 
-    background: var(--b2, #fafcff);
-    outline: 1px solid #ddd;
-    outline-offset: -1px;
-  }
-  
-  /* First column header - higher z-index */
-  #advance-grid th:nth-child(1) { 
-    z-index: 25; 
-  }
-  
-  /* Second sticky column - cells AND headers */
-  #advance-grid th:nth-child(2), 
-  #advance-grid td:nth-child(2) { 
-    position: sticky; 
-    left: 120px; 
-    z-index: 10; 
-    background: var(--b2, #fafcff);
-    outline: 1px solid #ddd;
-    outline-offset: -1px;
-  }
-  
-  /* Second column header - higher z-index */
-  #advance-grid th:nth-child(2) { 
-    z-index: 25; 
-  }
-  
-  /* Data cells - add bottom borders for rows */
-  #advance-grid td {
-    border-bottom: 1px solid #eee !important;
-  }
-  
-  /* Optional: Remove duplicate borders between sticky columns */
-  #advance-grid th:nth-child(2),
-  #advance-grid td:nth-child(2) {
-    border-left: none !important;
-    margin-left: -1px; /* Compensate for outline overlap */
-  }
-`
+    #advance-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+    #advance-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #advance-grid th:nth-child(1), #advance-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
+    #advance-grid th:nth-child(1) { z-index: 25; }
+    #advance-grid th:nth-child(2), #advance-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+    #advance-grid th:nth-child(2) { z-index: 25; }
+  `
 
   let currentWeekStart = $state('')
   let timeslots = []
@@ -195,16 +136,13 @@
         rooms = roomsData
         bookings = bookingsData
 
-        // Filter out bookings with graduated students or disabled teachers
-        // unless they have any bookings (show if they have at least 1 booking)
-        const existingBookings = bookings
-
-        // Create maps for faster lookups (performance optimization)
+        // ========== FILTERING LOGIC START ==========
+        // Create maps for faster lookups
         const studentBookingCount = new Map()
         const teacherBookingCount = new Map()
 
         // Count bookings per user
-        existingBookings.forEach((booking) => {
+        bookings.forEach((booking) => {
           const studentId = booking.expand?.student?.id || booking.student
           const teacherId = booking.expand?.teacher?.id || booking.teacher
 
@@ -216,7 +154,7 @@
           }
         })
 
-        // Filter bookings - show graduated students and disabled teachers if they have ANY bookings
+        // Filter bookings - show graduated students and disabled teachers only if they have bookings
         const activeBookings = bookings.filter((booking) => {
           const student = booking.expand?.student
           const teacher = booking.expand?.teacher
@@ -224,19 +162,19 @@
           // Check student: if graduated, only show if they have at least 1 booking
           if (student && student.status === 'graduated') {
             const hasAnyBookings = (studentBookingCount.get(student.id) || 0) >= 1
-            return hasAnyBookings // Keep if they have ANY bookings (not just "other" bookings)
+            return hasAnyBookings
           }
 
           // Check teacher: if disabled, only show if they have at least 1 booking
           if (teacher && teacher.status === 'disabled') {
             const hasAnyBookings = (teacherBookingCount.get(teacher.id) || 0) >= 1
-            return hasAnyBookings // Keep if they have ANY bookings (not just "other" bookings)
+            return hasAnyBookings
           }
 
           return true // Keep all active users
         })
 
-        // Also filter rooms based on assigned teacher status
+        // Filter rooms based on assigned teacher status
         const activeRooms = rooms.filter((room) => {
           const assignedTeacher = room.expand?.teacher
           if (!assignedTeacher) return true
@@ -258,8 +196,9 @@
         // Update rooms with filtered list
         rooms = activeRooms
 
-        // Use activeBookings for building the schedule
+        // Use filtered bookings for building the schedule
         bookings = activeBookings
+        // ========== FILTERING LOGIC END ==========
       }
 
       // Build schedule map using Map for better performance
@@ -363,9 +302,9 @@
           sort: false,
           pagination: false,
           className: {
-            table: 'w-full border text-xs',
-            th: 'bg-base-200 p-1 border text-center',
-            td: 'border p-2 align-middle text-center',
+            table: 'w-full text-xs !border-collapse',
+            th: 'bg-base-200 p-1 border-t border-b !border-x-0 text-center',
+            td: 'p-2 border-t border-b !border-x-0 align-middle text-center',
           },
           style: {
             table: {
@@ -426,25 +365,21 @@
     }
   }
 
-  let reloadTimeout
-  const debouncedReload = () => {
-    clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(() => {
-      cache.bookings = null // Invalidate cache on updates
-      loadAdvanceBookings(true)
-    }, 150)
+  // Instant refresh (0ms debounce) for rapid scheduling
+  const immediateReload = () => {
+    cache.bookings = null
+    loadAdvanceBookings(true)
   }
 
   onMount(() => {
     initializeWeek()
     loadAdvanceBookings()
 
-    // Subscribe to changes with debouncing
-    pb.collection('advanceBooking').subscribe('*', debouncedReload)
+    // Subscribe to changes with instant refresh
+    pb.collection('advanceBooking').subscribe('*', immediateReload)
   })
 
   onDestroy(() => {
-    clearTimeout(reloadTimeout)
     advanceGrid?.destroy()
     advanceGrid = null
     pb.collection('advanceBooking').unsubscribe()

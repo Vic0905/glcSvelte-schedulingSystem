@@ -71,15 +71,29 @@
   let studentGrid = null
   let timeslots = []
 
-  // Keep only this date display function
   function getCurrentDateDisplay() {
     const today = new Date()
-    return today.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
+    const day = today.getDay()
+
+    // Get Tuesday (2) of the current week
+    const tuesday = new Date(today)
+    tuesday.setDate(today.getDate() + (day === 0 ? 2 : 2 - day))
+
+    // Friday is 3 days after Tuesday
+    const friday = new Date(tuesday)
+    friday.setDate(tuesday.getDate() + 3)
+
+    // Format output
+    const format = (date, showYear = true) =>
+      date.toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        ...(showYear && { year: 'numeric' }),
+      })
+
+    return tuesday.getMonth() === friday.getMonth() && tuesday.getFullYear() === friday.getFullYear()
+      ? `${format(tuesday, false)} - ${friday.getDate()}, ${friday.getFullYear()}`
+      : `${format(tuesday)} - ${format(friday)}`
   }
 
   const formatCell = (cell) => {
@@ -224,9 +238,9 @@
           sort: false,
           pagination: false,
           className: {
-            table: 'w-full border text-xs',
-            th: 'bg-base-200 p-2 border text-center',
-            td: 'border p-2 align-middle text-center',
+            table: 'w-full border text-xs !border-collapse',
+            th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
+            td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
           },
           style: { table: { 'border-collapse': 'collapse' } },
         }).render(document.getElementById('studentGrid'))
