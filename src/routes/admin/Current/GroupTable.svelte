@@ -481,9 +481,9 @@
             sort: false,
             pagination: false,
             className: {
-              table: 'w-full border text-xs',
-              th: 'bg-base-200 p-2 border text-center',
-              td: 'border p-2 align-middle text-center',
+              table: 'w-full border text-xs !border-collapse',
+              th: 'bg-base-200 p-2 border-t boder-d !border-x-0 text-center',
+              td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
             },
             style: {
               table: {
