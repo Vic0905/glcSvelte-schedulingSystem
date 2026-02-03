@@ -2,11 +2,15 @@
   import { toast } from 'svelte-sonner'
   import { pb } from '../../lib/Pocketbase.svelte'
 
-  let username = $state()
-  let password = $state()
+  let username = $state('')
+  let password = $state('')
 
   const login = async (e) => {
     e.preventDefault()
+    if (!username || !password) {
+      toast.error('Username and Password Incorrect!')
+      return
+    }
     toast.promise(pb.collection('users').authWithPassword(username, password), {
       loading: 'Loggin in ...',
       success: (data) => {
@@ -25,11 +29,11 @@
 
   <!-- svelte-ignore a11y_label_has_associated_control -->
   <label class="label">Username / Email</label>
-  <input type="text" class="input validator" placeholder="Username / Email" bind:value={username} required />
+  <input type="text" class="input validator" placeholder="Username / Email" bind:value={username} />
 
   <!-- svelte-ignore a11y_label_has_associated_control -->
   <label class="label">Password</label>
-  <input type="password" class="input validator" placeholder="Password" bind:value={password} required />
+  <input type="password" class="input validator" placeholder="Password" bind:value={password} />
 
   <button class="btn btn-info mt-4" type="submit">Login</button>
 </form>
