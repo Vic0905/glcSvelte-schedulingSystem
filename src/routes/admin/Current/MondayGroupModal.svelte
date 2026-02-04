@@ -12,62 +12,46 @@
   let teachers = $state([])
   let groupRooms = $state([])
   let timeslots = $state([])
-  let saving = $state(false)
-  let deleting = $state(false)
+
   let selectedStudents = $state([])
   let maxStudentsAllowed = $state(0)
   let searchTerm = $state('')
-  let existingSchedules = $state([])
 
-  // Consolidated conflict detection using $derived
-  const conflicts = $derived({
-    teacher: existingSchedules.find((s) => s.teacher === groupBooking?.teacher?.id),
-    grouproom: existingSchedules.find(
-      (s) => s.room === groupBooking?.groupRoom?.id || s.grouproom === groupBooking?.groupRoom?.id
-    ),
-    students: selectedStudents.filter((studentId) =>
-      existingSchedules.some(
-        (s) => s.student === studentId || (Array.isArray(s.student) && s.student.includes(studentId))
-      )
-    ),
+  let saving = $state(false)
+  let deleting = $state(false)
+  let dataLoaded = $state(false)
+
+  /* Load dropdown data ONCE when modal opens */
+  $effect(() => {
+    if (show && !dataLoaded) {
+      loadAllData()
+      dataLoaded = true
+
+      if (groupBooking?.mode === 'edit' && Array.isArray(groupBooking.students)) {
+        selectedStudents = groupBooking.students.map((s) => s.id ?? s)
+      } else {
+        selectedStudents = []
+      }
+
+      setMaxStudentsAllowed()
+    }
   })
-
-  // Show modal method (called from parent)
-  export function showModal() {
-    show = true
-    loadAllData()
-
-    // Initialize selected students from groupBooking data
-    if (groupBooking?.mode === 'edit' && Array.isArray(groupBooking.students)) {
-      selectedStudents = groupBooking.students.map((student) => student.id || student)
-    } else {
-      selectedStudents = []
-    }
-
-    setMaxStudentsAllowed()
-
-    // Reload existing schedules when modal opens
-    if (groupBooking?.date && groupBooking?.timeslot?.id) {
-      loadExistingSchedules()
-    }
-  }
 
   function closeModal() {
     show = false
     selectedStudents = []
-    maxStudentsAllowed = 0
     searchTerm = ''
-    existingSchedules = []
+    maxStudentsAllowed = 0
   }
 
-  const loadAllData = async () => {
+  async function loadAllData() {
     try {
       const [subjectsData, studentsData, teachersData, groupRoomsData, timeslotsData] = await Promise.all([
-        pb.collection('subject').getFullList({ sort: 'name' }),
-        pb.collection('student').getFullList({ sort: 'englishName' }),
-        pb.collection('teacher').getFullList({ sort: 'name' }),
-        pb.collection('groupRoom').getFullList({ sort: 'name' }),
-        pb.collection('timeslot').getFullList({ sort: 'start' }),
+        pb.collection('subject').getFullList({ sort: 'name', fields: 'id,name' }),
+        pb.collection('student').getFullList({ sort: 'englishName', fields: 'id,englishName,status' }),
+        pb.collection('teacher').getFullList({ sort: 'name', fields: 'id,name,status' }),
+        pb.collection('groupRoom').getFullList({ sort: 'name', fields: 'id,name,maxstudents' }),
+        pb.collection('timeslot').getFullList({ sort: 'start', fields: 'id,start,end' }),
       ])
 
       subjects = subjectsData
@@ -75,115 +59,23 @@
       teachers = teachersData
       groupRooms = groupRoomsData
       timeslots = timeslotsData
-
-      setMaxStudentsAllowed()
     } catch (err) {
-      console.error('Error loading dropdowns:', err)
+      console.error(err)
       toast.error('Failed to load dropdown data')
     }
   }
 
-  const loadExistingSchedules = async () => {
-    try {
-      const selectedDate = groupBooking?.date
-      const timeslotId = groupBooking?.timeslot?.id
-
-      if (!selectedDate || !timeslotId) {
-        existingSchedules = []
-        return
-      }
-
-      // Exclude schedules being edited
-      let excludeFilter = ''
-      if (
-        groupBooking?.mode === 'edit' &&
-        groupBooking?.originalTeacherId &&
-        groupBooking?.originalGroupRoomId &&
-        groupBooking?.originalTimeslotId
-      ) {
-        const editingSchedules = await pb.collection('mondayGroupLessonSchedule').getFullList({
-          filter: `teacher = "${groupBooking.originalTeacherId}" && timeslot = "${groupBooking.originalTimeslotId}" && grouproom = "${groupBooking.originalGroupRoomId}" && date = "${selectedDate}"`,
-          fields: 'id',
-        })
-
-        if (editingSchedules.length > 0) {
-          const excludeIds = editingSchedules.map((s) => `id != "${s.id}"`).join(' && ')
-          excludeFilter = ` && (${excludeIds})`
-        }
-      }
-
-      const [mondayLessonRecords, mondayGroupRecords] = await Promise.all([
-        pb.collection('mondayLessonSchedule').getFullList({
-          filter: `date = "${selectedDate}" && timeslot = "${timeslotId}"`,
-          expand: 'teacher,student,room',
-        }),
-        pb.collection('mondayGroupLessonSchedule').getFullList({
-          filter: `date = "${selectedDate}" && timeslot = "${timeslotId}"${excludeFilter}`,
-          expand: 'teacher,student,grouproom,subject',
-        }),
-      ])
-
-      existingSchedules = [...mondayLessonRecords, ...mondayGroupRecords]
-    } catch (error) {
-      console.error('Error loading Monday schedules:', error)
-      existingSchedules = []
-    }
-  }
-
-  const getConflictLabel = (schedule, type) => {
-    if (!schedule?.expand) return 'Unknown'
-
-    const isGroupLesson = Array.isArray(schedule.student)
-
-    switch (type) {
-      case 'teacher':
-        if (isGroupLesson) return 'Group Class'
-        return schedule.expand.student?.englishName || 'Unknown Student'
-
-      case 'student':
-        return schedule.expand.teacher?.name || 'Unknown Teacher'
-
-      case 'grouproom':
-        const teacherName = schedule.expand.teacher?.name || 'Unknown Teacher'
-        if (isGroupLesson) {
-          const studentNames = schedule.expand.student?.map((st) => st.englishName).join(', ') || 'Group Students'
-          return `${teacherName} & ${studentNames}`
-        }
-        const studentName = schedule.expand.student?.englishName || 'Unknown Student'
-        return `${teacherName} & ${studentName}`
-
-      default:
-        return 'Unknown'
-    }
-  }
-
-  const getStudentConflict = (studentId) => {
-    return existingSchedules.find(
-      (s) => s.student === studentId || (Array.isArray(s.student) && s.student.includes(studentId))
-    )
-  }
-
-  // Reload schedules when date/timeslot changes
-  $effect(() => {
-    if (groupBooking?.date && groupBooking?.timeslot?.id) {
-      loadExistingSchedules()
-    }
-  })
-
   function setMaxStudentsAllowed() {
-    if (groupBooking?.groupRoom?.id && groupRooms.length > 0) {
-      const selectedRoom = groupRooms.find((room) => room.id === groupBooking.groupRoom.id)
-      maxStudentsAllowed = selectedRoom?.maxstudents || 0
-    } else {
-      maxStudentsAllowed = groupBooking?.groupRoom?.maxstudents || 0
-    }
+    const room = groupRooms.find((r) => r.id === groupBooking?.groupRoom?.id)
+    maxStudentsAllowed = room?.maxstudents || 0
   }
 
   function onGroupRoomChange() {
     setMaxStudentsAllowed()
-    if (selectedStudents.length > maxStudentsAllowed && maxStudentsAllowed > 0) {
+
+    if (maxStudentsAllowed > 0 && selectedStudents.length > maxStudentsAllowed) {
       selectedStudents = selectedStudents.slice(0, maxStudentsAllowed)
-      toast.warning(`Student selection limited to ${maxStudentsAllowed} students for this room`)
+      toast.warning(`Maximum ${maxStudentsAllowed} students allowed for this room`)
     }
   }
 
@@ -192,7 +84,7 @@
       selectedStudents = selectedStudents.filter((id) => id !== studentId)
     } else {
       if (maxStudentsAllowed > 0 && selectedStudents.length >= maxStudentsAllowed) {
-        toast.warning(`Maximum ${maxStudentsAllowed} students allowed for this room`)
+        toast.warning(`Maximum ${maxStudentsAllowed} students allowed`)
         return
       }
       selectedStudents = [...selectedStudents, studentId]
@@ -200,15 +92,12 @@
   }
 
   function selectAllStudents() {
-    const availableStudents = students.filter((s) => s.status !== 'graduated' && !getStudentConflict(s.id))
+    const available = students.filter((s) => s.status !== 'graduated')
 
     if (maxStudentsAllowed > 0) {
-      selectedStudents = availableStudents.slice(0, maxStudentsAllowed).map((s) => s.id)
-      if (availableStudents.length > maxStudentsAllowed) {
-        toast.info(`Selected first ${maxStudentsAllowed} students due to room limit`)
-      }
+      selectedStudents = available.slice(0, maxStudentsAllowed).map((s) => s.id)
     } else {
-      selectedStudents = availableStudents.map((s) => s.id)
+      selectedStudents = available.map((s) => s.id)
     }
   }
 
@@ -216,124 +105,130 @@
     selectedStudents = []
   }
 
-  const validateSchedule = () => {
-    if (!groupBooking?.subject?.id) {
-      toast.error('Please select a subject')
-      return false
-    }
-    if (selectedStudents.length === 0) {
-      toast.error('Please select at least one student')
-      return false
-    }
-    if (!groupBooking?.groupRoom?.id) {
-      toast.error('Please select a group room')
-      return false
-    }
-    if (!groupBooking?.teacher?.id) {
-      toast.error('Please select a teacher')
-      return false
-    }
-    if (!groupBooking?.timeslot?.id) {
-      toast.error('Please select a timeslot')
-      return false
-    }
-
-    // In-memory conflict checks
-    if (conflicts.teacher) {
-      const conflictInfo = getConflictLabel(conflicts.teacher, 'teacher')
-      toast.error('Teacher conflict', {
-        description: `${groupBooking.teacher.name || 'Teacher'} is already booked with ${conflictInfo}`,
-      })
-      return false
-    }
-
-    if (conflicts.students.length > 0) {
-      const student = students.find((s) => s.id === conflicts.students[0])
-      const conflictSchedule = getStudentConflict(conflicts.students[0])
-      const conflictInfo = getConflictLabel(conflictSchedule, 'student')
-      toast.error('Student conflict', {
-        description: `${student?.englishName || 'Student'} is already booked with ${conflictInfo}`,
-      })
-      return false
-    }
-
-    if (conflicts.grouproom) {
-      const conflictInfo = getConflictLabel(conflicts.grouproom, 'grouproom')
-      toast.error('Room conflict', {
-        description: `${groupBooking.groupRoom.name || 'Room'} is already occupied by ${conflictInfo}`,
-      })
-      return false
-    }
-
+  function validateSchedule() {
+    if (!groupBooking?.subject?.id) return (toast.error('Select a subject'), false)
+    if (!groupBooking?.teacher?.id) return (toast.error('Select a teacher'), false)
+    if (!groupBooking?.groupRoom?.id) return (toast.error('Select a group room'), false)
+    if (!groupBooking?.timeslot?.id) return (toast.error('Select a timeslot'), false)
+    if (selectedStudents.length === 0) return (toast.error('Select at least one student'), false)
     return true
+  }
+
+  async function checkForConflicts() {
+    const { date, timeslot, teacher, groupRoom } = groupBooking
+
+    try {
+      // 1. Check if teacher has another group lesson at same time
+      const teacherGroupConflict = await pb
+        .collection('mondayGroupLessonSchedule')
+        .getList(1, 1, {
+          filter: `date = "${date}" && timeslot = "${timeslot.id}" && teacher = "${teacher.id}" && id != "${groupBooking.id || ''}"`,
+        })
+        .catch(() => ({ items: [] }))
+
+      if (teacherGroupConflict.items.length > 0) {
+        toast.error(`${teacher.name} is already teaching another group lesson at this time`)
+        return false
+      }
+
+      // 2. Check if room is already booked
+      const roomConflict = await pb
+        .collection('mondayGroupLessonSchedule')
+        .getList(1, 1, {
+          filter: `date = "${date}" && timeslot = "${timeslot.id}" && grouproom = "${groupRoom.id}" && id != "${groupBooking.id || ''}"`,
+        })
+        .catch(() => ({ items: [] }))
+
+      if (roomConflict.items.length > 0) {
+        toast.error(`${groupRoom.name} is already booked for another group at this time`)
+        return false
+      }
+
+      // 3. Check if any student is already in another group lesson
+      if (selectedStudents.length > 0) {
+        // Get all group lessons at this time
+        const allGroupLessons = await pb
+          .collection('mondayGroupLessonSchedule')
+          .getFullList({
+            filter: `date = "${date}" && timeslot = "${timeslot.id}" && id != "${groupBooking.id || ''}"`,
+          })
+          .catch(() => [])
+
+        // Check each selected student
+        for (const studentId of selectedStudents) {
+          const student = students.find((s) => s.id === studentId)
+          const studentName = student?.englishName || 'Student'
+
+          // Look for conflicts
+          const hasConflict = allGroupLessons.some(
+            (lesson) => Array.isArray(lesson.student) && lesson.student.includes(studentId)
+          )
+
+          if (hasConflict) {
+            toast.error(`${studentName} is already in another group lesson at this time`)
+            return false
+          }
+        }
+      }
+
+      return true // No conflicts
+    } catch (error) {
+      console.error('Conflict check error:', error)
+      toast.error('Error checking for conflicts')
+      return false
+    }
   }
 
   async function saveSchedule() {
     if (!validateSchedule()) return
 
-    const scheduleData = {
+    // Check for conflicts
+    const hasNoConflicts = await checkForConflicts()
+    if (!hasNoConflicts) return
+
+    const payload = {
       date: groupBooking.date,
       timeslot: groupBooking.timeslot.id,
       teacher: groupBooking.teacher.id,
-      student: selectedStudents,
       subject: groupBooking.subject.id,
       grouproom: groupBooking.groupRoom.id,
+      student: selectedStudents,
     }
 
     saving = true
     try {
       if (groupBooking.mode === 'edit' && groupBooking.id) {
-        await pb.collection('mondayGroupLessonSchedule').update(groupBooking.id, scheduleData)
-        toast.success('Monday group schedule updated!', {
-          description: 'Schedule updated successfully',
-        })
+        await pb.collection('mondayGroupLessonSchedule').update(groupBooking.id, payload)
+        toast.success('Schedule updated')
       } else {
-        await pb.collection('mondayGroupLessonSchedule').create(scheduleData)
-        toast.success('Monday group schedule created!', {
-          description: 'New Monday schedule created successfully',
-        })
+        await pb.collection('mondayGroupLessonSchedule').create(payload)
+        toast.success('Schedule created')
       }
 
       closeModal()
       setTimeout(() => dispatch('refresh'), 200)
     } catch (err) {
-      console.error('Error saving Monday schedule:', err)
-      toast.error(`Error saving schedule: ${err.message}`)
+      console.error(err)
+      toast.error('Failed to save schedule')
     } finally {
       saving = false
     }
   }
 
   async function deleteSchedule() {
-    if (!groupBooking?.id) {
-      toast.error('No schedule selected to delete')
-      return
-    }
+    if (!groupBooking?.id) return
 
-    const confirmMessage =
-      `Are you sure you want to delete this Monday group schedule?\n\n` +
-      `Date: ${new Date(groupBooking.date).toLocaleDateString()}\n` +
-      `Subject: ${groupBooking.subject.name}\n` +
-      `Teacher: ${groupBooking.teacher.name}\n` +
-      `Students: ${selectedStudents.length} selected\n` +
-      `Room: ${groupBooking.groupRoom.name}\n` +
-      `Time: ${groupBooking.timeslot.start} - ${groupBooking.timeslot.end}\n\n` +
-      `This action cannot be undone.`
-
-    if (!confirm(confirmMessage)) return
+    if (!confirm('Delete this schedule? This cannot be undone.')) return
 
     deleting = true
     try {
       await pb.collection('mondayGroupLessonSchedule').delete(groupBooking.id)
-
-      toast.success('Monday group schedule deleted!', {
-        description: 'Schedule deleted successfully',
-      })
+      toast.success('Schedule deleted')
       closeModal()
       setTimeout(() => dispatch('refresh'), 200)
     } catch (err) {
-      console.error('Error deleting Monday schedule:', err)
-      toast.error(`Error deleting schedule: ${err.message}`)
+      console.error(err)
+      toast.error(err.message)
     } finally {
       deleting = false
     }
@@ -358,7 +253,7 @@
             stroke-linejoin="round"
             stroke-width="2"
             d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          ></path>
+          />
         </svg>
         <span>
           This will {groupBooking?.mode === 'edit' ? 'update' : 'create'} a group schedule for Monday only
@@ -366,11 +261,13 @@
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- Left column -->
+        <!-- LEFT COLUMN -->
         <div class="space-y-4">
           <!-- Subject -->
           <div class="form-control">
-            <label class="label"><span class="label-text">Subject</span></label>
+            <label class="label">
+              <span class="label-text">Subject</span>
+            </label>
             <select bind:value={groupBooking.subject.id} class="select select-bordered w-full" required>
               <option value="">-- Select Subject --</option>
               {#each subjects as s}
@@ -406,9 +303,7 @@
             <div class="border border-base-300 rounded-lg p-4 max-h-80 overflow-y-auto bg-base-100">
               {#each filteredStudents as student (student.id)}
                 {#if student.status !== 'graduated' || selectedStudents.includes(student.id)}
-                  {@const conflictSchedule = getStudentConflict(student.id)}
                   {@const isGraduated = student.status === 'graduated'}
-                  {@const isBooked = !!conflictSchedule}
 
                   <div class="form-control">
                     <label class="label cursor-pointer justify-start gap-3">
@@ -417,20 +312,15 @@
                         class="checkbox checkbox-sm"
                         checked={selectedStudents.includes(student.id)}
                         disabled={isGraduated ||
-                          isBooked ||
                           (maxStudentsAllowed > 0 &&
                             !selectedStudents.includes(student.id) &&
                             selectedStudents.length >= maxStudentsAllowed)}
                         onchange={() => toggleStudent(student.id)}
                       />
-                      <span class="label-text" class:italic={isGraduated || isBooked}>
+                      <span class="label-text" class:italic={isGraduated}>
                         {student.englishName}
                         {#if isGraduated}
                           <span class="text-xs text-gray-400">(Graduated)</span>
-                        {:else if isBooked}
-                          <span class="text-warning text-xs">
-                            (Booked with {getConflictLabel(conflictSchedule, 'student')})
-                          </span>
                         {/if}
                       </span>
                     </label>
@@ -439,39 +329,32 @@
               {/each}
 
               {#if filteredStudents.filter((s) => s.status !== 'graduated' || selectedStudents.includes(s.id)).length === 0}
-                <p class="text-sm text-base-content/100 text-center py-4">No matching students</p>
+                <p class="text-sm text-center py-4">No matching students</p>
               {/if}
             </div>
           </div>
         </div>
 
-        <!-- Right column -->
+        <!-- RIGHT COLUMN -->
         <div class="space-y-4">
           <!-- Teacher -->
           <div class="form-control">
-            <label class="label"><span class="label-text">Teacher</span></label>
+            <label class="label">
+              <span class="label-text">Teacher</span>
+            </label>
             <select bind:value={groupBooking.teacher.id} class="select select-bordered w-full" required>
               <option value="">-- Select Teacher --</option>
               {#each teachers as teacher}
-                {@const conflictSchedule = existingSchedules.find((s) => s.teacher === teacher.id)}
-                <option value={teacher.id} disabled={!!conflictSchedule} class:text-gray-400={conflictSchedule}>
-                  {teacher.name}
-                  {#if conflictSchedule}
-                    (Booked with {getConflictLabel(conflictSchedule, 'teacher')})
-                  {/if}
-                </option>
+                <option value={teacher.id}>{teacher.name}</option>
               {/each}
             </select>
-            {#if conflicts.teacher}
-              <div class="label">
-                <span class="label-text-alt text-warning">⚠️ This teacher is already booked</span>
-              </div>
-            {/if}
           </div>
 
           <!-- Group Room -->
           <div class="form-control">
-            <label class="label"><span class="label-text">Group Room</span></label>
+            <label class="label">
+              <span class="label-text">Group Room</span>
+            </label>
             <select
               bind:value={groupBooking.groupRoom.id}
               class="select select-bordered w-full"
@@ -480,25 +363,18 @@
             >
               <option value="">-- Select Group Room --</option>
               {#each groupRooms as room}
-                {@const conflictSchedule = existingSchedules.find((s) => s.room === room.id || s.grouproom === room.id)}
-                <option value={room.id} disabled={!!conflictSchedule} class:text-gray-400={conflictSchedule}>
+                <option value={room.id}>
                   {room.name} (Max: {room.maxstudents} students)
-                  {#if conflictSchedule}
-                    - (Occupied by {getConflictLabel(conflictSchedule, 'grouproom')})
-                  {/if}
                 </option>
               {/each}
             </select>
-            {#if conflicts.grouproom}
-              <div class="label">
-                <span class="label-text-alt text-warning">⚠️ This room is already occupied</span>
-              </div>
-            {/if}
           </div>
 
           <!-- Timeslot -->
           <div class="form-control">
-            <label class="label"><span class="label-text">Timeslot</span></label>
+            <label class="label">
+              <span class="label-text">Timeslot</span>
+            </label>
             <select bind:value={groupBooking.timeslot.id} class="select select-bordered w-full" required>
               <option value="">-- Select Timeslot --</option>
               {#each timeslots as ts}
@@ -507,9 +383,11 @@
             </select>
           </div>
 
-          <!-- Schedule Info Display -->
+          <!-- Schedule Info -->
           <div class="form-control">
-            <label class="label"><span class="label-text">Schedule Info</span></label>
+            <label class="label">
+              <span class="label-text">Schedule Info</span>
+            </label>
             <div class="bg-base-200 rounded-lg p-4 space-y-2">
               <div class="text-sm">
                 <span class="font-medium">Date:</span>
@@ -534,7 +412,7 @@
               </div>
               <div class="text-sm">
                 <span class="font-medium">Students:</span>
-                {selectedStudents.length} selected
+                {selectedStudents.length}
                 {#if maxStudentsAllowed > 0}
                   (Max: {maxStudentsAllowed})
                 {/if}
@@ -544,7 +422,7 @@
         </div>
       </div>
 
-      <!-- Buttons -->
+      <!-- ACTION BUTTONS -->
       <div class="modal-action">
         {#if groupBooking?.mode === 'edit'}
           <button class="btn btn-error mr-auto" onclick={deleteSchedule} disabled={deleting || saving}>
@@ -566,7 +444,7 @@
           {/if}
         </button>
 
-        <button class="btn" onclick={closeModal} disabled={saving || deleting}>Cancel</button>
+        <button class="btn" onclick={closeModal} disabled={saving || deleting}> Cancel </button>
       </div>
     </div>
   </div>

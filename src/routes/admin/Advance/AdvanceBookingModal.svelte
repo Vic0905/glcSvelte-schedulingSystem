@@ -244,7 +244,6 @@
     if (!noConflicts) return
 
     const { timeslot, teacher, student, subject, room, mode, id } = advanceBooking
-
     const bookingData = {
       timeslot: timeslot.id,
       teacher: teacher.id,
@@ -318,13 +317,14 @@
     show = false
   }
 
-  // Watch for changes to advanceBooking to reload data if needed
-  $effect(() => {
-    if (show) {
-      // Refresh data when modal opens to get latest status
-      loadAllData()
-    }
-  })
+  // comment it out cause everytime i open the modals it makes lots of requests
+  // // Watch for changes to advanceBooking to reload data if needed
+  // $effect(() => {
+  //   if (show) {
+  //     // Refresh data when modal opens to get latest status
+  //     loadAllData()
+  //   }
+  // })
 </script>
 
 {#if show}

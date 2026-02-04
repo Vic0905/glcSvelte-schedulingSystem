@@ -376,7 +376,7 @@
     loadAdvanceBookings()
 
     // Subscribe to changes with instant refresh
-    pb.collection('advanceBooking').subscribe('*', immediateReload)
+    // pb.collection('advanceBooking').subscribe('*', immediateReload)
   })
 
   onDestroy(() => {
