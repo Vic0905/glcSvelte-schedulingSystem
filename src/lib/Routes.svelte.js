@@ -136,6 +136,9 @@ export const guestRoutes = {
   '/input/groupview': wrap({
     asyncComponent: () => import('../routes/Input/GroupView.svelte'),
   }),
+  '/inventory/inventory': wrap({
+    asyncComponent: () => import('../routes/Inventory/inventory.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),
@@ -174,6 +177,9 @@ export const staffRoutes = {
   }),
   '/current/mondaygroupview': wrap({
     asyncComponent: () => import('../routes/admin/Current/MondayGroupView.svelte'),
+  }),
+  '/inventory/inventory': wrap({
+    asyncComponent: () => import('../routes/Inventory/inventory.svelte'),
   }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),

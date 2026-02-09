@@ -265,6 +265,7 @@
         <div class="space-y-4">
           <!-- Subject -->
           <div class="form-control">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text">Subject</span>
             </label>
@@ -339,6 +340,7 @@
         <div class="space-y-4">
           <!-- Teacher -->
           <div class="form-control">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text">Teacher</span>
             </label>
@@ -352,6 +354,7 @@
 
           <!-- Group Room -->
           <div class="form-control">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text">Group Room</span>
             </label>
@@ -372,6 +375,7 @@
 
           <!-- Timeslot -->
           <div class="form-control">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text">Timeslot</span>
             </label>
@@ -385,6 +389,7 @@
 
           <!-- Schedule Info -->
           <div class="form-control">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="label">
               <span class="label-text">Schedule Info</span>
             </label>
