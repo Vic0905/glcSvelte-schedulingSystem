@@ -18,7 +18,7 @@
       </h1>
       ```
       <p class="py-6 text-gray-600 italic">Plan smart, schedule better, achieve more.</p>
-      <a href="#/current/scheduleinput" class="btn btn-primary">Get Started</a>
+      <a href="#/advance/advanceschedule" class="btn btn-primary">Get Started</a>
     </div>
   </div>
 </div>
