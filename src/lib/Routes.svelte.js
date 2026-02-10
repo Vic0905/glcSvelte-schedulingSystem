@@ -136,8 +136,8 @@ export const guestRoutes = {
   '/input/groupview': wrap({
     asyncComponent: () => import('../routes/Input/GroupView.svelte'),
   }),
-  '/inventory/inventory': wrap({
-    asyncComponent: () => import('../routes/Inventory/inventory.svelte'),
+  '/inventory/userinventory': wrap({
+    asyncComponent: () => import('../routes/Inventory/UserInventory.svelte'),
   }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),

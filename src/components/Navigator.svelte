@@ -148,10 +148,6 @@
       <summary>Inventory</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/inventory/inventory">Inventory</a></li>
-        <!-- <li><a href="/#/current/mondaygrouptable">GRP Input Table</a></li>
-        <li><a href="/#/current/mondaygroupview">Group Room Table</a></li>
-        <li><a href="/#/current/mondaystudentview">Student Table</a></li>
-        <li><a href="/#/current/mondayteacherview">Teacher Table</a></li> -->
       </ul>
     </details>
   </li>
