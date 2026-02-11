@@ -1,15 +1,18 @@
 <script>
   import { onMount } from 'svelte'
 
-  let isLight = $state(JSON.parse(localStorage.getItem('theme')))
+  let isLight = $state(true)
 
-  $effect(() => {
-    localStorage.setItem('theme', JSON.stringify(isLight))
+  onMount(() => {
+    const theme = localStorage.getItem('theme')
+    isLight = theme !== 'dark' // default to light
     document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark')
   })
 
-  onMount(() => {
-    document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark')
+  $effect(() => {
+    const theme = isLight ? 'light' : 'dark'
+    localStorage.setItem('theme', theme)
+    document.documentElement.setAttribute('data-theme', theme)
   })
 </script>
 
