@@ -131,7 +131,7 @@
 
       const scheduleMap = {}
       for (const b of bookings) {
-        // CHANGED: No .items
+        // CHANGED: No .
         const roomId = b.expand?.grouproom?.id
         const timeslotId = b.expand?.timeslot?.id
         if (!roomId || !timeslotId) continue
