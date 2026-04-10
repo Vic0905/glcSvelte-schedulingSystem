@@ -9,8 +9,15 @@
     #studentGrid th { position: sticky; top: 0; z-index: 20; box-shadow: 0 1px 0 #ddd; }
     #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd;  }
     #studentGrid th:nth-child(1) { z-index: 25; }
+
     #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
     #studentGrid th:nth-child(2) { z-index: 25; }
+
+    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(3) { z-index: 25; }
+
+    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 420px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(4) { z-index: 25; }
   `
 
   // Cache for frequently accessed data
@@ -100,18 +107,18 @@
           'div',
           { class: 'flex flex-col gap-1 items-center' },
           [
-            h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name || ''),
+            h('span', { class: 'badge badge-ghost badge-xs p-3 text-bold`' }, item.subject?.name || ''),
             item.teacher &&
               h(
                 'span',
                 {
-                  class: 'badge badge-neutral badge-xs',
+                  class: 'badge badge-ghost badge-xs',
                   title: item.teacher.status === 'disabled' ? 'Disabled teacher' : '',
                 },
                 item.teacher.name || ''
               ),
-            item.isGroup && h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'),
-            h('span', { class: 'badge badge-error badge-xs' }, item.room?.name || ''),
+            item.isGroup && h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class'),
+            h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name || ''),
           ].filter(Boolean)
         )
       )
@@ -154,7 +161,7 @@
         promises.push(
           pb.collection('student').getFullList({
             sort: 'name',
-            fields: 'id,name,englishName,status',
+            fields: 'id,name,englishName,course,level,status',
           })
         )
       }
@@ -331,6 +338,8 @@
         const row = [
           { label: 'Student', value: student.name },
           { label: 'English Name', value: student.englishName || '' },
+          { label: 'Course', value: student.course || '' },
+          { label: 'Level', value: student.level || '' },
           ...cache.timeslots.map((ts) => {
             const schedule = studentSchedules.get(ts.id)
             return schedule ? [schedule] : []
@@ -352,6 +361,16 @@
         {
           name: 'English Name',
           width: '150px',
+          formatter: (cell) => h('div', { class: 'text-xs' }, cell.value),
+        },
+        {
+          name: 'Course',
+          width: '120px',
+          formatter: (cell) => h('div', { class: 'text-xs' }, cell.value),
+        },
+        {
+          name: 'Level',
+          width: '100px',
           formatter: (cell) => h('div', { class: 'text-xs' }, cell.value),
         },
         ...cache.timeslots.map((t) => ({

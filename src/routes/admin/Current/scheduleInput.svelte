@@ -369,6 +369,51 @@
         // Update cache
         cache.schedules = schedules
         cache.lastFetch = Date.now()
+
+        // ========== FILTERING LOGIC START ==========
+
+        // Count schedules per teacher
+        const teacherScheduleCount = new Map()
+
+        for (const s of schedules) {
+          const teacherId = s.expand?.teacher?.id || s.teacher
+          if (teacherId) {
+            teacherScheduleCount.set(teacherId, (teacherScheduleCount.get(teacherId) || 0) + 1)
+          }
+        }
+
+        // Filter schedules
+        const activeSchedules = schedules.filter((s) => {
+          const teacher = s.expand?.teacher
+
+          // If teacher is disabled → only include if may schedule siya
+          if (teacher && teacher.status === 'disabled') {
+            const hasSchedules = (teacherScheduleCount.get(teacher.id) || 0) >= 1
+            return hasSchedules
+          }
+
+          return true // keep enabled teachers
+        })
+
+        // Filter rooms (IMPORTANT)
+        const activeRooms = rooms.filter((room) => {
+          const teacher = room.expand?.teacher
+
+          if (!teacher) return true
+
+          if (teacher.status === 'disabled') {
+            const hasSchedules = teacherScheduleCount.has(teacher.id)
+            return hasSchedules
+          }
+
+          return true
+        })
+
+        // Apply filtered data
+        schedules = activeSchedules
+        rooms = activeRooms
+
+        // ========== FILTERING LOGIC END ==========
       }
 
       // Build schedule map using Map for better performance

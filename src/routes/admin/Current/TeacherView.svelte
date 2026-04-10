@@ -57,18 +57,18 @@
       { class: 'text-xs flex flex-col gap-1 items-center' },
       cell.map((item) =>
         h('div', { class: 'flex flex-col gap-1 items-center' }, [
-          h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject'),
+          h('span', { class: 'badge badge-ghost badge-xs p-3' }, item.subject?.name ?? 'No Subject'),
           item.isGroup
-            ? h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class')
+            ? h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class')
             : h(
                 'span',
                 {
-                  class: 'badge badge-neutral badge-xs',
+                  class: 'badge badge-ghost badge-xs',
                   title: filteredStudents.get(item.student?.id) ? '' : 'Graduated student with no bookings',
                 },
                 filteredStudents.get(item.student?.id) || 'Unknown Student'
               ),
-          h('span', { class: 'badge badge-error badge-xs' }, item.room?.name ?? 'No Room'),
+          h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name ?? 'No Room'),
         ])
       )
     )

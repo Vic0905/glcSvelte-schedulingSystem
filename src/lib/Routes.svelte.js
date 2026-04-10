@@ -13,6 +13,9 @@ export const adminRoutes = {
   '/management/room': wrap({
     asyncComponent: () => import('../routes/admin/Management/Room.svelte'),
   }),
+  '/management/newroom': wrap({
+    asyncComponent: () => import('../routes/admin/Management/Newroom.svelte'),
+  }),
   '/management/student': wrap({
     asyncComponent: () => import('../routes/admin/Management/Student.svelte'),
   }),

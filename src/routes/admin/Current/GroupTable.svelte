@@ -219,13 +219,27 @@
       h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name || 'No Teacher'),
     ]
 
-    // Add student count badge
-    const studentCount = cell.students?.length || 0
-    if (studentCount > 0) {
+    if (cell.students && cell.students.length > 0) {
+      const studentNames = cell.students
+        .filter((s) => s.status !== 'graduated') // Filter out graduated students
+        .map((s) => s.englishName || `No Name`)
+
       elements.push(
-        h('div', { class: 'badge badge-neutral badge-xs' }, `${studentCount} student${studentCount !== 1 ? 's' : ''}`)
+        h(
+          'div',
+          { class: 'flex flex-wrap gap-1 justify-center' },
+          studentNames.map((name) => h('span', { class: 'badge badge-neutral badge-xs' }, name))
+        )
       )
     }
+
+    // // Add student count badge
+    // const studentCount = cell.students?.length || 0
+    // if (studentCount > 0) {
+    //   elements.push(
+    //     h('div', { class: 'badge badge-neutral badge-xs' }, `${studentCount} student${studentCount !== 1 ? 's' : ''}`)
+    //   )
+    // }
 
     return h('div', { class: 'flex flex-col gap-1 items-center text-xs' }, elements)
   }
