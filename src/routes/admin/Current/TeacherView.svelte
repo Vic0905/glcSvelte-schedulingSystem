@@ -7,8 +7,12 @@
   const stickyStyles = `
     #teacherGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
     #teacherGrid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+
     #teacherGrid th:nth-child(1), #teacherGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15;  box-shadow: inset -1px 0 0 #ddd; }
     #teacherGrid th:nth-child(1) { z-index: 25; }
+
+    #teacherGrid th:nth-child(2), #teacherGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 15;  box-shadow: inset -1px 0 0 #ddd; }
+    #teacherGrid th:nth-child(2) { z-index: 25; }
   `
 
   let weekStart = $state(getWeekStart(new Date()))
@@ -54,7 +58,7 @@
     if (!cell?.length) return h('span', {}, '—')
     return h(
       'div',
-      { class: 'text-xs flex flex-col gap-1 items-center' },
+      { class: 'text-xs flex flex-col gap-1 items-center font-semibold' },
       cell.map((item) =>
         h('div', { class: 'flex flex-col gap-1 items-center' }, [
           h('span', { class: 'badge badge-ghost badge-xs p-3' }, item.subject?.name ?? 'No Subject'),
@@ -317,6 +321,11 @@
             assignmentType: assignment?.type,
             assignmentName: assignment?.name,
           },
+
+          {
+            room: assignment?.name || null,
+          },
+
           ...timeslots.map((ts) => {
             const schedules = teacherSchedule[ts.id]
             return schedules ? Object.values(schedules) : []
@@ -357,6 +366,11 @@
             },
           },
         },
+        {
+          name: 'Room',
+          width: '150px',
+          formatter: (c) => (c?.room ? h('span', { class: 'text-xs' }, c.room) : h('span', {}, '—')),
+        },
         ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
       ]
 
@@ -383,7 +397,7 @@
           className: {
             table: 'w-full border text-xs !border-collapse',
             th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
-            td: 'border-t border-d !border-x-0 p-2 text-center align-middle',
+            td: 'border-t border-d p-2 text-center align-middle',
           },
           style: { table: { 'border-collapse': 'collapse' } },
         }).render(document.getElementById('teacherGrid'))

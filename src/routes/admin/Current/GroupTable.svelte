@@ -16,6 +16,23 @@
     #group-grid th:nth-child(2) { z-index: 25; }
   `
 
+  // Anchors to Tuesday (2) - Logic identical to MTM
+  function getWeekStart(date) {
+    const d = new Date(date)
+    const day = d.getDay()
+    const diff = day <= 2 ? 2 - day : 9 - day
+    d.setDate(d.getDate() + (day === 2 ? 0 : diff))
+    return d.toISOString().split('T')[0]
+  }
+
+  function getWeekRangeDisplay(startDate) {
+    const start = new Date(startDate)
+    const end = new Date(start)
+    end.setDate(start.getDate() + 3) // Tuesday to Friday
+    const opts = { month: 'long', day: 'numeric' }
+    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
+  }
+
   let weekStart = $state(getWeekStart(new Date()))
   let timeslots = []
   let allGroupRooms = []
@@ -25,11 +42,10 @@
   let abortController = null
   let scrollPositions = $state({ top: 0, left: 0 })
 
-  // Cache for frequently accessed data
   const cache = {
     groupSchedules: null,
     lastFetch: 0,
-    cacheDuration: 30000, // 30 seconds
+    cacheDuration: 30000,
     isValid: () => cache.groupSchedules && Date.now() - cache.lastFetch < cache.cacheDuration,
     invalidate: () => {
       cache.groupSchedules = null
@@ -37,47 +53,13 @@
     },
   }
 
-  // Utility functions
-  function getWeekStart(date) {
-    const d = new Date(date)
-    const diff = d.getDay() === 0 ? -5 : d.getDay() === 1 ? 1 : 2 - d.getDay()
-    d.setDate(d.getDate() + diff)
-    return d.toISOString().split('T')[0]
-  }
-
-  function getWeekDays(startDate) {
-    const start = new Date(startDate)
-    return Array.from({ length: 4 }, (_, i) => {
-      const day = new Date(start)
-      day.setDate(start.getDate() + i)
-      return day.toISOString().split('T')[0]
-    })
-  }
-
-  function getWeekRangeDisplay(startDate) {
-    const start = new Date(startDate)
-    const end = new Date(start)
-    end.setDate(start.getDate() + 3)
-    const opts = { month: 'long', day: 'numeric' }
-    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
-  }
-
-  function getDateFilter(weekDays) {
-    return weekDays.map((d) => `date = "${d}"`).join(' || ')
-  }
-
-  // Save scroll position before any updates
   const saveScrollPosition = () => {
     const wrapper = document.querySelector('#group-grid .gridjs-wrapper')
     if (wrapper) {
-      scrollPositions = {
-        top: wrapper.scrollTop,
-        left: wrapper.scrollLeft,
-      }
+      scrollPositions = { top: wrapper.scrollTop, left: wrapper.scrollLeft }
     }
   }
 
-  // Restore scroll position after updates
   const restoreScrollPosition = () => {
     requestAnimationFrame(() => {
       const wrapper = document.querySelector('#group-grid .gridjs-wrapper')
@@ -88,496 +70,247 @@
     })
   }
 
-  // Week navigation with caching
   const changeWeek = async (weeks) => {
     if (isLoading) return
     abortController?.abort()
-
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-
-    // Invalidate cache on week change
     cache.invalidate()
     await loadGroupSchedules(true)
   }
 
-  // Enhanced copy to advance booking with caching
   const copyToAdvanceBooking = async () => {
     try {
-      const weekDays = getWeekDays(weekStart)
-      const dateFilter = `(${getDateFilter(weekDays)})`
+      const nextWeekDate = new Date(weekStart)
+      nextWeekDate.setDate(nextWeekDate.getDate() + 7)
+      const nextWeekStr = nextWeekDate.toISOString().split('T')[0]
 
-      // Use cache if available
-      let schedules
-      if (cache.isValid()) {
-        schedules = cache.groupSchedules
-      } else {
-        schedules = await pb.collection('groupLessonSchedule').getFullList({
-          filter: dateFilter,
+      const [schedules, existingBookings] = await Promise.all([
+        pb.collection('groupLessonSchedule').getFullList({
+          filter: `date = "${weekStart}"`,
           expand: 'teacher,student,subject,grouproom,timeslot',
-        })
-      }
+        }),
+        pb
+          .collection('groupAdvanceBooking')
+          .getFullList({
+            filter: `date = "${nextWeekStr}"`,
+          })
+          .catch(() => []),
+      ])
 
-      if (schedules.length === 0) {
-        toast.info('No schedules found for this week', { position: 'bottom-right', duration: 3000 })
+      if (!schedules.length) {
+        toast.info('No group schedules found for this Tuesday')
         return
       }
 
-      // Get unique schedules using Map for better performance
-      const uniqueSchedulesMap = new Map()
-      schedules.forEach((schedule) => {
-        const key = `${schedule.timeslot}-${schedule.grouproom}-${schedule.subject}-${schedule.teacher}`
-        if (!uniqueSchedulesMap.has(key)) {
-          uniqueSchedulesMap.set(key, schedule)
-        }
-      })
-      const uniqueSchedules = Array.from(uniqueSchedulesMap.values())
+      const existingSet = new Set(existingBookings.map((b) => `${b.timeslot}-${b.grouproom}-${b.teacher}`))
+      const schedulesToCopy = schedules.filter((s) => !existingSet.has(`${s.timeslot}-${s.grouproom}-${s.teacher}`))
 
-      // Get existing bookings in parallel
-      const existingBookings = await pb
-        .collection('groupAdvanceBooking')
-        .getFullList()
-        .catch(() => [])
-
-      // Filter out existing bookings using Set for O(1) lookup
-      const existingSet = new Set(
-        existingBookings.map(
-          (booking) => `${booking.timeslot}-${booking.teacher}-${booking.subject}-${booking.grouproom}`
-        )
-      )
-
-      const schedulesToCopy = uniqueSchedules.filter(
-        (schedule) =>
-          !existingSet.has(`${schedule.timeslot}-${schedule.teacher}-${schedule.subject}-${schedule.grouproom}`)
-      )
-
-      if (schedulesToCopy.length === 0) {
-        toast.info('All schedules already copied!', {
-          position: 'bottom-right',
-          duration: 3000,
-          description: 'No new records to copy for this week',
-        })
+      if (!schedulesToCopy.length) {
+        toast.info('All schedules already copied to next week!')
         return
       }
 
-      const confirmMessage = [
-        `Copy ${schedulesToCopy.length} unique group schedule(s) to Advance Booking?`,
-        `Week: ${getWeekRangeDisplay(weekStart)}`,
-        existingBookings.length > 0 ? `(Skipping ${uniqueSchedules.length - schedulesToCopy.length} duplicate(s))` : '',
-        `This will create ${schedulesToCopy.length} advance booking record(s).`,
-      ]
-        .filter(Boolean)
-        .join('\n\n')
-
-      if (!confirm(confirmMessage)) return
+      if (!confirm(`Copy ${schedulesToCopy.length} group schedules to next week?`)) return
 
       isCopying = true
-
-      // Batch creation for better performance
       const batchSize = 10
       for (let i = 0; i < schedulesToCopy.length; i += batchSize) {
         const batch = schedulesToCopy.slice(i, i + batchSize)
         await Promise.all(
-          batch.map((schedule) =>
+          batch.map((s) =>
             pb.collection('groupAdvanceBooking').create({
-              date: schedule.date,
-              timeslot: schedule.timeslot,
-              teacher: schedule.teacher,
-              student: schedule.student,
-              subject: schedule.subject,
-              grouproom: schedule.grouproom,
+              date: nextWeekStr,
+              timeslot: s.timeslot,
+              teacher: s.teacher,
+              student: s.student, // Array of student IDs
+              subject: s.subject,
+              grouproom: s.grouproom,
               status: 'pending',
             })
           )
         )
       }
 
-      toast.success('Group schedules copied successfully!', {
-        position: 'bottom-right',
-        duration: 3000,
-        description: `${schedulesToCopy.length} record(s) copied to Group Advance Booking`,
-      })
+      toast.success('Successfully copied to Group Advance Booking')
     } catch (error) {
-      console.error('Error copying to group advance booking:', error)
-      toast.error('Failed to copy group schedules', {
-        position: 'bottom-right',
-        duration: 5000,
-        description: error.message,
-      })
+      console.error(error)
+      toast.error('Failed to copy group schedules')
     } finally {
       isCopying = false
     }
   }
 
-  // Enhanced cell formatter
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
 
     const elements = [
-      h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
-      h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name || 'No Teacher'),
+      h('div', { class: 'badge badge-ghost badge-xs p-3 font-semibold' }, cell.subject.name || 'No Subject'),
+      h('div', { class: 'badge badge-ghost badge-xs font-semibold' }, cell.teacher.name || 'No Teacher'),
     ]
 
-    if (cell.students && cell.students.length > 0) {
+    if (cell.students?.length > 0) {
       const studentNames = cell.students
-        .filter((s) => s.status !== 'graduated') // Filter out graduated students
-        .map((s) => s.englishName || `No Name`)
+        .filter((s) => s.status !== 'graduated')
+        .map((s) => h('span', { class: 'badge badge-ghost badge-xs font-semibold' }, s.englishName))
 
-      elements.push(
-        h(
-          'div',
-          { class: 'flex flex-wrap gap-1 justify-center' },
-          studentNames.map((name) => h('span', { class: 'badge badge-neutral badge-xs' }, name))
-        )
-      )
+      elements.push(h('div', { class: 'flex flex-wrap gap-1 justify-center' }, studentNames))
     }
-
-    // // Add student count badge
-    // const studentCount = cell.students?.length || 0
-    // if (studentCount > 0) {
-    //   elements.push(
-    //     h('div', { class: 'badge badge-neutral badge-xs' }, `${studentCount} student${studentCount !== 1 ? 's' : ''}`)
-    //   )
-    // }
 
     return h('div', { class: 'flex flex-col gap-1 items-center text-xs' }, elements)
   }
 
-  // Enhanced load function with caching and filtering
   async function loadGroupSchedules(forceRefresh = false) {
     if (isLoading) return
-
     abortController?.abort()
     abortController = new AbortController()
-    const { signal } = abortController
-
-    // Save scroll position before loading
     saveScrollPosition()
-
     isLoading = true
 
     try {
-      const weekDays = getWeekDays(weekStart)
-      const dateFilter = getDateFilter(weekDays)
-
-      // Use cache if available and not forcing refresh
       let schedules
       if (!forceRefresh && cache.isValid()) {
         schedules = cache.groupSchedules
       } else {
-        // Parallel fetching with caching
         const promises = []
         if (!timeslots.length) promises.push(pb.collection('timeslot').getFullList({ sort: 'start' }))
         promises.push(pb.collection('groupRoom').getFullList({ sort: 'name', expand: 'teacher' }))
+
+        // Single date anchor filter
         promises.push(
           pb.collection('groupLessonSchedule').getFullList({
-            filter: dateFilter,
+            filter: `date = "${weekStart}"`,
             expand: 'teacher,student,subject,grouproom,timeslot',
             $autoCancel: false,
           })
         )
 
         const results = await Promise.all(promises)
-        if (signal.aborted) return
-
-        // Parse results
         let idx = 0
         if (!timeslots.length) timeslots = results[idx++]
         let groupRooms = results[idx++]
         schedules = results[idx]
 
-        // FILTERING LOGIC: Hide graduated students and disabled teachers unless they have bookings
-
-        // Create maps for booking counts
-        const studentBookingCount = new Map()
-        const teacherBookingCount = new Map()
-
-        // Count bookings per user
-        schedules.forEach((schedule) => {
-          const teacherId = schedule.expand?.teacher?.id || schedule.teacher
-
-          // Count teacher bookings
-          if (teacherId) {
-            teacherBookingCount.set(teacherId, (teacherBookingCount.get(teacherId) || 0) + 1)
-          }
-
-          // Count student bookings - students are an array in group bookings
-          const studentIds = schedule.expand?.student || schedule.student || []
-          if (Array.isArray(studentIds)) {
-            studentIds.forEach((studentId) => {
-              if (studentId && typeof studentId === 'string') {
-                studentBookingCount.set(studentId, (studentBookingCount.get(studentId) || 0) + 1)
-              } else if (studentId && typeof studentId === 'object' && studentId.id) {
-                studentBookingCount.set(studentId.id, (studentBookingCount.get(studentId.id) || 0) + 1)
-              }
-            })
-          }
-        })
-
-        // Filter bookings - hide graduated students and disabled teachers unless they have ANY bookings
-        const activeSchedules = schedules.filter((schedule) => {
-          const teacher = schedule.expand?.teacher
-
-          // Check teacher: if disabled, only show if they have at least 1 booking
-          if (teacher && teacher.status === 'disabled') {
-            const hasAnyBookings = (teacherBookingCount.get(teacher.id) || 0) >= 1
-            return hasAnyBookings
-          }
-
-          // For group bookings, we'll filter students in the display
-          // Keep the booking if the teacher is valid
-
-          return true // Keep all bookings with active teachers or teachers with bookings
-        })
-
-        // Also filter group rooms based on assigned teacher status
-        const activeGroupRooms = groupRooms.filter((groupRoom) => {
-          const assignedTeacher = groupRoom.expand?.teacher
-          if (!assignedTeacher) return true
-
-          // Check if teacher is disabled
-          if (assignedTeacher.status === 'disabled') {
-            // Check if teacher has any bookings
-            const hasBookings = teacherBookingCount.has(assignedTeacher.id)
-            return hasBookings
-          }
-
-          return true
-        })
-
-        // Update cache with filtered data
-        cache.groupSchedules = activeSchedules
-        cache.lastFetch = Date.now()
-
-        // Update group rooms with filtered list
-        allGroupRooms = activeGroupRooms
-
-        // Use filtered schedules for building the table
-        schedules = activeSchedules
-        groupRooms = activeGroupRooms
-
-        // Build schedule map using Map for better performance
-        const scheduleMap = new Map()
-        for (const s of schedules) {
-          const gr = s.expand?.grouproom
-          const ts = s.expand?.timeslot
-          if (!gr || !ts) continue
-
-          if (!scheduleMap.has(gr.id)) {
-            scheduleMap.set(gr.id, new Map())
-          }
-          const roomMap = scheduleMap.get(gr.id)
-          if (!roomMap.has(ts.id)) {
-            roomMap.set(ts.id, new Map())
-          }
-
-          const key = `${s.subject}_${s.teacher}`
-          roomMap.get(ts.id).set(key, s)
-        }
-
-        // Build table data efficiently
-        const data = groupRooms.map((gr) => {
+        // Filter Rooms: Only show if teacher is active or has schedules
+        const teacherIdsWithSchedules = new Set(schedules.map((s) => s.teacher))
+        allGroupRooms = groupRooms.filter((gr) => {
           const teacher = gr.expand?.teacher
-          const row = [
-            { label: 'Teacher', value: teacher?.name || '-', disabled: true },
-            { label: 'Group Room', value: gr.name, disabled: true },
-          ]
-
-          const roomSchedules = scheduleMap.get(gr.id)
-
-          // Use for loop instead of forEach for better performance
-          for (let i = 0; i < timeslots.length; i++) {
-            const ts = timeslots[i]
-            const timeslotSchedules = roomSchedules?.get(ts.id)
-
-            if (!timeslotSchedules || timeslotSchedules.size === 0) {
-              row.push({
-                label: 'Empty',
-                date: weekStart,
-                subject: { name: '', id: '' },
-                teacher: { name: '', id: '' },
-                students: [],
-                groupRoom: { name: gr.name, id: gr.id, maxstudents: gr.maxstudents || 0 },
-                timeslot: { id: ts.id, start: ts.start, end: ts.end },
-                assignedTeacher: teacher,
-              })
-            } else {
-              const s = Array.from(timeslotSchedules.values())[0]
-
-              let studentsData = []
-              if (s.expand?.student && Array.isArray(s.expand.student)) {
-                studentsData = s.expand.student.map((student) => ({
-                  englishName: student.englishName || '',
-                  id: student.id || '',
-                  status: student.status || 'active',
-                }))
-              } else if (s.student && Array.isArray(s.student)) {
-                studentsData = s.student.map((id) => ({
-                  englishName: `Student ${id}`,
-                  id,
-                  status: 'unknown',
-                }))
-              }
-
-              row.push({
-                label: 'Schedule',
-                id: s.id || '',
-                date: weekStart,
-                subject: {
-                  name: s.expand?.subject?.name || '',
-                  id: s.expand?.subject?.id || '',
-                },
-                teacher: {
-                  name: s.expand?.teacher?.name || '',
-                  id: s.expand?.teacher?.id || '',
-                  status: s.expand?.teacher?.status || 'active',
-                },
-                students: studentsData,
-                groupRoom: {
-                  name: gr.name,
-                  id: gr.id,
-                  maxstudents: gr.maxstudents || 0,
-                },
-                timeslot: { id: ts.id, start: ts.start, end: ts.end },
-                assignedTeacher: teacher,
-              })
-            }
-          }
-
-          return row
+          return !teacher || teacher.status !== 'disabled' || teacherIdsWithSchedules.has(teacher.id)
         })
 
-        if (signal.aborted) return
+        cache.groupSchedules = schedules
+        cache.lastFetch = Date.now()
+      }
 
-        // Update or create grid
-        if (grid.groupSchedule) {
-          grid.groupSchedule
-            .updateConfig({
-              data,
-              style: {
-                table: {
-                  'border-collapse': 'collapse',
-                  'table-layout': 'fixed', // Prevents layout shifts
-                },
-              },
+      // Simplified Map: Keyed by RoomID + TimeslotID
+      const scheduleMap = new Map()
+      for (const s of schedules) {
+        const key = `${s.grouproom}-${s.timeslot}`
+        scheduleMap.set(key, s)
+      }
+
+      const data = allGroupRooms.map((gr) => {
+        const teacher = gr.expand?.teacher
+        const row = [
+          { label: 'Teacher', value: teacher?.name || '-', disabled: true },
+          { label: 'Group Room', value: gr.name, disabled: true },
+        ]
+
+        for (const ts of timeslots) {
+          const s = scheduleMap.get(`${gr.id}-${ts.id}`)
+
+          if (!s) {
+            row.push({
+              label: 'Empty',
+              date: weekStart,
+              subject: { name: '', id: '' },
+              teacher: { name: '', id: '' },
+              students: [],
+              groupRoom: { name: gr.name, id: gr.id, maxstudents: gr.maxstudents || 0 },
+              timeslot: { id: ts.id, start: ts.start, end: ts.end },
+              assignedTeacher: teacher,
             })
-            .forceRender()
-
-          // Restore scroll position after DOM update
-          restoreScrollPosition()
-        } else {
-          const columns = [
-            {
-              name: 'Teacher',
-              width: '120px',
-              formatter: (cell) =>
-                h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value),
-            },
-            {
-              name: 'Group Room',
-              width: '120px',
-              formatter: (cell) =>
-                h('span', { class: 'cursor-not-allowed', style: 'pointer-events:none;' }, cell.value),
-            },
-            ...timeslots.map((t) => ({
-              name: `${t.start} - ${t.end}`,
-              id: t.id,
-              width: '160px',
-              formatter: formatCell,
-            })),
-          ]
-
-          grid.groupSchedule = new Grid({
-            columns,
-            data,
-            search: false,
-            sort: false,
-            pagination: false,
-            className: {
-              table: 'w-full border text-xs !border-collapse',
-              th: 'bg-base-200 p-2 border-t boder-d !border-x-0 text-center',
-              td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
-            },
-            style: {
-              table: {
-                'border-collapse': 'collapse',
-                'table-layout': 'fixed',
+          } else {
+            row.push({
+              label: 'Schedule',
+              id: s.id,
+              date: weekStart,
+              subject: { name: s.expand?.subject?.name || '', id: s.expand?.subject?.id || '' },
+              teacher: {
+                name: s.expand?.teacher?.name || '',
+                id: s.expand?.teacher?.id || '',
+                status: s.expand?.teacher?.status || 'active',
               },
-            },
-          }).render(document.getElementById('group-grid'))
-
-          grid.groupSchedule.on('cellClick', (...args) => {
-            const cellData = args[1].data
-            if (cellData.disabled) return
-
-            const endDate = new Date(weekStart)
-            endDate.setDate(endDate.getDate() + 3)
-
-            booking.data = {
-              ...cellData,
-              startDate: weekStart,
-              endDate: endDate.toISOString().split('T')[0],
-              timeslot: { id: cellData.timeslot?.id || '', ...cellData.timeslot },
-              groupRoom: { ...cellData.groupRoom },
-              students: cellData.students || [],
-              mode: cellData.label === 'Empty' ? 'create' : 'edit',
-            }
-
-            if (booking.data.mode === 'edit') {
-              booking.data.originalTeacherId = cellData.teacher.id
-              booking.data.originalSubjectId = cellData.subject.id
-              booking.data.originalTimeslotId = cellData.timeslot.id
-              booking.data.originalGroupRoomId = cellData.groupRoom.id
-            }
-
-            if (cellData.label === 'Empty' && cellData.assignedTeacher) {
-              booking.data.teacher = {
-                id: cellData.assignedTeacher.id,
-                name: cellData.assignedTeacher.name,
-                status: cellData.assignedTeacher.status || 'active',
-              }
-            }
-
-            if (groupModal?.showModal) {
-              groupModal.showModal()
-            } else {
-              toast.error('Group modal not initialized')
-            }
-          })
+              students: (s.expand?.student || []).map((std) => ({
+                englishName: std.englishName,
+                id: std.id,
+                status: std.status,
+              })),
+              groupRoom: { name: gr.name, id: gr.id, maxstudents: gr.maxstudents || 0 },
+              timeslot: { id: ts.id, start: ts.start, end: ts.end },
+              assignedTeacher: teacher,
+            })
+          }
         }
+        return row
+      })
+
+      if (grid.groupSchedule) {
+        grid.groupSchedule.updateConfig({ data }).forceRender()
+        restoreScrollPosition()
+      } else {
+        const columns = [
+          { name: 'Teacher', width: '120px', formatter: (cell) => cell.value },
+          { name: 'Group Room', width: '120px', formatter: (cell) => cell.value },
+          ...timeslots.map((t) => ({
+            name: `${t.start} - ${t.end}`,
+            id: t.id,
+            width: '180px',
+            formatter: formatCell,
+          })),
+        ]
+
+        grid.groupSchedule = new Grid({
+          columns,
+          data,
+          className: { table: 'w-full border text-xs !border-collapse' },
+          style: { table: { 'table-layout': 'fixed' } },
+        }).render(document.getElementById('group-grid'))
+
+        grid.groupSchedule.on('cellClick', (...args) => {
+          const cellData = args[1].data
+          if (cellData.disabled) return
+
+          const endDate = new Date(weekStart)
+          endDate.setDate(endDate.getDate() + 3)
+
+          booking.data = {
+            ...cellData,
+            startDate: weekStart,
+            endDate: endDate.toISOString().split('T')[0],
+            mode: cellData.label === 'Empty' ? 'create' : 'edit',
+          }
+
+          groupModal?.showModal()
+        })
       }
     } catch (error) {
-      if (error.name === 'AbortError' || signal.aborted) {
-        console.log('Request cancelled')
-        return
-      }
-      console.error('Error loading group schedules:', error)
-      toast.error('Failed to load schedules')
+      console.error(error)
     } finally {
       isLoading = false
-      abortController = null
     }
-  }
-
-  // Debounced reload with cache invalidation
-  let reloadTimeout
-  const debouncedReload = () => {
-    if (isLoading) return
-    clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(() => {
-      cache.invalidate() // Invalidate cache on updates
-      loadGroupSchedules(true)
-    }, 150)
   }
 
   onMount(() => {
     if (!grid.groupSchedule) loadGroupSchedules()
-    pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
+    pb.collection('groupLessonSchedule').subscribe('*', () => {
+      cache.invalidate()
+      loadGroupSchedules(true)
+    })
   })
 
   onDestroy(() => {
-    clearTimeout(reloadTimeout)
     abortController?.abort()
     grid.groupSchedule?.destroy()
     grid.groupSchedule = null
@@ -596,24 +329,9 @@
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
-    <div class="flex items-center gap-4">
-      <button class="btn btn-ghost btn-sm" onclick={copyToAdvanceBooking} disabled={isCopying}>
-        {#if isCopying}
-          <span class="loading loading-spinner loading-sm"></span>
-          Copying...
-        {:else}
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-            />
-          </svg>
-          Copy to Advance Booking
-        {/if}
-      </button>
-    </div>
+    <button class="btn btn-ghost btn-sm gap-2" onclick={copyToAdvanceBooking} disabled={isCopying}>
+      {#if isCopying}<span class="loading loading-spinner"></span>{:else}Copy to Next Week{/if}
+    </button>
 
     <h3 class="text-xl font-semibold text-center mr-20">{getWeekRangeDisplay(weekStart)}</h3>
 
@@ -623,22 +341,7 @@
     </div>
   </div>
 
-  <div class="bg-base-200 rounded-lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-2 text-xs">
-      <div class="flex gap-1"><span class="badge badge-primary badge-xs"></span> Subject</div>
-      <div class="flex gap-1"><span class="badge badge-error badge-xs"></span> Teacher</div>
-      <div class="flex gap-1"><span class="badge badge-neutral badge-xs"></span> Student(s)</div>
-    </div>
-  </div>
-
   <div id="group-grid" class="border rounded-lg"></div>
 </div>
 
-<GroupModal
-  on:refresh={() => {
-    saveScrollPosition()
-    cache.invalidate()
-    loadGroupSchedules(true)
-  }}
-  bind:this={groupModal}
-/>
+<GroupModal on:refresh={() => loadGroupSchedules(true)} bind:this={groupModal} />

@@ -58,6 +58,9 @@ export const adminRoutes = {
   '/current/teacherview': wrap({
     asyncComponent: () => import('../routes/admin/Current/TeacherView.svelte'),
   }),
+  '/new/mtmscheduletable': wrap({
+    asyncComponent: () => import('../routes/admin/New/MtmScheduleTable.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),

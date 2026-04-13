@@ -4,8 +4,9 @@
   import { onDestroy, onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
   import { booking, grid } from './schedule.svelte'
-  import ScheduleModal from './scheduleModal.svelte'
+  //   import ScheduleModal from './scheduleModal.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import MtmModal from './MtmModal.svelte'
 
   const stickyStyles = `
     #grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
@@ -16,11 +17,10 @@
     #grid th:nth-child(2) { z-index: 25; }
   `
 
-  // Anchors to Tuesday (2)
+  // Anchors to Tuesday
   function getWeekStart(date) {
     const d = new Date(date)
     const day = d.getDay()
-    // Adjust to Tuesday of the current week (Sun=0, Mon=1, Tue=2...)
     const diff = day <= 2 ? 2 - day : 9 - day
     d.setDate(d.getDate() + (day === 2 ? 0 : diff))
     return d.toISOString().split('T')[0]
@@ -29,7 +29,7 @@
   function getWeekRangeDisplay(startDate) {
     const start = new Date(startDate)
     const end = new Date(start)
-    end.setDate(start.getDate() + 3) // Tuesday to Friday
+    end.setDate(start.getDate() + 3)
     const opts = { month: 'long', day: 'numeric' }
     return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
   }
@@ -51,9 +51,7 @@
 
   const saveScrollPosition = () => {
     const wrapper = document.querySelector('#grid .gridjs-wrapper')
-    if (wrapper) {
-      scrollPositions = { top: wrapper.scrollTop, left: wrapper.scrollLeft }
-    }
+    if (wrapper) scrollPositions = { top: wrapper.scrollTop, left: wrapper.scrollLeft }
   }
 
   const restoreScrollPosition = () => {
@@ -68,7 +66,6 @@
 
   const changeWeek = async (weeks) => {
     if (isLoading) return
-    abortController?.abort()
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
@@ -82,10 +79,10 @@
       nextWeekDate.setDate(nextWeekDate.getDate() + 7)
       const nextWeekStr = nextWeekDate.toISOString().split('T')[0]
 
-      // We only need to fetch the Tuesday records
+      // Filter MtmSchedule where 'start' date matches the current viewed week
       const [schedules, existingBookings] = await Promise.all([
-        pb.collection('lessonSchedule').getFullList({
-          filter: `date = "${weekStart}"`,
+        pb.collection('MtmSchedule').getFullList({
+          filter: `start >= "${weekStart} 00:00:00" && start <= "${weekStart} 23:59:59"`,
           expand: 'teacher,student,subject,room,timeslot',
         }),
         pb
@@ -97,45 +94,37 @@
       ])
 
       if (!schedules.length) {
-        toast.info('No schedules found for this week')
+        toast.info('No schedules found to copy')
         return
       }
 
-      // Check for already copied records based on Tuesday anchor
       const existingSet = new Set(existingBookings.map((b) => `${b.timeslot}-${b.student}-${b.room}`))
       const schedulesToCopy = schedules.filter((s) => !existingSet.has(`${s.timeslot}-${s.student}-${s.room}`))
 
       if (!schedulesToCopy.length) {
-        toast.info('All schedules already copied to next week!')
+        toast.info('All schedules already exist in Advance Booking')
         return
       }
 
-      if (!confirm(`Copy ${schedulesToCopy.length} schedules to next week (${getWeekRangeDisplay(nextWeekStr)})?`))
-        return
+      if (!confirm(`Copy ${schedulesToCopy.length} schedules to next week?`)) return
 
       isCopying = true
-      const batchSize = 10
-      for (let i = 0; i < schedulesToCopy.length; i += batchSize) {
-        const batch = schedulesToCopy.slice(i, i + batchSize)
-        await Promise.all(
-          batch.map((s) =>
-            pb.collection('advanceBooking').create({
-              date: nextWeekStr,
-              timeslot: s.timeslot,
-              teacher: s.teacher,
-              student: s.student,
-              subject: s.subject,
-              room: s.room,
-              status: 'pending',
-            })
-          )
-        )
+      for (const s of schedulesToCopy) {
+        await pb.collection('advanceBooking').create({
+          date: nextWeekStr, // Advance booking still uses a single date anchor usually
+          timeslot: s.timeslot,
+          teacher: s.teacher,
+          student: s.student,
+          subject: s.subject,
+          room: s.room,
+          status: 'pending',
+        })
       }
 
-      toast.success('Successfully copied to Advance Booking')
+      toast.success('Copied to Advance Booking')
     } catch (error) {
       console.error(error)
-      toast.error('Failed to copy schedules')
+      toast.error('Failed to copy')
     } finally {
       isCopying = false
     }
@@ -155,7 +144,7 @@
       room: { name: room.name, id: room.id },
       timeslot: { id: timeslot.id, start: timeslot.start, end: timeslot.end },
       assignedTeacher: teacher,
-      weekStart: weekStart, // Anchor date
+      weekStart: weekStart,
     }
 
     if (!schedule) {
@@ -194,10 +183,11 @@
         if (!timeslots.length) promises.push(pb.collection('timeSlot').getFullList({ sort: 'start' }))
         if (!rooms.length) promises.push(pb.collection('room').getFullList({ sort: 'name', expand: 'teacher' }))
 
-        // Fetch only the anchor date (Tuesday)
+        // Fetch using the 'start' field range
         promises.push(
-          pb.collection('lessonSchedule').getFullList({
-            filter: `date = "${weekStart}"`,
+          pb.collection('MtmSchedule').getFullList({
+            // Use the '~' (like) operator or exact string match
+            filter: `start = "${weekStart}"`,
             expand: 'teacher,student,subject,room,timeslot',
             $autoCancel: false,
           })
@@ -209,24 +199,19 @@
         if (!rooms.length) rooms = results[idx++]
         schedules = results[idx]
 
-        // Logic to handle disabled teachers while showing active schedules
         const teacherIdsWithSchedules = new Set(schedules.map((s) => s.teacher))
-
         rooms = rooms.filter((room) => {
           const teacher = room.expand?.teacher
-          if (!teacher) return true
-          return teacher.status !== 'disabled' || teacherIdsWithSchedules.has(teacher.id)
+          return !teacher || teacher.status !== 'disabled' || teacherIdsWithSchedules.has(teacher.id)
         })
 
         cache.schedules = schedules
         cache.lastFetch = Date.now()
       }
 
-      // Map creation is direct—no deduplication needed because date is unique per week
       const scheduleMap = new Map()
       for (const s of schedules) {
-        const key = `${s.room}-${s.timeslot}`
-        scheduleMap.set(key, s)
+        scheduleMap.set(`${s.room}-${s.timeslot}`, s)
       }
 
       const data = rooms.map((room) => {
@@ -235,7 +220,6 @@
           { label: 'Teacher', value: teacher?.name || '-', disabled: true },
           { label: 'Room', value: room.name, disabled: true },
         ]
-
         for (const ts of timeslots) {
           const schedule = scheduleMap.get(`${room.id}-${ts.id}`)
           row.push(buildCellData(schedule, room, ts, teacher))
@@ -248,8 +232,8 @@
         restoreScrollPosition()
       } else {
         const columns = [
-          { name: 'Teacher', width: '120px', formatter: (cell) => cell.value },
-          { name: 'Room', width: '120px', formatter: (cell) => cell.value },
+          { name: 'Teacher', width: '120px', formatter: (c) => c.value },
+          { name: 'Room', width: '120px', formatter: (c) => c.value },
           ...timeslots.map((t) => ({
             name: `${t.start} - ${t.end}`,
             id: t.id,
@@ -268,17 +252,7 @@
         grid.schedule.on('cellClick', (...args) => {
           const cellData = args[1].data
           if (cellData.disabled) return
-
-          const endDate = new Date(weekStart)
-          endDate.setDate(endDate.getDate() + 3)
-
-          booking.data = {
-            ...cellData,
-            startDate: weekStart,
-            endDate: endDate.toISOString().split('T')[0],
-            mode: cellData.label === 'Empty' ? 'create' : 'edit',
-          }
-
+          booking.data = { ...cellData, mode: cellData.label === 'Empty' ? 'create' : 'edit' }
           document.getElementById('editModal')?.showModal()
         })
       }
@@ -290,14 +264,14 @@
   }
 
   onMount(() => {
-    if (!grid.schedule) loadSchedules()
-    pb.collection('lessonSchedule').subscribe('*', () => loadSchedules(true))
+    loadSchedules()
+    pb.collection('MtmSchedule').subscribe('*', () => loadSchedules(true))
   })
 
   onDestroy(() => {
     grid.schedule?.destroy()
     grid.schedule = null
-    pb.collection('lessonSchedule').unsubscribe()
+    pb.collection('MtmSchedule').unsubscribe()
   })
 </script>
 
@@ -305,9 +279,9 @@
   {@html `<style>${stickyStyles}</style>`}
 </svelte:head>
 
-<div class="p-2 sm:p-4 md:p-6 bg-base-100">
+<div class="p-4 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
-    <h2 class="text-center flex-1">MTM Schedule (Current)</h2>
+    <h2 class="text-center flex-1">MTM Schedule</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
@@ -316,15 +290,17 @@
       {#if isCopying}<span class="loading loading-spinner"></span>{:else}Copy to Next Week{/if}
     </button>
 
-    <h3 class="text-xl font-semibold text-center mr-20">{getWeekRangeDisplay(weekStart)}</h3>
+    <h3 class="text-xl font-semibold">{getWeekRangeDisplay(weekStart)}</h3>
 
     <div class="flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
     </div>
   </div>
 
   <div id="grid" class="border rounded-lg"></div>
 </div>
+<!-- 
+<ScheduleModal on:refresh={() => loadSchedules(true)} /> -->
 
-<ScheduleModal on:refresh={() => loadSchedules(true)} />
+<MtmModal on:refresh={() => loadSchedules(true)} />

@@ -105,7 +105,7 @@
       cell.map((item) =>
         h(
           'div',
-          { class: 'flex flex-col gap-1 items-center' },
+          { class: 'flex flex-col gap-1 items-center font-semibold' },
           [
             h('span', { class: 'badge badge-ghost badge-xs p-3 text-bold`' }, item.subject?.name || ''),
             item.teacher &&
@@ -430,7 +430,7 @@
         className: {
           table: 'w-full border text-xs !border-collapse',
           th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
-          td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
+          td: 'border-t border-d p-2 align-middle text-center',
         },
         style: {
           table: {

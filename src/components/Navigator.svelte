@@ -88,7 +88,7 @@
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/current/scheduleinput">MTM Input Table</a></li>
         <li><a href="/#/current/grouptable">GRP Input Table</a></li>
-        <li><a href="/#/current/groupview">GRP Room Table</a></li>
+        <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
         <li><a href="/#/current/studentview">Student Table</a></li>
         <li><a href="/#/current/teacherview">Teacher Table</a></li>
       </ul>
@@ -137,7 +137,7 @@
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/current/mondayscheduleinput">MTM Input Table</a></li>
         <li><a href="/#/current/mondaygrouptable">GRP Input Table</a></li>
-        <li><a href="/#/current/mondaygroupview">Group Room Table</a></li>
+        <!-- <li><a href="/#/current/mondaygroupview">Group Room Table</a></li> -->
         <li><a href="/#/current/mondaystudentview">Student Table</a></li>
         <li><a href="/#/current/mondayteacherview">Teacher Table</a></li>
       </ul>
