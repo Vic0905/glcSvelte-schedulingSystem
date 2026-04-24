@@ -6,38 +6,21 @@
   import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
-    #teacherGrid .gridjs-wrapper { 
-      max-height: 700px; 
-      overflow: auto; 
-      scroll-behavior: auto !important;
-    }
-
-    #teacherGrid table {
-      border-collapse: collapse !important:
-    }
-
+    #teacherGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
     #teacherGrid th { 
-      position: sticky; 
-      top: 0; 
-      z-index: 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px; 
+    position: sticky; 
+    top: 0; 
+    z-index: 20; 
+    box-shadow: inset -1px 0 0 #ddd; 
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+       color: #ffffff; /* white text */
     }
 
-    #teacherGrid th:nth-child(1), 
-    #teacherGrid td:nth-child(1) { 
-      position: sticky; 
-      left: 0; 
-      z-index: 15; 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px; 
-    }
+    #teacherGrid th:nth-child(1), #teacherGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15;  box-shadow: inset -1px 0 0 #ddd; }
+    #teacherGrid th:nth-child(1) { z-index: 25; }
 
-    #teacherGrid th:nth-child(1) { 
-      z-index: 25; 
-    }
+    #teacherGrid th:nth-child(2), #teacherGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 15;  box-shadow: inset -1px 0 0 #ddd; }
+    #teacherGrid th:nth-child(2) { z-index: 25; }
   `
 
   let teacherGrid = null
@@ -73,24 +56,40 @@
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
+
     return h(
       'div',
-      { class: 'text-xs flex flex-col gap-1 items-center' },
+      { class: 'text-xs' },
       cell.map((item) =>
-        h('div', { class: 'flex flex-col gap-1 items-center' }, [
-          h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name ?? 'No Subject'),
-          item.isGroup
-            ? h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class')
-            : h(
-                'span',
-                {
-                  class: 'badge badge-neutral badge-xs',
-                  title: filteredStudents.get(item.student?.id) ? '' : 'Graduated student with no bookings',
-                },
-                filteredStudents.get(item.student?.id) || 'Unknown Student'
-              ),
-          h('span', { class: 'badge badge-error badge-xs' }, item.room?.name ?? 'No Room'),
-        ])
+        h(
+          'div',
+          { class: 'flex flex-col gap-1 p-1 items-center text-center' },
+          [
+            // 🔹 Header (Subject)
+            h(
+              'div',
+              {
+                class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
+              },
+              [h('div', {}, item.subject?.name ?? 'No Subject')]
+            ),
+
+            // 🔹 Below (Student / Group)
+            item.isGroup
+              ? h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class')
+              : h(
+                  'span',
+                  {
+                    class: 'badge badge-ghost badge-xs',
+                    title: filteredStudents.get(item.student?.id) ? '' : 'Graduated student with no bookings',
+                  },
+                  filteredStudents.get(item.student?.id) || 'Unknown Student'
+                ),
+
+            // 🔹 Room
+            h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name ?? 'No Room'),
+          ].filter(Boolean)
+        )
       )
     )
   }
@@ -314,6 +313,11 @@
             assignmentType: assignment?.type,
             assignmentName: assignment?.name,
           },
+
+          {
+            room: assignment?.name || null,
+          },
+
           ...timeslots.map((ts) => {
             const schedules = teacherSchedule[ts.id]
             return schedules ? Object.values(schedules) : []
@@ -324,7 +328,7 @@
       const columns = [
         {
           name: 'Teacher',
-          width: '120px',
+          width: '150px',
           formatter: (cell) => h('span', {}, cell.rawName || cell.value),
           sort: {
             compare: (a, b) => {
@@ -346,7 +350,12 @@
             },
           },
         },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
+        {
+          name: 'Room',
+          width: '120px',
+          formatter: (c) => (c?.room ? h('span', { class: 'text-xs' }, c.room) : h('span', {}, '—')),
+        },
+        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '180px', formatter: formatCell })),
       ]
 
       if (teacherGrid) {
@@ -371,8 +380,8 @@
           pagination: false,
           className: {
             table: 'w-full border text-xs !border-collapse',
-            th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
-            td: 'border-t border-d !border-x-0 p-2 text-center align-middle',
+            // th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
+            // td: 'border-t border-d !border-x-0 p-2 text-center align-middle',
           },
           style: { table: { 'border-collapse': 'collapse' } },
         }).render(document.getElementById('teacherGrid'))
@@ -454,27 +463,6 @@
 
   <div class="mb-6">
     <h3 class="text-xl font-semibold text-center">{getCurrentDateDisplay()}</h3>
-  </div>
-
-  <div class="p-3 bg-base-200 rounded-lg mb-4">
-    <div class="flex flex-wrap gap-4 text-xs mb-2">
-      <div class="flex items-center gap-1">
-        <div class="badge badge-primary badge-xs"></div>
-        <span>Subject</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
-        <span>Student</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-secondary badge-xs"></div>
-        <span>Group Lesson</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-error badge-xs"></div>
-        <span>Room</span>
-      </div>
-    </div>
   </div>
 
   <div id="teacherGrid" class="border rounded-lg"></div>

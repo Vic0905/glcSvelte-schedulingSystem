@@ -6,17 +6,24 @@
 
   const stickyStyles = `
     #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #studentGrid th { position: sticky; top: 0; z-index: 20; box-shadow: 0 1px 0 #ddd; }
+    #studentGrid th { 
+    position: sticky; 
+    top: 0; 
+    z-index: 20; 
+    box-shadow: 0 1px 0 #ddd; 
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+       color: #ffffff; /* white text */
+    }
     #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd;  }
     #studentGrid th:nth-child(1) { z-index: 25; }
 
-    #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 180px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
     #studentGrid th:nth-child(2) { z-index: 25; }
 
-    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 320px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
     #studentGrid th:nth-child(3) { z-index: 25; }
 
-    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 420px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 440px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
     #studentGrid th:nth-child(4) { z-index: 25; }
   `
 
@@ -105,20 +112,24 @@
       cell.map((item) =>
         h(
           'div',
-          { class: 'flex flex-col gap-1 items-center font-semibold' },
+          { class: 'flex flex-col gap-1 p-1 items-center text-center' },
           [
-            h('span', { class: 'badge badge-ghost badge-xs p-3 text-bold`' }, item.subject?.name || ''),
-            item.teacher &&
-              h(
-                'span',
-                {
-                  class: 'badge badge-ghost badge-xs',
-                  title: item.teacher.status === 'disabled' ? 'Disabled teacher' : '',
-                },
-                item.teacher.name || ''
-              ),
+            // 🔹 Header (Subject + Teacher)
+            h(
+              'div',
+              {
+                class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
+              },
+              [
+                h('div', {}, item.subject?.name || ''),
+                h('div', { class: 'text-[10px] uppercase' }, item.teacher?.name || ''),
+              ]
+            ),
+
+            // 🔹 Below (Room + Group)
+            item.room && h('span', { class: 'badge badge-ghost badge-xs' }, item.room.name),
+
             item.isGroup && h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class'),
-            h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name || ''),
           ].filter(Boolean)
         )
       )
@@ -145,8 +156,7 @@
     isLoading = true
 
     try {
-      const weekDays = getWeekDays(weekStart)
-      const dateFilter = getDateFilter(weekDays)
+      const dateFilter = `date = "${weekStart}"`
 
       // Load data in parallel
       const promises = []
@@ -179,7 +189,7 @@
       // Always load schedules
       promises.push(
         pb.collection('lessonSchedule').getFullList({
-          filter: dateFilter,
+          filter: `date = "${weekStart}"`,
           expand: 'teacher,student,subject,room,timeslot',
           $autoCancel: false,
         })
@@ -187,7 +197,7 @@
 
       promises.push(
         pb.collection('groupLessonSchedule').getFullList({
-          filter: dateFilter,
+          filter: `date = "${weekStart}"`,
           expand: 'teacher,student,subject,grouproom,timeslot',
           $autoCancel: false,
         })
@@ -336,7 +346,12 @@
         const studentSchedules = filteredScheduleMap.get(student.id) || new Map()
 
         const row = [
-          { label: 'Student', value: student.name },
+          {
+            label: 'Student',
+            value: student.name,
+            status: student.status,
+            created: student.created,
+          },
           { label: 'English Name', value: student.englishName || '' },
           { label: 'Course', value: student.course || '' },
           { label: 'Level', value: student.level || '' },
@@ -349,33 +364,57 @@
         return row
       })
 
-      // Sort by student name
-      data.sort((a, b) => a[0].value.localeCompare(b[0].value))
+      data.sort((a, b) => {
+        const statusA = a[0].status === 'new' ? 1 : 0
+        const statusB = b[0].status === 'new' ? 1 : 0
+
+        // 1. Push "new" to bottom
+        if (statusA !== statusB) {
+          return statusA - statusB
+        }
+
+        // 2. Sort by created date (oldest first)
+        const dateA = new Date(a[0].created)
+        const dateB = new Date(b[0].created)
+
+        return dateA - dateB
+      })
 
       const columns = [
         {
           name: 'Student',
-          width: '150px',
-          formatter: (cell) => h('div', { class: 'text-xs truncate' }, cell.value),
+          width: '180px',
+          formatter: (cell) =>
+            h(
+              'div',
+              { class: 'flex flex-col items-center text-center text-neutral-700 font-bold' },
+              [
+                // Name
+                h('span', { class: 'font-semibold' }, cell.value),
+
+                // Show only if NEW
+                cell.status === 'new' && h('span', { class: 'badge badge-soft badge-success badge-xs' }, 'New'),
+              ].filter(Boolean)
+            ),
         },
         {
           name: 'English Name',
-          width: '150px',
-          formatter: (cell) => h('div', { class: 'text-xs' }, cell.value),
+          width: '140px',
+          formatter: (cell) => h('div', { className: 'text-center text-neutral-700 font-bold' }, cell.value),
         },
         {
           name: 'Course',
           width: '120px',
-          formatter: (cell) => h('div', { class: 'text-xs' }, cell.value),
+          formatter: (cell) => h('div', { className: 'text-center text-neutral-700 font-bold' }, cell.value),
         },
         {
           name: 'Level',
           width: '100px',
-          formatter: (cell) => h('div', { class: 'text-xs' }, cell.value),
+          formatter: (cell) => h('div', { className: 'text-center text-neutral-700 font-bold' }, cell.value),
         },
         ...cache.timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
-          width: '160px',
+          width: '180px',
           formatter: formatCell,
         })),
       ]
@@ -429,8 +468,9 @@
         pagination: false,
         className: {
           table: 'w-full border text-xs !border-collapse',
-          th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
-          td: 'border-t border-d p-2 align-middle text-center',
+          th: 'text-center',
+          // th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
+          // td: 'border-t border-d p-2 align-middle text-center',
         },
         style: {
           table: {
@@ -501,27 +541,6 @@
     <div class="flex items-center gap-2">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
-    </div>
-  </div>
-
-  <div class="bg-base-200 rounded-lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-4 text-xs mb-2">
-      <div class="flex items-center gap-1">
-        <span class="badge badge-primary badge-xs"></span>
-        <span>Subject</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <span class="badge badge-neutral badge-xs"></span>
-        <span>Teacher</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <span class="badge badge-secondary badge-xs"></span>
-        <span>Group Class</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <span class="badge badge-error badge-xs"></span>
-        <span>Room</span>
-      </div>
     </div>
   </div>
 

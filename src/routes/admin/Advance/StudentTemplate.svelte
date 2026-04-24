@@ -6,61 +6,26 @@
   import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
-    #studentGrid .gridjs-wrapper { 
-      max-height: 700px; 
-      overflow: auto; 
-      scroll-behavior: auto !important;
+    #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+    #studentGrid th { 
+    position: sticky; 
+    top: 0; 
+    z-index: 20; 
+    box-shadow: 0 1px 0 #ddd; 
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+       color: #ffffff; /* white text */
     }
-    
-    #studentGrid table {
-      border-collapse: collapse !important:
-    }
+    #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(1) { z-index: 25; }
 
-    #studentGrid th {
-      position: sticky; 
-      top: 0; 
-      z-index: 20; 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px;
-     }
+    #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 180px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(2) { z-index: 25; }
 
-    #studentGrid th:nth-child(1), 
-    #studentGrid td:nth-child(1) { 
-      position: sticky; 
-      left: 0; 
-      z-index: 15; 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px; 
-    }
+    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 320px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(3) { z-index: 25; }
 
-    #studentGrid th:nth-child(1) { 
-      z-index: 25; 
-    }
-
-    #studentGrid th:nth-child(2), 
-    #studentGrid td:nth-child(2) { 
-      position: sticky; 
-      left: 150px; 
-      z-index: 10; 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px; 
-    }
-
-    #studentGrid th:nth-child(2) { 
-      z-index: 25; 
-    }
-
-    #studentGridd td {
-      border-bottom: 1px solid #eee !important;
-    }
-
-    #studentGrid th:nth-child(2),
-    #studentGrid td:nth-child(2) {
-      border-left: none !important;
-      margin-left: -1px; 
+    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 440px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+    #studentGrid th:nth-child(4) { z-index: 25; }
   `
 
   // #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
@@ -98,18 +63,31 @@
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
+
     return h(
       'div',
       { class: 'text-xs' },
       cell.map((item) =>
         h(
           'div',
-          { class: 'flex flex-col gap-1 items-center' },
+          { class: 'flex flex-col gap-1 p-1 items-center text-center' },
           [
-            h('span', { class: 'badge badge-primary badge-xs p-3' }, item.subject?.name || ''),
-            h('span', { class: 'badge badge-neutral badge-xs' }, item.teacher?.name || ''),
-            item.isGroup && h('span', { class: 'badge badge-secondary badge-xs' }, 'Group Class'),
-            h('span', { class: 'badge badge-error badge-xs' }, item.room?.name || ''),
+            // 🔹 Header (Subject + Teacher)
+            h(
+              'div',
+              {
+                class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
+              },
+              [
+                h('div', {}, item.subject?.name || ''),
+                h('div', { class: 'text-[10px] uppercase' }, item.teacher?.name || ''),
+              ]
+            ),
+
+            // 🔹 Below (Room + Group)
+            item.room && h('span', { class: 'badge badge-ghost badge-xs' }, item.room.name),
+
+            item.isGroup && h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class'),
           ].filter(Boolean)
         )
       )
@@ -158,8 +136,10 @@
         scheduleMap[s.id] = {
           student: s.name,
           englishName: s.englishName || '',
-          // course: s.course || '',
-          // level: s.level || '',
+          course: s.course || '',
+          level: s.level || '',
+          status: s.status,
+          created: s.created,
           slots: {},
         }
       })
@@ -197,12 +177,24 @@
 
       // Build table data
       const data = Object.values(scheduleMap)
-        .sort((a, b) => a.student.localeCompare(b.student, undefined, { numeric: true }))
+        .sort((a, b) => {
+          const statusA = a.status === 'new' ? 1 : 0
+          const statusB = b.status === 'new' ? 1 : 0
+
+          // Push "new" to bottom
+          if (statusA !== statusB) {
+            return statusA - statusB
+          }
+
+          // Oldest first
+          return new Date(a.created) - new Date(b.created)
+        })
+
         .map((entry) => [
-          { label: 'Student', value: entry.student },
+          { label: 'Student', value: entry.student, status: entry.status },
           { label: 'English Name', value: entry.englishName },
-          // { label: 'Course', value: entry.course },
-          // { label: 'Level', value: entry.level },
+          { label: 'Course', value: entry.course },
+          { label: 'Level', value: entry.level },
           ...timeslots.map((ts) => {
             const schedule = entry.slots[ts.id]
             return schedule ? [schedule] : []
@@ -210,11 +202,35 @@
         ])
 
       const columns = [
-        { name: 'Student', width: '150px', formatter: (cell) => h('div', { class: 'text-xs truncate' }, cell.value) },
-        { name: 'English Name', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        // { name: 'Course', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        // { name: 'Level', width: '150px', formatter: (cell) => h('div', { class: 'text-xs' }, cell.value) },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
+        {
+          name: 'Student',
+          width: '180px',
+          formatter: (cell) =>
+            h(
+              'div',
+              { class: 'flex flex-col items-center text-neutral-700 font-bold' },
+              [
+                h('span', { class: 'font-semibold' }, cell.value),
+                cell.status === 'new' && h('span', { class: 'badge badge-success badge-xs' }, 'New'),
+              ].filter(Boolean)
+            ),
+        },
+        {
+          name: 'English Name',
+          width: '140px',
+          formatter: (cell) => h('div', { className: 'text-center text-neutral-700 font-bold' }, cell.value),
+        },
+        {
+          name: 'Course',
+          width: '120px',
+          formatter: (cell) => h('div', { className: 'text-center text-neutral-700 font-bold' }, cell.value),
+        },
+        {
+          name: 'Level',
+          width: '100px',
+          formatter: (cell) => h('div', { className: 'text-center text-neutral-700 font-bold' }, cell.value),
+        },
+        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '180px', formatter: formatCell })),
       ]
 
       if (studentGrid) {
@@ -239,8 +255,8 @@
           pagination: false,
           className: {
             table: 'w-full border text-xs !border-collapse',
-            th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
-            td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
+            // th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
+            // td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
           },
           style: { table: { 'border-collapse': 'collapse' } },
         }).render(document.getElementById('studentGrid'))
@@ -298,27 +314,6 @@
   <!-- Simplified date display only -->
   <div class="mb-6">
     <h3 class="text-xl font-semibold text-center">{getCurrentDateDisplay()}</h3>
-  </div>
-
-  <div class="p-3 bg-base-200 rounded-lg mb-4">
-    <div class="flex flex-wrap gap-4 text-xs">
-      <div class="flex items-center gap-1">
-        <div class="badge badge-primary badge-xs"></div>
-        <span>Subject</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
-        <span>Teacher</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-secondary badge-xs"></div>
-        <span>Group Class</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-error badge-xs"></div>
-        <span>Room</span>
-      </div>
-    </div>
   </div>
 
   <div id="studentGrid" class="border rounded-lg"></div>

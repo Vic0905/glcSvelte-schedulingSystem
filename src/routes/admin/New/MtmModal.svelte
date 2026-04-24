@@ -1,5 +1,5 @@
 <script>
-  import { booking } from './schedule.svelte.js'
+  // import { booking } from './schedule.svelte.js'
   import { createEventDispatcher } from 'svelte'
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte.js'
@@ -50,53 +50,80 @@
   }
 
   const saveSchedule = async () => {
+    // 1. Basic Form Validation
     if (!validateForm()) return
 
     const { id, timeslot, teacher, student, subject, room, mode, startDate, endDate } = booking.data
 
-    // Map your booking data to the MtmSchedule schema
+    // 2. Normalize IDs (Ensures we are comparing strings, not objects)
+    const sId = student?.id || student
+    const tId = teacher?.id || teacher
+    const tsId = timeslot?.id || timeslot
+    const rId = room?.id || room
+    const subId = subject?.id || subject
+
     const scheduleData = {
-      timeslot: timeslot.id,
-      teacher: teacher.id,
-      student: student.id,
-      subject: subject.id,
-      room: room.id,
-      start: startDate, // "2026-04-14"
-      end: endDate, // "2026-04-17"
+      timeslot: tsId,
+      teacher: tId,
+      student: sId,
+      subject: subId,
+      room: rId,
+      start: startDate,
+      end: endDate || startDate,
     }
 
     toast.promise(
       async () => {
-        // 🔍 PRE-CHECKS FIRST
+        // ID filter to ignore the current record when editing
+        const idFilter = mode === 'edit' && id ? ` && id != "${id}"` : ''
 
-        // 1️⃣ Student conflict
-        const studentConflict = await pb.collection('MtmSchedule').getList(1, 1, {
-          filter: `student="${scheduleData.student}" && timeslot="${scheduleData.timeslot}"`,
-        })
+        // 🔍 THE RANGE OVERLAP LOGIC
+        // This math checks if any part of the new week touches an existing week
+        const rangeOverlap = `start <= "${scheduleData.end}" && end >= "${scheduleData.start}"`
 
-        if (studentConflict.items.length > 0) {
-          throw new Error('Student already has a schedule in this timeslot!')
+        // --- CHECK 1: MTM SCHEDULE (Single Student Relation) ---
+        const mtmFilter = `timeslot = "${tsId}" && (${rangeOverlap}) && (teacher = "${tId}" || student = "${sId}")${idFilter}`
+
+        const mtmConflict = await pb
+          .collection('MtmSchedule')
+          .getFirstListItem(mtmFilter)
+          .catch(() => null)
+
+        if (mtmConflict) {
+          const isTeacher = mtmConflict.teacher === tId
+          throw new Error(
+            `${isTeacher ? 'Teacher' : 'Student'} is already booked in MTM (${mtmConflict.start} to ${mtmConflict.end})`
+          )
         }
 
-        // 2️⃣ Teacher conflict
-        const teacherConflict = await pb.collection('MtmSchedule').getList(1, 1, {
-          filter: `teacher="${scheduleData.teacher}" && timeslot="${scheduleData.timeslot}"`,
-        })
+        // --- CHECK 2: GROUP SCHEDULE (Multiple Student Relation) ---
+        // Using ?= because 'student' is an array of IDs
+        const grpFilter = `timeslot = "${tsId}" && (${rangeOverlap}) && (teacher = "${tId}" || student ?= "${sId}")`
 
-        if (teacherConflict.items.length > 0) {
-          throw new Error('Teacher is already booked for this timeslot!')
+        const grpConflict = await pb
+          .collection('GrpSchedule')
+          .getFirstListItem(grpFilter)
+          .catch(() => null)
+
+        if (grpConflict) {
+          const isTeacher = grpConflict.teacher === tId
+          throw new Error(
+            `${isTeacher ? 'Teacher' : 'Student'} is busy in a Group Class (${grpConflict.start} to ${grpConflict.end})`
+          )
         }
 
-        // 3️⃣ Room conflict (optional)
-        const roomConflict = await pb.collection('MtmSchedule').getList(1, 1, {
-          filter: `room="${scheduleData.room}" && timeslot="${scheduleData.timeslot}"`,
-        })
+        // --- CHECK 3: ROOM OCCUPANCY ---
+        const roomFilter = `timeslot = "${tsId}" && (${rangeOverlap}) && room = "${rId}"${idFilter}`
+        const roomConflict = await pb
+          .collection('MtmSchedule')
+          .getFirstListItem(roomFilter)
+          .catch(() => null)
 
-        if (roomConflict.items.length > 0) {
-          throw new Error('Room is already occupied at this timeslot!')
+        if (roomConflict) {
+          throw new Error(`The room is already occupied during this week/timeslot.`)
         }
 
-        // ✅ If no conflicts → proceed
+        // --- FINAL ACTION ---
         if (mode === 'edit' && id) {
           await pb.collection('MtmSchedule').update(id, scheduleData)
           return 'Schedule updated!'
@@ -106,13 +133,13 @@
         }
       },
       {
-        loading: 'Saving to MtmSchedule...',
+        loading: 'Checking weekly availability...',
         success: (msg) => {
           dispatch('refresh')
           document.getElementById('editModal').close()
           return msg
         },
-        error: (err) => err.message, // 👈 now shows your custom errors
+        error: (err) => err.message,
       }
     )
   }
@@ -140,67 +167,70 @@
 
 <dialog id="editModal" class="modal">
   <div class="modal-box max-w-xl w-full space-y-6 rounded-xl">
-    {#if booking.data}
+    {#if booking.data && booking.data.student && booking.data.teacher}
       <h3 class="text-xl font-bold text-center">
         {booking.data.mode === 'edit' ? 'Edit' : 'Create'} MTM Schedule
       </h3>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="form-control">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="label font-semibold">Student</label>
-          <select class="select select-bordered w-full" bind:value={booking.data.student.id}>
+          <label class="label font-semibold" for="student-select">Student</label>
+          <select id="student-select" class="select select-bordered w-full" bind:value={booking.data.student.id}>
             <option value="">Select Student</option>
-            {#each students as s}<option value={s.id}>{s.englishName}</option>{/each}
+            {#each students as s}
+              <option value={s.id}>{s.englishName}</option>
+            {/each}
           </select>
         </div>
 
         <div class="form-control">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="label font-semibold">Subject</label>
-          <select class="select select-bordered w-full" bind:value={booking.data.subject.id}>
+          <label class="label font-semibold" for="subject-select">Subject</label>
+          <select id="subject-select" class="select select-bordered w-full" bind:value={booking.data.subject.id}>
             <option value="">Select Subject</option>
-            {#each subjects as sub}<option value={sub.id}>{sub.name}</option>{/each}
+            {#each subjects as sub}
+              <option value={sub.id}>{sub.name}</option>
+            {/each}
           </select>
         </div>
 
         <div class="form-control">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="label font-semibold">Teacher</label>
-          <select class="select select-bordered w-full" bind:value={booking.data.teacher.id}>
+          <label class="label font-semibold" for="teacher-select">Teacher</label>
+          <select id="teacher-select" class="select select-bordered w-full" bind:value={booking.data.teacher.id}>
             <option value="">Select Teacher</option>
-            {#each teachers as t}<option value={t.id}>{t.name}</option>{/each}
+            {#each teachers as t}
+              <option value={t.id}>{t.name}</option>
+            {/each}
           </select>
         </div>
 
         <div class="form-control">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="label font-semibold">Room</label>
-          <select class="select select-bordered w-full" bind:value={booking.data.room.id}>
+          <label class="label font-semibold" for="room-select">Room</label>
+          <select id="room-select" class="select select-bordered w-full" bind:value={booking.data.room.id}>
             <option value="">Select Room</option>
-            {#each rooms as r}<option value={r.id}>{r.name}</option>{/each}
+            {#each rooms as r}
+              <option value={r.id}>{r.name}</option>
+            {/each}
           </select>
         </div>
 
         <div class="form-control md:col-span-2">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="label font-semibold">Timeslot</label>
-          <select class="select select-bordered w-full" bind:value={booking.data.timeslot.id}>
+          <label class="label font-semibold" for="timeslot-select">Timeslot</label>
+          <select id="timeslot-select" class="select select-bordered w-full" bind:value={booking.data.timeslot.id}>
             <option value="">Select Timeslot</option>
-            {#each timeslots as ts}<option value={ts.id}>{ts.start} - {ts.end}</option>{/each}
+            {#each timeslots as ts}
+              <option value={ts.id}>{ts.start} - {ts.end}</option>
+            {/each}
           </select>
         </div>
 
         <div class="form-control">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="label font-semibold">Start Date</label>
-          <input type="date" class="input input-bordered w-full" bind:value={booking.data.startDate} />
+          <label class="label font-semibold" for="start-date">Start Date</label>
+          <input id="start-date" type="date" class="input input-bordered w-full" bind:value={booking.data.startDate} />
         </div>
 
         <div class="form-control">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="label font-semibold">End Date</label>
-          <input type="date" class="input input-bordered w-full" bind:value={booking.data.endDate} />
+          <label class="label font-semibold" for="end-date">End Date</label>
+          <input id="end-date" type="date" class="input input-bordered w-full" bind:value={booking.data.endDate} />
         </div>
       </div>
 
@@ -208,13 +238,20 @@
         {#if booking.data.mode === 'edit' && booking.data.id}
           <button class="btn btn-error mr-auto" onclick={deleteSchedule}>Delete Record</button>
         {/if}
+
         <button class="btn btn-primary px-8" onclick={saveSchedule}>
           {booking.data.mode === 'edit' ? 'Update' : 'Save'} Record
         </button>
-        <form method="dialog"><button class="btn">Close</button></form>
+
+        <form method="dialog">
+          <button class="btn">Close</button>
+        </form>
       </div>
     {:else}
-      <div class="flex justify-center p-10"><span class="loading loading-spinner loading-lg"></span></div>
+      <div class="flex flex-col items-center justify-center p-10 gap-4">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+        <p class="text-sm text-base-content/60">Preparing schedule data...</p>
+      </div>
     {/if}
   </div>
 </dialog>

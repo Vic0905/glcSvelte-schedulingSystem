@@ -61,6 +61,24 @@ export const adminRoutes = {
   '/new/mtmscheduletable': wrap({
     asyncComponent: () => import('../routes/admin/New/MtmScheduleTable.svelte'),
   }),
+  '/new/grpscheduletable': wrap({
+    asyncComponent: () => import('../routes/admin/New/GrpScheduleTable.svelte'),
+  }),
+  '/new/studentview': wrap({
+    asyncComponent: () => import('../routes/admin/New/StudentView.svelte'),
+  }),
+  '/new/teacherview': wrap({
+    asyncComponent: () => import('../routes/admin/New/TeacherView.svelte'),
+  }),
+  '/new/lessonschedulehistory': wrap({
+    asyncComponent: () => import('../routes/admin/New/LessonScheduleHistory.svelte'),
+  }),
+  '/new/schedule': wrap({
+    asyncComponent: () => import('../routes/admin/New/Schedule.svelte'),
+  }),
+  '/new/room': wrap({
+    asyncComponent: () => import('../routes/admin/New/Room.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),

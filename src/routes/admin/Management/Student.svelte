@@ -36,6 +36,22 @@
       sort: '-created',
     })
 
+    const oneMinuteInMs = 60 * 1000
+    const now = new Date()
+
+    // Filter students who are still 'new' but were created over a week ago
+    const studentsToUpdate = records.filter((student) => {
+      const createdDate = new Date(student.created)
+      return student.status === 'new' && now - createdDate > oneMinuteInMs
+    })
+
+    // Silently update them in the background
+    if (studentsToUpdate.length > 0) {
+      await Promise.all(studentsToUpdate.map((s) => pb.collection('student').update(s.id, { status: 'old' })))
+      // Reload records after update to show "old" in the grid
+      return loadStudent()
+    }
+
     totalStudents = records.length
     newStudent = records.filter((student) => student.status === 'new').length
     oldStudent = records.filter((student) => student.status === 'old').length
@@ -184,16 +200,106 @@
     showModal = true
   }
 
-  async function deleteStudent(id) {
-    if (confirm('Are you sure you want to delete this student?')) {
-      try {
-        await pb.collection('student').delete(id)
-        toast.success('Student deleted successfully!')
-        await loadStudent()
-      } catch (err) {
-        console.error(err)
-        toast.error('Failed to delete student')
+  function getId(rel) {
+    if (!rel) return null
+    if (Array.isArray(rel)) return rel[0]
+    if (typeof rel === 'object') return rel.id
+    return rel
+  }
+
+  function groupSchedules(schedules) {
+    const grouped = {}
+
+    const getId = (rel) => {
+      if (!rel) return null
+      if (Array.isArray(rel)) return rel[0] // handle multi-relation safely
+      if (typeof rel === 'object') return rel.id
+      return rel
+    }
+
+    for (const s of schedules) {
+      const studentId = getId(s.student)
+      const teacherId = getId(s.teacher)
+      const subjectId = getId(s.subject)
+      const roomId = getId(s.room)
+      const timeslotId = getId(s.timeslot)
+
+      // ❗ skip invalid records (prevents N/A in history)
+      if (!studentId || !teacherId || !subjectId || !roomId || !timeslotId) {
+        console.warn('Skipping invalid schedule:', s)
+        continue
       }
+
+      const key = `${studentId}_${teacherId}_${timeslotId}_${subjectId}_${roomId}_${s.week_id}`
+
+      if (!grouped[key]) {
+        grouped[key] = {
+          student: studentId,
+          teacher: teacherId,
+          timeslot: timeslotId,
+          subject: subjectId,
+          room: roomId,
+          week_id: s.week_id,
+          start_date: s.date,
+          end_date: s.date,
+        }
+      } else {
+        const currentDate = new Date(s.date)
+        const startDate = new Date(grouped[key].start_date)
+        const endDate = new Date(grouped[key].end_date)
+
+        if (currentDate < startDate) {
+          grouped[key].start_date = s.date
+        }
+
+        if (currentDate > endDate) {
+          grouped[key].end_date = s.date
+        }
+      }
+    }
+
+    return Object.values(grouped)
+  }
+
+  async function deleteStudent(id) {
+    if (!confirm('Are you sure you want to delete this student?')) return
+
+    try {
+      // Fetch student details first so we have the name for history
+      const studentData = await pb.collection('student').getOne(id)
+      const targetName = studentData.englishName || studentData.name
+
+      const schedules = await pb.collection('lessonSchedule').getFullList({
+        filter: `student = "${id}"`,
+      })
+
+      const grouped = groupSchedules(schedules)
+
+      for (const g of grouped) {
+        await pb.collection('lessonScheduleHistory').create({
+          start_date: g.start_date,
+          end_date: g.end_date,
+          timeslot: g.timeslot,
+          teacher: g.teacher,
+          // FIX 1: Send as string, not array
+          student: g.student,
+          // 2. SAVE THE ACTUAL NAME HERE
+          student_name: targetName,
+          subject: g.subject,
+          room: g.room,
+          week_id: g.week_id,
+        })
+      }
+
+      // Delete schedules and student
+      await Promise.all(schedules.map((s) => pb.collection('lessonSchedule').delete(s.id)))
+      await pb.collection('student').delete(id)
+
+      toast.success('Student deleted and schedules archived!')
+      await loadStudent()
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to delete student')
     }
   }
 
@@ -405,6 +511,74 @@
     }
   }
 
+  async function bulkDeleteStudents() {
+    if (selectedStudents.size === 0) {
+      toast.error('No students selected')
+      return
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedStudents.size} student(s)?`)) {
+      return
+    }
+
+    isProcessing = true
+
+    try {
+      const studentIds = Array.from(selectedStudents)
+
+      // 🚀 1. Fetch the names of the students BEFORE we delete them
+      // This creates a lookup map like { "id123": "John Doe" }
+      const studentRecords = await pb.collection('student').getFullList({
+        filter: studentIds.map((id) => `id="${id}"`).join(' || '),
+      })
+
+      const nameMap = {}
+      studentRecords.forEach((r) => {
+        nameMap[r.id] = r.englishName || r.name || 'Unknown'
+      })
+
+      // 🚀 2. Fetch all schedules
+      const allSchedules = await pb.collection('lessonSchedule').getFullList()
+      const getId = (rel) => (typeof rel === 'object' ? rel.id : rel)
+      const targetSchedules = allSchedules.filter((s) => studentIds.includes(getId(s.student)))
+
+      // 🚀 3. Group them
+      const grouped = groupSchedules(targetSchedules)
+
+      // 🚀 4. Save to History with the TEXT NAME
+      await Promise.all(
+        grouped.map((g) =>
+          pb.collection('lessonScheduleHistory').create({
+            start_date: g.start_date,
+            end_date: g.end_date,
+            timeslot: g.timeslot,
+            teacher: g.teacher,
+            student: g.student,
+            student_name: nameMap[g.student], // THIS IS THE KEY FIX
+            subject: g.subject,
+            room: g.room,
+            week_id: g.week_id,
+          })
+        )
+      )
+
+      // 🚀 5. Delete original schedules and students
+      await Promise.all(targetSchedules.map((s) => pb.collection('lessonSchedule').delete(s.id)))
+      await Promise.all(studentIds.map((id) => pb.collection('student').delete(id)))
+
+      toast.success(`${studentIds.length} student(s) deleted and archived!`)
+
+      selectedStudents = new Set()
+      showBulkActions = false
+      await loadStudent()
+    } catch (err) {
+      console.error(err)
+      toast.error('Error deleting students')
+    } finally {
+      isProcessing = false
+    }
+  }
+
   onMount(loadStudent)
 </script>
 
@@ -414,7 +588,7 @@
     <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 class="text-2xl font-bold mb-2">Student Management</h1>
+          <h1 class="text-2xl font-bold mb-2">Student Information</h1>
           <div class="flex gap-2 mt-2">
             <div class="flex items-center gap-3">
               <div>
@@ -519,6 +693,9 @@
             </button>
             <button class="btn btn-sm btn-ghost" onclick={() => bulkUpdateStatus('graduated')} disabled={isProcessing}>
               {isProcessing ? 'Processing...' : 'Mark as Graduated'}
+            </button>
+            <button class="btn btn-sm btn-error" onclick={bulkDeleteStudents} disabled={isProcessing}>
+              Delete Selected
             </button>
           </div>
         </div>

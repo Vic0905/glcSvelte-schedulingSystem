@@ -8,7 +8,14 @@
 
   const stickyStyles = `
     #advance-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #advance-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #advance-grid th { 
+    position: sticky; 
+    top: 0; 
+    z-index: 20; 
+    box-shadow: inset -1px 0 0 #ddd; 
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+       color: #ffffff; /* white text */
+    }
     #advance-grid th:nth-child(1), #advance-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
     #advance-grid th:nth-child(1) { z-index: 25; }
     #advance-grid th:nth-child(2), #advance-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
@@ -69,13 +76,30 @@
     monday.setDate(monday.getDate() + weeks * 7)
     currentWeekStart = monday.toISOString().split('T')[0]
   }
+  // ORIGINAL CSS FORMAT FOR TABLE
+  // const formatCell = (cell) => {
+  //   if (!cell || cell.label === 'Empty') return h('span', {}, '—')
+  //   return h('div', { class: 'flex flex-col gap-1 text-xs items-center font-semibold' }, [
+  //     h('div', { class: 'badge badge-ghost badge-xs p-3' }, cell.subject.name),
+  //     h('div', { class: 'badge badge-ghost badge-xs' }, cell.student.englishName),
+  //     h('div', { class: 'badge badge-ghost badge-xs' }, cell.teacher.name),
+  //   ])
+  // }
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
-    return h('div', { class: 'flex flex-col gap-1 text-xs items-center' }, [
-      h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name),
-      h('div', { class: 'badge badge-neutral badge-xs' }, cell.student.englishName),
-      h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name),
+    return h('div', { class: 'flex flex-col gap-1 p-1 items-center text-center text-xs' }, [
+      // 🔹 Header (Subject + Teacher)
+      h(
+        'div',
+        {
+          class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
+        },
+        [h('div', {}, cell.subject.name), h('div', { class: 'text-[10px] uppercase' }, cell.teacher.name)]
+      ),
+
+      // 🔹 Student (separate section)
+      h('div', { class: 'badge badge-ghost badge-xs px-2 py-2' }, cell.student.englishName),
     ])
   }
 
@@ -278,7 +302,7 @@
         ...timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
           id: t.id,
-          width: '160px',
+          width: '180px',
           formatter: formatCell,
         })),
       ]
@@ -302,9 +326,9 @@
           sort: false,
           pagination: false,
           className: {
-            table: 'w-full text-xs !border-collapse',
-            th: 'bg-base-200 p-1 border-t border-b !border-x-0 text-center',
-            td: 'p-2 border-t border-b !border-x-0 align-middle text-center',
+            table: 'w-full border text-xs !border-collapse',
+            // th: 'bg-base-200 p-1 border-t border-b !border-x-0 text-center',
+            // td: 'p-2 border-t border-b !border-x-0 align-middle text-center',
           },
           style: {
             table: {
@@ -405,23 +429,6 @@
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
       <button class="btn btn-ghost btn-sm" onclick={() => (showGoLiveModal = true)}>Go Live</button>
-    </div>
-  </div>
-
-  <div class="p-3 bg-base-200 rounded-lg mb-4">
-    <div class="flex flex-wrap gap-4 text-xs">
-      <div class="flex items-center gap-1">
-        <div class="badge badge-primary badge-xs"></div>
-        <span>Subject</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
-        <span>Student</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-error badge-xs"></div>
-        <span>Teacher</span>
-      </div>
     </div>
   </div>
 

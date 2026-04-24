@@ -10,6 +10,7 @@
   let students = $state([])
   let subjects = $state([])
   let timeslots = $state([])
+  let rooms = $state([])
 
   // Cache for existing bookings
   let existingBookings = $state([])
@@ -23,11 +24,12 @@
 
   const loadAllData = async () => {
     try {
-      const [teachersData, studentsData, subjectsData, timeslotsData, bookingsData] = await Promise.all([
+      const [teachersData, studentsData, subjectsData, timeslotsData, roomsData, bookingsData] = await Promise.all([
         pb.collection('teacher').getFullList({ sort: 'name', fields: 'id,name,status' }),
         pb.collection('student').getFullList({ sort: 'englishName', fields: 'id,englishName,status' }),
         pb.collection('subject').getFullList({ sort: 'name', fields: 'id,name' }),
         pb.collection('timeSlot').getFullList({ sort: 'start', fields: 'id,start,end' }),
+        pb.collection('room').getFullList({ sort: 'name', fields: 'id,name' }),
         pb.collection('advanceBooking').getFullList({
           expand: 'teacher,student',
           $autoCancel: false,
@@ -79,6 +81,7 @@
 
       subjects = subjectsData
       timeslots = timeslotsData
+      rooms = roomsData
     } catch (error) {
       console.error('Error loading data:', error)
       toast.error('Failed to load data')
@@ -86,13 +89,13 @@
   }
 
   const checkForConflicts = async () => {
-    const { teacher, student, timeslot } = advanceBooking
+    const { teacher, student, timeslot, room } = advanceBooking
 
-    if (!teacher?.id || !student?.id || !timeslot?.id) return true // No conflicts yet
+    if (!teacher?.id || !student?.id || !timeslot?.id || !room?.id) return true // No conflicts yet
 
     try {
       // 1. Check individual advance bookings
-      let individualFilter = `timeslot = "${timeslot.id}" && (teacher = "${teacher.id}" || student = "${student.id}")`
+      let individualFilter = `timeslot = "${timeslot.id}" && (teacher = "${teacher.id}" || student = "${student.id}" || room = "${room.id}")`
 
       if (advanceBooking.mode === 'edit' && advanceBooking.id) {
         individualFilter += ` && id != "${advanceBooking.id}"`
@@ -426,8 +429,23 @@
 
           <fieldset class="fieldset">
             <legend class="fieldset-legend font-semibold text-gray-700">Room</legend>
-            <input type="text" value={advanceBooking.room.name} class="input input-bordered w-full" readonly />
+            <select
+              class="select select-bordered w-full"
+              bind:value={advanceBooking.room.id}
+              disabled={rooms.length === 0}
+              required
+            >
+              <option value="">Select Room</option>
+              {#each rooms as room}
+                <option value={room.id}>{room.name}</option>
+              {/each}
+            </select>
           </fieldset>
+
+          <!-- <fieldset class="fieldset">
+            <legend class="fieldset-legend font-semibold text-gray-700">Room</legend>
+            <input type="text" value={advanceBooking.room.name} class="input input-bordered w-full" readonly />
+          </fieldset> -->
         </div>
       </div>
 

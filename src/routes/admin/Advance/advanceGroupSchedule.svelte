@@ -8,7 +8,14 @@
 
   const stickyStyles = `
     #advance-group-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #advance-group-grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #advance-group-grid th { 
+    position: sticky; 
+    top: 0; 
+    z-index: 20; 
+    box-shadow: inset -1px 0 0 #ddd; 
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+       color: #ffffff; /* white text */
+    }
     #advance-group-grid th:nth-child(1), #advance-group-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
     #advance-group-grid th:nth-child(1) { z-index: 25; }
     #advance-group-grid th:nth-child(2), #advance-group-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
@@ -83,20 +90,34 @@
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
 
-    const elements = [
-      h('div', { class: 'badge badge-primary badge-xs p-3' }, cell.subject.name || 'No Subject'),
-      h('div', { class: 'badge badge-error badge-xs' }, cell.teacher.name || 'No Teacher'),
-    ]
+    // 🔹 Header (Subject + Teacher)
+    const header = h(
+      'div',
+      {
+        class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full text-center',
+      },
+      [
+        h('div', {}, cell.subject?.name || 'No Subject'),
+        h('div', { class: 'text-[10px] uppercase' }, cell.teacher?.name || 'No Teacher'),
+      ]
+    )
 
-    // Add student count badge
-    const studentCount = cell.students?.length || 0
-    if (studentCount > 0) {
-      elements.push(
-        h('div', { class: 'badge badge-neutral badge-xs' }, `${studentCount} student${studentCount !== 1 ? 's' : ''}`)
-      )
+    // 🔹 Students
+    let studentsSection = null
+
+    if (cell.students?.length > 0) {
+      const studentNames = cell.students
+        .filter((s) => s.status !== 'graduated')
+        .map((s) => h('span', { class: 'badge badge-ghost badge-xs font-semibold' }, s.englishName))
+
+      studentsSection = h('div', { class: 'flex flex-wrap gap-1 justify-center mt-1' }, studentNames)
     }
 
-    return h('div', { class: 'flex flex-col gap-1 items-center text-xs' }, elements)
+    return h(
+      'div',
+      { class: 'flex flex-col gap-1 p-1 items-center text-xs w-full' },
+      [header, studentsSection].filter(Boolean) // 👈 removes null
+    )
   }
 
   // Save scroll position
@@ -330,7 +351,7 @@
         ...timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
           id: t.id,
-          width: '160px',
+          width: '180px',
           formatter: formatCell,
         })),
       ]
@@ -347,8 +368,8 @@
           pagination: false,
           className: {
             table: 'w-full border text-xs !border-collapse',
-            th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
-            td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
+            // th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
+            // td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
           },
           style: {
             table: {
@@ -453,23 +474,6 @@
       <button class="btn btn-ghost btn-sm" onclick={() => (showGoLiveModal = true)} disabled={isLoading}>
         Go Live
       </button>
-    </div>
-  </div>
-
-  <div class="p-3 bg-base-200 rounded-lg mb-4">
-    <div class="flex flex-wrap gap-4 text-xs">
-      <div class="flex items-center gap-1">
-        <div class="badge badge-primary badge-xs"></div>
-        <span>Subject</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-error badge-xs"></div>
-        <span>Teacher</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <div class="badge badge-neutral badge-xs"></div>
-        <span>Student(s)</span>
-      </div>
     </div>
   </div>
 

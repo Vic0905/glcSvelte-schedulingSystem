@@ -1,4 +1,4 @@
-<script>
+<!-- <script>
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
   import { onDestroy, onMount } from 'svelte'
@@ -21,8 +21,11 @@
   function getWeekStart(date) {
     const d = new Date(date)
     const day = d.getDay()
-    const diff = day <= 2 ? 2 - day : 9 - day
-    d.setDate(d.getDate() + (day === 2 ? 0 : diff))
+
+    // Tuesday = 2
+    const diff = day - 2
+
+    d.setDate(d.getDate() - diff)
     return d.toISOString().split('T')[0]
   }
 
@@ -151,8 +154,10 @@
       return {
         ...base,
         label: 'Empty',
+        // Ensure these exist as objects so modal doesn't crash
+        // when calling cellData.subject.id
         subject: { name: '', id: '' },
-        teacher: { name: '', id: '' },
+        teacher: { name: teacher?.name || '', id: teacher?.id || '' },
         student: { englishName: '', id: '' },
       }
     }
@@ -164,6 +169,8 @@
       subject: { name: schedule.expand?.subject?.name || '', id: schedule.expand?.subject?.id || '' },
       teacher: { name: schedule.expand?.teacher?.name || '', id: schedule.expand?.teacher?.id || '' },
       student: { englishName: schedule.expand?.student?.englishName || '', id: schedule.expand?.student?.id || '' },
+      startDate: schedule.start,
+      endDate: schedule.end,
     }
   }
 
@@ -303,4 +310,4 @@
 <!-- 
 <ScheduleModal on:refresh={() => loadSchedules(true)} /> -->
 
-<MtmModal on:refresh={() => loadSchedules(true)} />
+<MtmModal on:refresh={() => loadSchedules(true)} /> -->

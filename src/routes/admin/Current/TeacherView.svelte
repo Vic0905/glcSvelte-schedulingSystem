@@ -6,7 +6,14 @@
 
   const stickyStyles = `
     #teacherGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #teacherGrid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #teacherGrid th { 
+    position: sticky; 
+    top: 0; 
+    z-index: 20; 
+    box-shadow: inset -1px 0 0 #ddd; 
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+       color: #ffffff; /* white text */
+    }
 
     #teacherGrid th:nth-child(1), #teacherGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15;  box-shadow: inset -1px 0 0 #ddd; }
     #teacherGrid th:nth-child(1) { z-index: 25; }
@@ -56,24 +63,40 @@
 
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
+
     return h(
       'div',
-      { class: 'text-xs flex flex-col gap-1 items-center font-semibold' },
+      { class: 'text-xs' },
       cell.map((item) =>
-        h('div', { class: 'flex flex-col gap-1 items-center' }, [
-          h('span', { class: 'badge badge-ghost badge-xs p-3' }, item.subject?.name ?? 'No Subject'),
-          item.isGroup
-            ? h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class')
-            : h(
-                'span',
-                {
-                  class: 'badge badge-ghost badge-xs',
-                  title: filteredStudents.get(item.student?.id) ? '' : 'Graduated student with no bookings',
-                },
-                filteredStudents.get(item.student?.id) || 'Unknown Student'
-              ),
-          h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name ?? 'No Room'),
-        ])
+        h(
+          'div',
+          { class: 'flex flex-col gap-1 p-1 items-center text-center' },
+          [
+            // 🔹 Header (Subject)
+            h(
+              'div',
+              {
+                class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
+              },
+              [h('div', {}, item.subject?.name ?? 'No Subject')]
+            ),
+
+            // 🔹 Below (Student / Group)
+            item.isGroup
+              ? h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class')
+              : h(
+                  'span',
+                  {
+                    class: 'badge badge-ghost badge-xs',
+                    title: filteredStudents.get(item.student?.id) ? '' : 'Graduated student with no bookings',
+                  },
+                  filteredStudents.get(item.student?.id) || 'Unknown Student'
+                ),
+
+            // 🔹 Room
+            h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name ?? 'No Room'),
+          ].filter(Boolean)
+        )
       )
     )
   }
@@ -174,8 +197,7 @@
     isLoading = true
 
     try {
-      const weekDays = getWeekDays(weekStart)
-      const dateFilter = weekDays.map((d) => `date = "${d}"`).join(' || ')
+      const dateFilter = `date = "${weekStart}"`
 
       // Load and filter students first
       await loadAndFilterStudents()
@@ -186,12 +208,12 @@
       const [timeslotsData, individualSchedules, groupSchedules, allTeachers] = await Promise.all([
         timeslots.length ? timeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
         pb.collection('lessonSchedule').getFullList({
-          filter: dateFilter,
+          filter: `date = "${weekStart}"`,
           expand: 'teacher,student,subject,room,timeslot',
           $autoCancel: false,
         }),
         pb.collection('groupLessonSchedule').getFullList({
-          filter: dateFilter,
+          filter: `date = "${weekStart}"`,
           expand: 'teacher,student,subject,grouproom,timeslot',
           $autoCancel: false,
         }),
@@ -368,10 +390,10 @@
         },
         {
           name: 'Room',
-          width: '150px',
+          width: '120px',
           formatter: (c) => (c?.room ? h('span', { class: 'text-xs' }, c.room) : h('span', {}, '—')),
         },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
+        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '180px', formatter: formatCell })),
       ]
 
       if (teacherGrid) {
@@ -392,12 +414,12 @@
           columns,
           data,
           search: false,
-          sort: true,
+          sort: false,
           pagination: false,
           className: {
             table: 'w-full border text-xs !border-collapse',
-            th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
-            td: 'border-t border-d p-2 text-center align-middle',
+            // th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
+            // td: 'border-t border-d p-2 text-center align-middle',
           },
           style: { table: { 'border-collapse': 'collapse' } },
         }).render(document.getElementById('teacherGrid'))
@@ -465,27 +487,6 @@
     <div class="flex items-center gap-2">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
-    </div>
-  </div>
-
-  <div class="bg-base-200 rounded-lg m-2 p-2">
-    <div class="flex flex-wrap items-center gap-4 text-xs mb-2">
-      <div class="flex items-center gap-1">
-        <span class="badge badge-primary badge-xs"></span>
-        <span>Subject</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <span class="badge badge-neutral badge-xs"></span>
-        <span>Student</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <span class="badge badge-secondary badge-xs"></span>
-        <span>Group Lesson</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <span class="badge badge-error badge-xs"></span>
-        <span>Room</span>
-      </div>
     </div>
   </div>
 

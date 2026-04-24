@@ -97,7 +97,7 @@
     if (!cellData?.schedule) return h('span', {}, '—')
     const { schedule, studentName } = cellData
     return h('div', { class: 'text-xs flex flex-col gap-1 items-center' }, [
-      h('span', { class: 'badge badge-primary badge-xs p-3' }, schedule.subject?.name ?? 'No Subject'),
+      h('span', { class: 'badge badge-primary badge-xs p-3 font-semibold' }, schedule.subject?.name ?? 'No Subject'),
       h('span', { class: 'badge badge-neutral badge-xs' }, studentName),
       h('span', { class: 'badge badge-error badge-xs' }, schedule.teacher?.name ?? 'No Teacher'),
     ])

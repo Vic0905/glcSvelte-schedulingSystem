@@ -9,7 +9,14 @@
 
   const stickyStyles = `
     #grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #grid th { position: sticky; top: 0; z-index: 20; box-shadow: inset -1px 0 0 #ddd; }
+    #grid th { 
+    position: sticky; 
+    top: 0; 
+    z-index: 20; 
+    box-shadow: inset -1px 0 0 #ddd; 
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+       color: #ffffff; /* white text */
+    }
     #grid th:nth-child(1), #grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
     #grid th:nth-child(1) { z-index: 25; }
     #grid th:nth-child(2), #grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
@@ -19,10 +26,15 @@
   // Anchors to Tuesday (2)
   function getWeekStart(date) {
     const d = new Date(date)
-    const day = d.getDay()
-    // Adjust to Tuesday of the current week (Sun=0, Mon=1, Tue=2...)
-    const diff = day <= 2 ? 2 - day : 9 - day
-    d.setDate(d.getDate() + (day === 2 ? 0 : diff))
+
+    const day = d.getDay() // Sun=0, Mon=1, Tue=2, Wed=3...
+
+    // Calculate difference to get back to Tuesday (2)
+    // (day - 2 + 7) % 7 handles the wrap-around for Sun/Mon
+    const diff = day < 2 ? day + 5 : day - 2
+
+    d.setDate(d.getDate() - diff)
+
     return d.toISOString().split('T')[0]
   }
 
@@ -143,10 +155,18 @@
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
-    return h('div', { class: 'flex flex-col gap-1 items-center font-semibold' }, [
-      h('span', { class: 'badge badge-ghost badge-xs p-3' }, cell.subject.name),
-      h('span', { class: 'badge badge-ghost badge-xs' }, cell.student.englishName),
-      h('span', { class: 'badge badge-ghost badge-xs' }, cell.teacher.name),
+    return h('div', { class: 'flex flex-col gap-1 p-1 items-center text-center text-xs' }, [
+      // 🔹 Header (Subject + Teacher)
+      h(
+        'div',
+        {
+          class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
+        },
+        [h('div', {}, cell.subject.name), h('div', { class: 'text-[10px] uppercase' }, cell.teacher.name)]
+      ),
+
+      // 🔹 Student (separate section)
+      h('div', { class: 'badge badge-ghost badge-xs px-2 py-2' }, cell.student.englishName),
     ])
   }
 
@@ -248,12 +268,34 @@
         restoreScrollPosition()
       } else {
         const columns = [
-          { name: 'Teacher', width: '120px', formatter: (cell) => cell.value },
-          { name: 'Room', width: '120px', formatter: (cell) => cell.value },
+          {
+            name: 'Teacher',
+            width: '120px',
+            formatter: (cell) =>
+              h(
+                'div',
+                {
+                  className: 'text-center text-neutral-700 font-bold',
+                },
+                cell.value
+              ),
+          },
+          {
+            name: 'Room',
+            width: '120px',
+            formatter: (cell) =>
+              h(
+                'div',
+                {
+                  className: 'text-center text-neutral-700 font-bold',
+                },
+                cell.value
+              ),
+          },
           ...timeslots.map((t) => ({
             name: `${t.start} - ${t.end}`,
             id: t.id,
-            width: '160px',
+            width: '180px',
             formatter: formatCell,
           })),
         ]
@@ -277,6 +319,11 @@
             startDate: weekStart,
             endDate: endDate.toISOString().split('T')[0],
             mode: cellData.label === 'Empty' ? 'create' : 'edit',
+
+            originalStudentId: cellData.student?.id,
+            originalTeacherId: cellData.teacher?.id,
+            originalRoomId: cellData.room?.id,
+            originalTimeslotId: cellData.timeslot?.id,
           }
 
           document.getElementById('editModal')?.showModal()
