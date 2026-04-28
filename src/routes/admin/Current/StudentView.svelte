@@ -170,8 +170,7 @@
       if (!cache.students) {
         promises.push(
           pb.collection('student').getFullList({
-            sort: 'name',
-            fields: 'id,name,englishName,course,level,status',
+            fields: 'id,name,englishName,course,level,status,created',
           })
         )
       }
@@ -365,19 +364,19 @@
       })
 
       data.sort((a, b) => {
+        // 1. Handle the "New" status priority
         const statusA = a[0].status === 'new' ? 1 : 0
         const statusB = b[0].status === 'new' ? 1 : 0
 
-        // 1. Push "new" to bottom
         if (statusA !== statusB) {
-          return statusA - statusB
+          return statusA - statusB // "new" goes to bottom
         }
 
-        // 2. Sort by created date (oldest first)
-        const dateA = new Date(a[0].created)
-        const dateB = new Date(b[0].created)
+        // 2. Oldest First logic (The missing piece for reliability)
+        const timeA = new Date(a[0].created).getTime()
+        const timeB = new Date(b[0].created).getTime()
 
-        return dateA - dateB
+        return timeA - timeB // Smaller number (older date) goes to top
       })
 
       const columns = [

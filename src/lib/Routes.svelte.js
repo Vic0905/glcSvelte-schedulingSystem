@@ -79,6 +79,9 @@ export const adminRoutes = {
   '/new/room': wrap({
     asyncComponent: () => import('../routes/admin/New/Room.svelte'),
   }),
+  '/new/random': wrap({
+    asyncComponent: () => import('../routes/admin/New/Random.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),

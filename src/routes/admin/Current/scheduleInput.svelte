@@ -23,15 +23,18 @@
     #grid th:nth-child(2) { z-index: 25; }
   `
 
-  // Anchors to Tuesday (2)
+  // Anchors to Tuesday (2) of the current week
   function getWeekStart(date) {
     const d = new Date(date)
-
     const day = d.getDay() // Sun=0, Mon=1, Tue=2, Wed=3...
 
-    // Calculate difference to get back to Tuesday (2)
-    // (day - 2 + 7) % 7 handles the wrap-around for Sun/Mon
-    const diff = day < 2 ? day + 5 : day - 2
+    // Adjust Sunday (0) to be treated as 7 so the week is Mon-Sun
+    const dayAdjusted = day === 0 ? 7 : day
+
+    // Calculate how many days to move to get to Tuesday (2)
+    // If today is Monday (1), diff is -1 (1-2), so it adds 1 day to reach Tuesday.
+    // If today is Wednesday (3), diff is 1 (3-2), so it subtracts 1 day to reach Tuesday.
+    const diff = dayAdjusted - 2
 
     d.setDate(d.getDate() - diff)
 
@@ -325,8 +328,6 @@
             originalRoomId: cellData.room?.id,
             originalTimeslotId: cellData.timeslot?.id,
           }
-
-          document.getElementById('editModal')?.showModal()
         })
       }
     } catch (error) {
@@ -337,6 +338,7 @@
   }
 
   onMount(() => {
+    booking.data = null
     if (!grid.schedule) loadSchedules()
     pb.collection('lessonSchedule').subscribe('*', () => loadSchedules(true))
   })

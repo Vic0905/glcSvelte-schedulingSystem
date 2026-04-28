@@ -62,26 +62,26 @@
   }
 
   const formatCell = (cell) => {
+    // Svelte 5 logic: Handle empty states early
     if (!cell?.length) return h('span', {}, '—')
 
     return h(
       'div',
       { class: 'text-xs' },
-      cell.map((item) =>
-        h(
+      cell.map((item) => {
+        // 1. Determine if the "New" indicator should show
+        const isNewStudent = !item.isGroup && item.student?.status === 'new'
+
+        return h(
           'div',
           { class: 'flex flex-col gap-1 p-1 items-center text-center' },
           [
             // 🔹 Header (Subject)
-            h(
-              'div',
-              {
-                class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
-              },
-              [h('div', {}, item.subject?.name ?? 'No Subject')]
-            ),
+            h('div', { class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full' }, [
+              h('div', {}, item.subject?.name ?? 'No Subject'),
+            ]),
 
-            // 🔹 Below (Student / Group)
+            // 🔹 Student / Group Name
             item.isGroup
               ? h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class')
               : h(
@@ -93,11 +93,15 @@
                   filteredStudents.get(item.student?.id) || 'Unknown Student'
                 ),
 
+            // 🔹 Conditional "New" Badge
+            // In Svelte 5, we return null for elements we don't want to render
+            isNewStudent ? h('span', { class: 'text-[10px] font-bold text-success uppercase mt-[-2px]' }, 'new') : null,
+
             // 🔹 Room
             h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name ?? 'No Room'),
-          ].filter(Boolean)
+          ].filter(Boolean) // This removes the 'null' entries from the array
         )
-      )
+      })
     )
   }
 
