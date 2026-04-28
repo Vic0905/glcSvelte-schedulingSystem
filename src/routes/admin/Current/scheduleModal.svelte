@@ -433,14 +433,14 @@
         <!-- Buttons -->
         <div class="modal-action">
           {#if booking.data.mode === 'edit' && booking.data.id}
-            <button class="btn btn-error mr-auto" onclick={deleteSchedule}> Delete Week </button>
+            <button class="btn btn-outline btn-error mr-auto rounded-lg" onclick={deleteSchedule}> Delete </button>
           {/if}
 
-          <button class="btn btn-primary" onclick={saveSchedule}>
-            {booking.data.mode === 'edit' ? 'Update' : 'Save'} Week
+          <button class="btn btn-outline btn-info rounded-lg" onclick={saveSchedule}>
+            {booking.data.mode === 'edit' ? 'Update' : 'Save'}
           </button>
 
-          <button class="btn" onclick={() => (booking.data = null)}>Close</button>
+          <button class="btn btn-outline btn-ghost rounded-lg" onclick={() => (booking.data = null)}>Close</button>
         </div>
       {:else}
         <!-- Loading fallback -->
