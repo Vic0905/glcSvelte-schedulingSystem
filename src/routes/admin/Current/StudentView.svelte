@@ -3,6 +3,7 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
     #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
@@ -481,6 +482,22 @@
     }
   }
 
+  function handleToast(e, label = 'Schedule') {
+    const messages = {
+      create: `${label} created`,
+      update: `${label} updated`,
+      delete: `${label} deleted`,
+    }
+
+    const types = {
+      create: toast.success,
+      update: toast.info,
+      delete: toast.error,
+    }
+
+    types[e.action]?.(`${messages[e.action]}`)
+  }
+
   // Debounced reload
   let reloadTimeout
   const debouncedReload = () => {
@@ -495,8 +512,14 @@
 
   onMount(() => {
     loadStudentSchedule()
-    pb.collection('lessonSchedule').subscribe('*', debouncedReload)
-    pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
+    pb.collection('lessonSchedule').subscribe('*', (e) => {
+      handleToast(e, 'Schedule')
+      loadStudentSchedule(true)
+    })
+    pb.collection('groupLessonSchedule').subscribe('*', (e) => {
+      handleToast(e, 'Group Schedule')
+      loadStudentSchedule(true)
+    })
     pb.collection('teacher').subscribe('*', debouncedReload)
     pb.collection('student').subscribe('*', debouncedReload)
   })

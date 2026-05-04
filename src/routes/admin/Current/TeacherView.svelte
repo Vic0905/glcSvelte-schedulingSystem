@@ -3,6 +3,7 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import { toast } from 'svelte-sonner'
 
   const stickyStyles = `
     #teacherGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
@@ -438,13 +439,35 @@
   let reloadTimeout
   const debouncedReload = () => {
     clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(loadTeacherSchedule, 150)
+    reloadTimeout = setTimeout(loadTeacherSchedule, 50)
+  }
+
+  function handleToast(e, label = 'Schedule') {
+    const messages = {
+      create: `${label} created`,
+      update: `${label} updated`,
+      delete: `${label} deleted`,
+    }
+
+    const types = {
+      create: toast.success,
+      update: toast.info,
+      delete: toast.error,
+    }
+
+    types[e.action]?.(`${messages[e.action]}`)
   }
 
   onMount(() => {
     loadTeacherSchedule()
-    pb.collection('lessonSchedule').subscribe('*', debouncedReload)
-    pb.collection('groupLessonSchedule').subscribe('*', debouncedReload)
+    pb.collection('lessonSchedule').subscribe('*', (e) => {
+      handleToast(e)
+      loadTeacherSchedule(true)
+    })
+    pb.collection('groupLessonSchedule').subscribe('*', (e) => {
+      handleToast(e)
+      loadTeacherSchedule(true)
+    })
     pb.collection('room').subscribe('*', debouncedReload)
     pb.collection('grouproom').subscribe('*', debouncedReload)
     pb.collection('teacher').subscribe('*', debouncedReload)

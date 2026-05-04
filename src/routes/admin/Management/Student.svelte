@@ -36,20 +36,39 @@
       sort: '-created',
     })
 
-    const oneMinuteInMs = 60 * 1000
     const now = new Date()
+    const isTesting = true // Set to false when you go live
+    let cutoffDate
 
-    // Filter students who are still 'new' but were created over a week ago
-    const studentsToUpdate = records.filter((student) => {
-      const createdDate = new Date(student.created)
-      return student.status === 'new' && now - createdDate > oneMinuteInMs
-    })
+    if (isTesting) {
+      // Test mode: Flag anyone older than 1 minute
+      cutoffDate = new Date(now.getTime() - 1 * 60 * 1000)
+    } else {
+      // Production mode: Monday logic
+      const day = now.getDay()
+      cutoffDate = new Date(now)
+      cutoffDate.setDate(now.getDate() - (day === 0 ? 6 : day - 1))
+      cutoffDate.setHours(0, 0, 0, 0)
+    }
 
-    // Silently update them in the background
+    // 1. Filter students using the dynamic cutoffDate
+    const studentsToUpdate = records.filter((s) => s.status === 'new' && new Date(s.created) < cutoffDate)
+
+    // 2. Batch Update
     if (studentsToUpdate.length > 0) {
-      await Promise.all(studentsToUpdate.map((s) => pb.collection('student').update(s.id, { status: 'old' })))
-      // Reload records after update to show "old" in the grid
-      return loadStudent()
+      try {
+        const batch = pb.createBatch()
+
+        for (const s of studentsToUpdate) {
+          batch.collection('student').update(s.id, { status: 'old' })
+        }
+
+        await batch.send()
+        console.log(`Updated ${studentsToUpdate.length} students to old.`)
+        return await loadStudent()
+      } catch (error) {
+        console.error('Batch update failed:', error)
+      }
     }
 
     totalStudents = records.length
