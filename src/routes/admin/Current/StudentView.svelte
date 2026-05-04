@@ -5,28 +5,28 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
 
-  const stickyStyles = `
-    #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #studentGrid th { 
-    position: sticky; 
-    top: 0; 
-    z-index: 20; 
-    box-shadow: 0 1px 0 #ddd; 
-    background-color: #484b4f; /* dark (Tailwind gray-800) */
-       color: #ffffff; /* white text */
-    }
-    #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(1) { z-index: 25; }
+  // const stickyStyles = `
+  //   #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+  //   #studentGrid th {
+  //   position: sticky;
+  //   top: 0;
+  //   z-index: 20;
+  //   box-shadow: 0 1px 0 #ddd;
+  //   background-color: #484b4f; /* dark (Tailwind gray-800) */
+  //      color: #ffffff; /* white text */
+  //   }
+  //   #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd;  }
+  //   #studentGrid th:nth-child(1) { z-index: 25; }
 
-    #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 180px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(2) { z-index: 25; }
+  //   #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 180px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+  //   #studentGrid th:nth-child(2) { z-index: 25; }
 
-    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 320px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(3) { z-index: 25; }
+  //   #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 320px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+  //   #studentGrid th:nth-child(3) { z-index: 25; }
 
-    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 440px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(4) { z-index: 25; }
-  `
+  //   #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 440px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
+  //   #studentGrid th:nth-child(4) { z-index: 25; }
+  // `
 
   // Cache for frequently accessed data
   const cache = {
@@ -535,9 +535,9 @@
   })
 </script>
 
-<svelte:head>
+<!-- <svelte:head>
   {@html `<style>${stickyStyles}</style>`}
-</svelte:head>
+</svelte:head> -->
 
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
@@ -568,3 +568,75 @@
 
   <div id="studentGrid" class="border rounded-lg"></div>
 </div>
+
+<style>
+  #studentGrid :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  #studentGrid :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: inset -1px 0 0 #ddd;
+    background-color: #484b4f;
+    color: #ffffff;
+  }
+
+  #studentGrid :global(th:nth-child(1)),
+  #studentGrid :global(td:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #studentGrid :global(th:nth-child(1)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+
+  #studentGrid :global(th:nth-child(2)),
+  #studentGrid :global(td:nth-child(2)) {
+    position: sticky;
+    left: 180px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #studentGrid :global(th:nth-child(2)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+
+  #studentGrid :global(th:nth-child(3)),
+  #studentGrid :global(td:nth-child(3)) {
+    position: sticky;
+    left: 320px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #studentGrid :global(th:nth-child(3)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+
+  #studentGrid :global(th:nth-child(4)),
+  #studentGrid :global(td:nth-child(4)) {
+    position: sticky;
+    left: 440px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #studentGrid :global(th:nth-child(4)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+</style>

@@ -7,21 +7,21 @@
   import ScheduleModal from './scheduleModal.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  const stickyStyles = `
-    #grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #grid th { 
-    position: sticky; 
-    top: 0; 
-    z-index: 20; 
-    box-shadow: inset -1px 0 0 #ddd; 
-    background-color: #484b4f; /* dark (Tailwind gray-800) */
-       color: #ffffff; /* white text */
-    }
-    #grid th:nth-child(1), #grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #grid th:nth-child(1) { z-index: 25; }
-    #grid th:nth-child(2), #grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #grid th:nth-child(2) { z-index: 25; }
-  `
+  // const stickyStyles = `
+  //   #grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+  //   #grid th {
+  //   position: sticky;
+  //   top: 0;
+  //   z-index: 20;
+  //   box-shadow: inset -1px 0 0 #ddd;
+  //   background-color: #484b4f; /* dark (Tailwind gray-800) */
+  //      color: #ffffff; /* white text */
+  //   }
+  //   #grid th:nth-child(1), #grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
+  //   #grid th:nth-child(1) { z-index: 25; }
+  //   #grid th:nth-child(2), #grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+  //   #grid th:nth-child(2) { z-index: 25; }
+  // `
 
   // Anchors to Tuesday (2) of the current week
   function getWeekStart(date) {
@@ -163,9 +163,9 @@
       h(
         'div',
         {
-          class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
+          class: 'font-bold text-neutral-700 border-b border-base-500 mb-1 pb-1 w-full',
         },
-        [h('div', {}, cell.subject.name), h('div', { class: 'text-[10px] uppercase' }, cell.teacher.name)]
+        [h('div', {}, cell.subject.name), h('div', { class: 'text-[10px] uppercase mt-1' }, cell.teacher.name)]
       ),
 
       // 🔹 Student (separate section)
@@ -350,9 +350,9 @@
   })
 </script>
 
-<svelte:head>
+<!-- <svelte:head>
   {@html `<style>${stickyStyles}</style>`}
-</svelte:head>
+</svelte:head> -->
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
@@ -377,3 +377,43 @@
 </div>
 
 <ScheduleModal on:refresh={() => loadSchedules(true)} />
+
+<style>
+  #grid :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  #grid :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: 0 1px 0 #ddd;
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+    color: #ffffff; /* white text */
+  }
+
+  #grid :global(th:nth-child(1)),
+  #grid :global(td:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #grid :global(th:nth-child(1)) {
+    z-index: 25;
+  }
+
+  #grid :global(th:nth-child(2)),
+  #grid :global(td:nth-child(2)) {
+    position: sticky;
+    left: 120px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #grid :global(th:nth-child(2)) {
+    z-index: 25;
+  }
+</style>

@@ -7,21 +7,21 @@
   import GroupModal from './GroupModal.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  const stickyStyles = `
-    #group-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #group-grid th { 
-    position: sticky; 
-    top: 0; 
-    z-index: 20; 
-    box-shadow: inset -1px 0 0 #ddd; 
-    background-color: #484b4f; /* dark (Tailwind gray-800) */
-       color: #ffffff; /* white text */
-    }
-    #group-grid th:nth-child(1), #group-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #group-grid th:nth-child(1) { z-index: 25; }
-    #group-grid th:nth-child(2), #group-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #group-grid th:nth-child(2) { z-index: 25; }
-  `
+  // const stickyStyles = `
+  //   #group-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
+  //   #group-grid th {
+  //   position: sticky;
+  //   top: 0;
+  //   z-index: 20;
+  //   box-shadow: inset -1px 0 0 #ddd;
+  //   background-color: #484b4f; /* dark (Tailwind gray-800) */
+  //      color: #ffffff; /* white text */
+  //   }
+  //   #group-grid th:nth-child(1), #group-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
+  //   #group-grid th:nth-child(1) { z-index: 25; }
+  //   #group-grid th:nth-child(2), #group-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
+  //   #group-grid th:nth-child(2) { z-index: 25; }
+  // `
 
   // Anchors to Tuesday (2) of the current week
   function getWeekStart(date) {
@@ -165,11 +165,11 @@
     const header = h(
       'div',
       {
-        class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full text-center',
+        class: 'font-bold text-neutral-700 border-b border-base-500 mb-1 pb-1 w-full text-center',
       },
       [
         h('div', {}, cell.subject?.name || 'No Subject'),
-        h('div', { class: 'text-[10px] uppercase' }, cell.teacher?.name || 'No Teacher'),
+        h('div', { class: 'text-[10px] uppercase mt-1' }, cell.teacher?.name || 'No Teacher'),
       ]
     )
 
@@ -365,9 +365,9 @@
   })
 </script>
 
-<svelte:head>
+<!-- <svelte:head>
   {@html `<style>${stickyStyles}</style>`}
-</svelte:head>
+</svelte:head> -->
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
@@ -392,3 +392,43 @@
 </div>
 
 <GroupModal on:refresh={() => loadGroupSchedules(true)} bind:this={groupModal} />
+
+<style>
+  #group-grid :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  #group-grid :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: inset -1px 0 0 #ddd;
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+    color: #ffffff; /* white text */
+  }
+
+  #group-grid :global(th:nth-child(1)),
+  #group-grid :global(td:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #group-grid :global(th:nth-child(1)) {
+    z-index: 25;
+  }
+
+  #group-grid :global(th:nth-child(2)),
+  #group-grid :global(td:nth-child(2)) {
+    position: sticky;
+    left: 120px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #group-grid :global(th:nth-child(2)) {
+    z-index: 25;
+  }
+</style>
