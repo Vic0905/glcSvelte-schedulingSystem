@@ -87,7 +87,7 @@
             // 🔹 Below (Room + Group)
             item.room && h('span', { class: 'badge badge-ghost badge-xs' }, item.room.name),
 
-            item.isGroup && h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class'),
+            // item.isGroup && h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class'),
           ].filter(Boolean)
         )
       )
@@ -203,7 +203,7 @@
 
       const columns = [
         {
-          name: 'Student',
+          name: 'Name',
           width: '180px',
           formatter: (cell) =>
             h(
@@ -255,6 +255,7 @@
           pagination: false,
           className: {
             table: 'w-full border text-xs !border-collapse',
+            th: 'text-center',
             // th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
             // td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
           },
@@ -312,7 +313,7 @@
   </div>
 
   <!-- Simplified date display only -->
-  <div class="mb-6">
+  <div class="mb-3">
     <h3 class="text-xl font-semibold text-center">{getCurrentDateDisplay()}</h3>
   </div>
 

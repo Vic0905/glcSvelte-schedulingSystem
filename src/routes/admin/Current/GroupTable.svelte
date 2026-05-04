@@ -291,8 +291,25 @@
         restoreScrollPosition()
       } else {
         const columns = [
-          { name: 'Teacher', width: '120px', formatter: (cell) => cell.value },
-          { name: 'Group Room', width: '120px', formatter: (cell) => cell.value },
+          {
+            name: 'Teacher',
+            width: '120px',
+            formatter: (cell) =>
+              h(
+                'div',
+                { class: 'flex flex-col items-center text-neutral-700 font-bold' },
+                [
+                  h('span', { class: 'font-semibold' }, cell.value),
+                  // Including the badge logic in case you need it for consistency
+                  cell.status === 'new' && h('span', { class: 'badge badge-success badge-xs' }, 'New'),
+                ].filter(Boolean)
+              ),
+          },
+          {
+            name: 'Group Room',
+            width: '120px',
+            formatter: (cell) => h('div', { class: 'text-center text-neutral-700 font-bold' }, cell.value || '—'),
+          },
           ...timeslots.map((t) => ({
             name: `${t.start} - ${t.end}`,
             id: t.id,

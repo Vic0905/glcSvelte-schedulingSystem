@@ -119,18 +119,18 @@
             h(
               'div',
               {
-                class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
+                class: 'font-bold text-neutral-700 border-b border-base-400 mb-1 pb-1 w-full',
               },
               [
                 h('div', {}, item.subject?.name || ''),
-                h('div', { class: 'text-[10px] uppercase' }, item.teacher?.name || ''),
+                h('div', { class: 'text-[10px] uppercase mt-1' }, item.teacher?.name || ''),
               ]
             ),
 
             // 🔹 Below (Room + Group)
             item.room && h('span', { class: 'badge badge-ghost badge-xs' }, item.room.name),
 
-            item.isGroup && h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class'),
+            // item.isGroup && h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class'),
           ].filter(Boolean)
         )
       )

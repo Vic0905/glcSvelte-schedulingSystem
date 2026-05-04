@@ -78,7 +78,7 @@
           { class: 'flex flex-col gap-1 p-1 items-center text-center' },
           [
             // 🔹 Header (Subject)
-            h('div', { class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full' }, [
+            h('div', { class: 'font-bold text-neutral-700 border-b border-base-500 mb-1 pb-1 w-full' }, [
               h('div', {}, item.subject?.name ?? 'No Subject'),
             ]),
 
@@ -364,41 +364,27 @@
         {
           name: 'Teacher',
           width: '150px',
-          formatter: (cell) => {
-            // Only show teacher name - no room info
-            return h('span', {}, cell.rawName || cell.value)
-          },
-          sort: {
-            compare: (a, b) => {
-              // First sort by assignment type (room > grouproom > none)
-              if (a.assignmentType === 'room' && b.assignmentType !== 'room') return -1
-              if (a.assignmentType !== 'room' && b.assignmentType === 'room') return 1
-
-              // Both have same assignment type or no assignment
-              if (a.assignmentType === b.assignmentType) {
-                // Sort by assignment name
-                if (a.assignmentName && b.assignmentName) {
-                  const nameCompare = a.assignmentName.localeCompare(b.assignmentName)
-                  if (nameCompare !== 0) return nameCompare
-                }
-                // Then by teacher name
-                return a.rawName.localeCompare(b.rawName)
-              }
-
-              // If one has grouproom and other has none
-              if (a.assignmentType === 'grouproom' && !b.assignmentType) return -1
-              if (!a.assignmentType && b.assignmentType === 'grouproom') return 1
-
-              return 0
-            },
-          },
+          formatter: (cell) =>
+            h(
+              'div',
+              { class: 'flex flex-col items-center text-neutral-700 font-bold' },
+              [
+                h('span', { class: 'font-semibold' }, cell.rawName || cell.value),
+                // If teachers have a 'new' status, this badge will show up just like your 'Name' column
+                cell.status === 'new' && h('span', { class: 'badge badge-success badge-xs' }, 'New'),
+              ].filter(Boolean)
+            ),
         },
         {
           name: 'Room',
           width: '120px',
-          formatter: (c) => (c?.room ? h('span', { class: 'text-xs' }, c.room) : h('span', {}, '—')),
+          formatter: (c) => h('div', { class: 'text-center text-neutral-700 font-bold' }, c?.room ? c.room : '—'),
         },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '180px', formatter: formatCell })),
+        ...timeslots.map((t) => ({
+          name: `${t.start} - ${t.end}`,
+          width: '180px',
+          formatter: formatCell,
+        })),
       ]
 
       if (teacherGrid) {
@@ -423,6 +409,7 @@
           pagination: false,
           className: {
             table: 'w-full border text-xs !border-collapse',
+            th: 'text-center',
             // th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
             // td: 'border-t border-d p-2 text-center align-middle',
           },
