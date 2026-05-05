@@ -5,24 +5,6 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
 
-  // const stickyStyles = `
-  //   #teacherGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-  //   #teacherGrid th {
-  //     position: sticky;
-  //     top: 0;
-  //     z-index: 20;
-  //     box-shadow: inset -1px 0 0 #ddd;
-  //     background-color: #484b4f;
-  //     color: #ffffff;
-  //   }
-
-  //   #teacherGrid th:nth-child(1), #teacherGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; background: white; }
-  //   #teacherGrid th:nth-child(1) { z-index: 25; background-color: #484b4f; }
-
-  //   #teacherGrid th:nth-child(2), #teacherGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 15; box-shadow: inset -1px 0 0 #ddd; background: white; }
-  //   #teacherGrid th:nth-child(2) { z-index: 25; background-color: #484b4f; }
-  // `
-
   let weekStart = $state(getWeekStart(new Date()))
   let teacherGrid = null
   let isLoading = $state(false)
