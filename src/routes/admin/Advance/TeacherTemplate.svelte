@@ -5,456 +5,203 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
 
-  const stickyStyles = `
-    #teacherGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #teacherGrid th { 
-    position: sticky; 
-    top: 0; 
-    z-index: 20; 
-    box-shadow: inset -1px 0 0 #ddd; 
-    background-color: #484b4f; /* dark (Tailwind gray-800) */
-       color: #ffffff; /* white text */
-    }
-
-    #teacherGrid th:nth-child(1), #teacherGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15;  box-shadow: inset -1px 0 0 #ddd; }
-    #teacherGrid th:nth-child(1) { z-index: 25; }
-
-    #teacherGrid th:nth-child(2), #teacherGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 15;  box-shadow: inset -1px 0 0 #ddd; }
-    #teacherGrid th:nth-child(2) { z-index: 25; }
-  `
-
   let teacherGrid = null
-  let timeslots = $state([])
-  let rooms = []
-  let grouprooms = []
-  let filteredStudents = new Map() // Store filtered students
+  let isLoading = $state(false)
+  let cachedTimeslots = []
+  let cachedTeachers = []
 
+  // --- Formatting Helpers ---
   function getCurrentDateDisplay() {
     const today = new Date()
     const day = today.getDay()
-
-    // Get Tuesday (2) of the current week
     const tuesday = new Date(today)
     tuesday.setDate(today.getDate() + (day === 0 ? 2 : 2 - day))
-
-    // Friday is 3 days after Tuesday
     const friday = new Date(tuesday)
     friday.setDate(tuesday.getDate() + 3)
 
-    // Format output
-    const format = (date, showYear = true) =>
-      date.toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        ...(showYear && { year: 'numeric' }),
-      })
+    const format = (date, year = true) =>
+      date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', ...(year && { year: 'numeric' }) })
 
-    return tuesday.getMonth() === friday.getMonth() && tuesday.getFullYear() === friday.getFullYear()
+    return tuesday.getMonth() === friday.getMonth()
       ? `${format(tuesday, false)} - ${friday.getDate()}, ${friday.getFullYear()}`
       : `${format(tuesday)} - ${format(friday)}`
   }
 
+  // --- Toast Handler ---
+  function handleToast(e, label = 'Schedule') {
+    const messages = { create: `${label} created`, update: `${label} updated`, delete: `${label} deleted` }
+    const types = { create: toast.success, update: toast.info, delete: toast.error }
+    if (types[e.action]) types[e.action](messages[e.action])
+  }
+
   const formatCell = (cell) => {
     if (!cell?.length) return h('span', {}, '—')
-
     return h(
       'div',
       { class: 'text-xs' },
       cell.map((item) =>
-        h(
-          'div',
-          { class: 'flex flex-col gap-1 p-1 items-center text-center' },
-          [
-            // 🔹 Header (Subject)
-            h(
-              'div',
-              {
-                class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
-              },
-              [h('div', {}, item.subject?.name ?? 'No Subject')]
-            ),
-
-            // 🔹 Below (Student / Group)
-            item.isGroup
-              ? h('span', { class: 'badge badge-ghost badge-xs' }, 'Group Class')
-              : h(
-                  'span',
-                  {
-                    class: 'badge badge-ghost badge-xs',
-                    title: filteredStudents.get(item.student?.id) ? '' : 'Graduated student with no bookings',
-                  },
-                  filteredStudents.get(item.student?.id) || 'Unknown Student'
-                ),
-
-            // 🔹 Room
-            h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name ?? 'No Room'),
-          ].filter(Boolean)
-        )
+        h('div', { class: 'flex flex-col gap-1 p-1 items-center text-center' }, [
+          h(
+            'div',
+            { class: 'font-bold text-neutral-700 border-b border-base-500 mb-1 pb-1 w-full' },
+            item.subject?.name ?? 'No Subject'
+          ),
+          h(
+            'span',
+            { class: 'badge badge-ghost badge-xs' },
+            item.isGroup ? 'Group Class' : item.student?.englishName || 'Unknown'
+          ),
+          h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name ?? 'No Room'),
+        ])
       )
     )
   }
 
-  async function loadTimeslots() {
+  // --- Core Data Loader ---
+  async function loadAdvanceSchedule() {
+    if (isLoading) return
+    isLoading = true
+
     try {
-      const timeslotsData = await pb.collection('timeSlot').getFullList({ sort: 'start' })
-      timeslots = timeslotsData
-    } catch (error) {
-      console.error('Error loading timeslots:', error)
-      toast.error('Failed to load timeslots')
-    }
-  }
-
-  async function loadAndFilterStudents() {
-    try {
-      // Load all students with their status
-      const allStudents = await pb.collection('student').getFullList({
-        fields: 'id,englishName,status',
-      })
-
-      // Get student bookings count from advanceBooking collection
-      const studentBookings = await pb.collection('advanceBooking').getFullList({
-        fields: 'student',
-      })
-
-      // Count bookings per student
-      const studentBookingCount = new Map()
-      studentBookings.forEach((booking) => {
-        const studentId = booking.student
-        studentBookingCount.set(studentId, (studentBookingCount.get(studentId) || 0) + 1)
-      })
-
-      // Create filtered student map
-      filteredStudents.clear()
-      allStudents.forEach((student) => {
-        if (student.status !== 'graduated') {
-          // Show all non-graduated students
-          filteredStudents.set(student.id, student.englishName)
-        } else if (studentBookingCount.has(student.id)) {
-          // Show graduated students only if they have bookings
-          filteredStudents.set(student.id, student.englishName)
-        }
-        // Graduated students without bookings are filtered out
-      })
-    } catch (error) {
-      console.error('Error loading and filtering students:', error)
-      toast.error('Failed to load students')
-    }
-  }
-
-  async function loadRoomsAndGrouprooms() {
-    try {
-      const [roomRecords, grouproomRecords] = await Promise.all([
+      const [timeslots, allTeachers, individualBookings, groupBookings, roomList, groupRoomList] = await Promise.all([
+        cachedTimeslots.length ? cachedTimeslots : pb.collection('timeSlot').getFullList({ sort: 'start' }),
+        cachedTeachers.length ? cachedTeachers : pb.collection('teacher').getFullList({ sort: 'name' }),
+        pb.collection('advanceBooking').getFullList({
+          expand: 'teacher,student,subject,room,timeslot',
+          // Filter out graduated students at the database level if possible,
+          // or handle via expand filters
+        }),
+        pb.collection('groupAdvanceBooking').getFullList({
+          expand: 'teacher,subject,grouproom,timeslot',
+        }),
         pb.collection('room').getFullList({ expand: 'teacher' }),
         pb.collection('grouproom').getFullList({ expand: 'teacher' }),
       ])
 
-      rooms = roomRecords
-      grouprooms = grouproomRecords
+      cachedTimeslots = timeslots
+      cachedTeachers = allTeachers
 
+      // Map Room Assignments
       const teacherAssignmentMap = {}
-
-      roomRecords.forEach((room) => {
-        if (room.teacher && room.expand?.teacher) {
-          teacherAssignmentMap[room.teacher] = {
-            type: 'room',
-            name: room.name || 'Unnamed Room',
-            id: room.id,
-            teacherName: room.expand.teacher.name,
-            sortKey: `room_${room.name || ''}`,
-          }
-        }
+      roomList.forEach((r) => {
+        if (r.teacher) teacherAssignmentMap[r.teacher] = { type: 'room', name: r.name }
+      })
+      groupRoomList.forEach((gr) => {
+        if (gr.teacher && !teacherAssignmentMap[gr.teacher])
+          teacherAssignmentMap[gr.teacher] = { type: 'grouproom', name: gr.name }
       })
 
-      grouproomRecords.forEach((grouproom) => {
-        if (grouproom.teacher && grouproom.expand?.teacher) {
-          if (!teacherAssignmentMap[grouproom.teacher]) {
-            teacherAssignmentMap[grouproom.teacher] = {
-              type: 'grouproom',
-              name: grouproom.name || 'Unnamed Grouproom',
-              id: grouproom.id,
-              teacherName: grouproom.expand.teacher.name,
-              maxStudents: grouproom.maxstudents,
-              sortKey: `grouproom_${grouproom.name || ''}`,
-            }
-          }
-        }
-      })
-
-      return teacherAssignmentMap
-    } catch (error) {
-      console.error('Error loading rooms and grouprooms:', error)
-      toast.error('Failed to load rooms')
-      return {}
-    }
-  }
-
-  async function loadTeacherSchedule() {
-    try {
-      if (timeslots.length === 0) {
-        await loadTimeslots()
-      }
-
-      // Load and filter students first
-      await loadAndFilterStudents()
-
-      const teacherAssignmentMap = await loadRoomsAndGrouprooms()
-      const [allTeachers, individualBookings, groupBookings] = await Promise.all([
-        pb.collection('teacher').getFullList({ sort: 'name' }),
-        pb.collection('advanceBooking').getFullList({
-          expand: 'teacher,student,subject,room,timeslot',
-          sort: 'created',
-        }),
-        pb.collection('groupAdvanceBooking').getFullList({
-          expand: 'teacher,student,subject,grouproom,timeslot',
-          sort: 'created',
-        }),
+      // Identify active teachers (not disabled OR has bookings)
+      const bookedIds = new Set([
+        ...individualBookings.map((b) => b.expand?.teacher?.id),
+        ...groupBookings.map((b) => b.expand?.teacher?.id),
       ])
 
-      const teachersWithBookings = new Set()
+      const filteredTeachers = allTeachers
+        .filter((t) => t.status !== 'disabled' || bookedIds.has(t.id))
+        .sort((a, b) => {
+          const aAssign = teacherAssignmentMap[a.id],
+            bAssign = teacherAssignmentMap[b.id]
+          const getWeight = (as) => (!as ? 3 : as.type === 'room' ? 1 : 2)
+          if (getWeight(aAssign) !== getWeight(bAssign)) return getWeight(aAssign) - getWeight(bAssign)
+          return (aAssign?.name || a.name).localeCompare(bAssign?.name || b.name)
+        })
 
-      for (const b of individualBookings) {
-        const teacherId = b.expand?.teacher?.id
-        if (teacherId) teachersWithBookings.add(teacherId)
-      }
-
-      for (const b of groupBookings) {
-        const teacherId = b.expand?.teacher?.id
-        if (teacherId) teachersWithBookings.add(teacherId)
-      }
-
-      let teachers = allTeachers.filter((t) => {
-        if (t.status !== 'disabled') return true
-        return teachersWithBookings.has(t.id)
-      })
-
-      const teachersWithRooms = []
-      const teachersWithGrouproomsOnly = []
-      const teachersWithoutAssignments = []
-
-      teachers.forEach((teacher) => {
-        const assignment = teacherAssignmentMap[teacher.id]
-        if (assignment) {
-          if (assignment.type === 'room') {
-            teachersWithRooms.push({ teacher, assignment })
-          } else if (assignment.type === 'grouproom') {
-            teachersWithGrouproomsOnly.push({ teacher, assignment })
-          }
-        } else {
-          teachersWithoutAssignments.push({ teacher, assignment: null })
-        }
-      })
-
-      teachersWithRooms.sort((a, b) => a.assignment.name.localeCompare(b.assignment.name))
-      teachersWithGrouproomsOnly.sort((a, b) => a.assignment.name.localeCompare(b.assignment.name))
-      teachersWithoutAssignments.sort((a, b) => a.teacher.name.localeCompare(b.teacher.name))
-
-      teachers = [
-        ...teachersWithRooms.map((item) => item.teacher),
-        ...teachersWithGrouproomsOnly.map((item) => item.teacher),
-        ...teachersWithoutAssignments.map((item) => item.teacher),
-      ]
-
+      // Build Schedule Map
       const scheduleMap = {}
+      const process = (b, isGroup) => {
+        const tId = b.expand?.teacher?.id,
+          tsId = b.expand?.timeslot?.id
+        if (!tId || !tsId) return
+        // Advanced Logic: Filter graduated students who HAVE NO bookings
+        if (!isGroup && b.expand?.student?.status === 'graduated') {
+          // PocketBase won't return them if we filter correctly, but as a fallback:
+          if (!bookedIds.has(tId)) return
+        }
 
-      // Process individual bookings
-      for (const b of individualBookings) {
-        const teacherId = b.expand?.teacher?.id
-        const timeslotId = b.expand?.timeslot?.id
-        const studentId = b.expand?.student?.id
-
-        // Only include if student is in filteredStudents (non-graduated or graduated with bookings)
-        if (!teacherId || !timeslotId || !studentId || !filteredStudents.has(studentId)) continue
-
-        scheduleMap[teacherId] ??= {}
-        scheduleMap[teacherId][timeslotId] ??= {}
-
-        scheduleMap[teacherId][timeslotId][studentId] = {
+        scheduleMap[tId] ??= {}
+        scheduleMap[tId][tsId] ??= []
+        scheduleMap[tId][tsId].push({
           subject: b.expand?.subject,
           student: b.expand?.student,
-          room: b.expand?.room,
-          isGroup: false,
-        }
+          room: isGroup ? b.expand?.grouproom : b.expand?.room,
+          isGroup,
+        })
       }
 
-      // Process group bookings
-      for (const b of groupBookings) {
-        const teacherId = b.expand?.teacher?.id
-        const timeslotId = b.expand?.timeslot?.id
-        const subjectId = b.expand?.subject?.id
-        const roomId = b.expand?.grouproom?.id
-        if (!teacherId || !timeslotId) continue
+      individualBookings.forEach((b) => process(b, false))
+      groupBookings.forEach((b) => process(b, true))
 
-        scheduleMap[teacherId] ??= {}
-        scheduleMap[teacherId][timeslotId] ??= {}
-
-        const key = `group_${subjectId}_${roomId}`
-        scheduleMap[teacherId][timeslotId][key] = {
-          subject: b.expand?.subject,
-          student: null,
-          room: b.expand?.grouproom,
-          isGroup: true,
-        }
-      }
-
-      if (timeslots.length === 0) {
-        console.warn('No timeslots available')
-        return
-      }
-
-      const data = teachers.map((teacher) => {
-        const teacherSchedule = scheduleMap[teacher.id] || {}
-        const assignment = teacherAssignmentMap[teacher.id]
-
-        return [
-          {
-            value: teacher.name,
-            sortValue: assignment ? assignment.sortKey : '',
-            rawName: teacher.name,
-            assignmentType: assignment?.type,
-            assignmentName: assignment?.name,
-          },
-
-          {
-            room: assignment?.name || null,
-          },
-
-          ...timeslots.map((ts) => {
-            const schedules = teacherSchedule[ts.id]
-            return schedules ? Object.values(schedules) : []
-          }),
-        ]
-      })
+      const data = filteredTeachers.map((t) => [
+        { rawName: t.name, status: t.status },
+        { room: teacherAssignmentMap[t.id]?.name || '—' },
+        ...timeslots.map((ts) => scheduleMap[t.id]?.[ts.id] || []),
+      ])
 
       const columns = [
         {
           name: 'Teacher',
           width: '150px',
-          formatter: (cell) => h('span', {}, cell.rawName || cell.value),
-          sort: {
-            compare: (a, b) => {
-              if (a.assignmentType === 'room' && b.assignmentType !== 'room') return -1
-              if (a.assignmentType !== 'room' && b.assignmentType === 'room') return 1
-
-              if (a.assignmentType === b.assignmentType) {
-                if (a.assignmentName && b.assignmentName) {
-                  const nameCompare = a.assignmentName.localeCompare(b.assignmentName)
-                  if (nameCompare !== 0) return nameCompare
-                }
-                return a.rawName.localeCompare(b.rawName)
-              }
-
-              if (a.assignmentType === 'grouproom' && !b.assignmentType) return -1
-              if (!a.assignmentType && b.assignmentType === 'grouproom') return 1
-
-              return 0
-            },
-          },
+          formatter: (cell) => h('div', { class: 'font-bold text-center' }, cell.rawName),
         },
-        {
-          name: 'Room',
-          width: '120px',
-          formatter: (c) => (c?.room ? h('span', { class: 'text-xs' }, c.room) : h('span', {}, '—')),
-        },
-        ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '180px', formatter: formatCell })),
+        { name: 'Room', width: '120px', formatter: (cell) => h('div', { class: 'text-center font-bold' }, cell.room) },
+        ...timeslots.map((ts) => ({ name: `${ts.start} - ${ts.end}`, width: '180px', formatter: formatCell })),
       ]
 
-      if (teacherGrid) {
-        const wrapper = document.querySelector('#teacherGrid .gridjs-wrapper')
-        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+      renderGrid(data, columns)
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load Advance Template')
+    } finally {
+      isLoading = false
+    }
+  }
 
-        teacherGrid.updateConfig({ columns, data }).forceRender()
-
-        requestAnimationFrame(() => {
-          const w = document.querySelector('#teacherGrid .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = scroll.top
-            w.scrollLeft = scroll.left
-          }
-        })
-      } else {
-        teacherGrid = new Grid({
-          columns,
-          data,
-          search: false,
-          sort: false,
-          pagination: false,
-          className: {
-            table: 'w-full border text-xs !border-collapse',
-            // th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
-            // td: 'border-t border-d !border-x-0 p-2 text-center align-middle',
-          },
-          style: { table: { 'border-collapse': 'collapse' } },
-        }).render(document.getElementById('teacherGrid'))
-      }
-    } catch (error) {
-      console.error('Error loading teacher schedule:', error)
-      toast.error('Failed to load teacher schedule')
+  function renderGrid(data, columns) {
+    if (teacherGrid) {
+      const wrapper = document.querySelector('#teacherGrid .gridjs-wrapper')
+      const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+      teacherGrid.updateConfig({ data, columns }).forceRender()
+      requestAnimationFrame(() => {
+        const w = document.querySelector('#teacherGrid .gridjs-wrapper')
+        if (w) {
+          w.scrollTop = scroll.top
+          w.scrollLeft = scroll.left
+        }
+      })
+    } else {
+      teacherGrid = new Grid({
+        columns,
+        data,
+        className: { table: 'w-full border text-xs !border-collapse', th: 'text-center' },
+      }).render(document.getElementById('teacherGrid'))
     }
   }
 
   onMount(() => {
-    loadTimeslots().then(() => {
-      loadTeacherSchedule()
+    loadAdvanceSchedule()
+    // const subs = [
+    //   pb.collection('advanceBooking').subscribe('*', () => loadAdvanceSchedule()),
+    //   pb.collection('groupAdvanceBooking').subscribe('*', () => loadAdvanceSchedule()),
+    // ]
+
+    const sub1 = pb.collection('advanceBooking').subscribe('*', (e) => {
+      handleToast(e, 'Individual Booking')
+      loadAdvanceSchedule()
     })
 
-    pb.collection('advanceBooking').subscribe('*', (e) => {
-      if (e.action === 'create') {
-        toast.success('New booking added')
-      } else if (e.action === 'update') {
-        toast.info('Booking updated')
-      } else if (e.action === 'delete') {
-        toast.warning('Booking removed')
-      }
-      loadTeacherSchedule()
+    const sub2 = pb.collection('groupAdvanceBooking').subscribe('*', (e) => {
+      handleToast(e, 'Group Booking')
+      loadAdvanceSchedule()
     })
-
-    pb.collection('groupAdvanceBooking').subscribe('*', (e) => {
-      if (e.action === 'create') {
-        toast.success('New group booking added')
-      } else if (e.action === 'update') {
-        toast.info('Group booking updated')
-      } else if (e.action === 'delete') {
-        toast.warning('Group booking removed')
-      }
-      loadTeacherSchedule()
-    })
-
-    pb.collection('room').subscribe('*', (e) => {
-      if (e.action === 'create') {
-        toast.success('New room added')
-      } else if (e.action === 'update') {
-        toast.info('Room updated')
-      } else if (e.action === 'delete') {
-        toast.warning('Room removed')
-      }
-      loadTeacherSchedule()
-    })
-
-    pb.collection('grouproom').subscribe('*', (e) => {
-      if (e.action === 'create') {
-        toast.success('New group room added')
-      } else if (e.action === 'update') {
-        toast.info('Group room updated')
-      } else if (e.action === 'delete') {
-        toast.warning('Group room removed')
-      }
-      loadTeacherSchedule()
-    })
-  })
-
-  onDestroy(() => {
-    teacherGrid?.destroy()
-    teacherGrid = null
-    pb.collection('advanceBooking').unsubscribe()
-    pb.collection('groupAdvanceBooking').unsubscribe()
-    pb.collection('room').unsubscribe()
-    pb.collection('grouproom').unsubscribe()
+    return () => {
+      // subs.forEach((s) => s.then((u) => u()))
+      sub1.then((u) => u())
+      sub2.then((u) => u())
+      teacherGrid?.destroy()
+    }
   })
 </script>
-
-<svelte:head>
-  {@html `<style>${stickyStyles}</style>`}
-</svelte:head>
 
 <div class="p-6 bg-base-100">
   <div class="mb-4 text-2xl font-bold">
@@ -467,3 +214,39 @@
 
   <div id="teacherGrid" class="border rounded-lg"></div>
 </div>
+
+<style>
+  #teacherGrid :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+  #teacherGrid :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background-color: #484b4f;
+    color: white;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+  #teacherGrid :global(td:nth-child(1)),
+  #teacherGrid :global(th:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    background: white;
+    width: 150px;
+  }
+  #teacherGrid :global(td:nth-child(2)),
+  #teacherGrid :global(th:nth-child(2)) {
+    position: sticky;
+    left: 150px;
+    z-index: 15;
+    background: white;
+    width: 120px;
+  }
+  #teacherGrid :global(th:nth-child(1)),
+  #teacherGrid :global(th:nth-child(2)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+</style>

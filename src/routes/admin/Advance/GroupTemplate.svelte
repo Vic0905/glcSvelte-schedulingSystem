@@ -5,65 +5,6 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
 
-  const stickyStyles = `
-    #groupGrid .gridjs-wrapper { 
-      max-height: 700px; 
-      overflow: auto;
-      scroll-behavior: auto !important; 
-    }
-    
-    #groupGrid table {
-      border-collapse: collapse !important:
-    }
-
-    #groupGrid th { 
-      position: sticky; 
-      top: 0; 
-      z-index: 20; 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px;
-    }
-
-    #groupGrid th:nth-child(1), 
-    #groupGrid td:nth-child(1) { 
-      position: sticky; 
-      left: 0; 
-      z-index: 15; 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px; 
-    }
-
-    #groupGrid th:nth-child(1) { 
-      z-index: 25; 
-    }
-
-    #groupGrid th:nth-child(2), 
-    #groupGrid td:nth-child(2) { 
-      position: sticky; 
-      left: 120px; 
-      z-index: 10; 
-      background: var(--b2, #fafcff);
-      outline: 1px solid #ddd;
-      outline-offset: -1px; 
-    }
-
-    #groupGrid th:nth-child(2) { 
-      z-index: 25; 
-    }
-
-    #groupGrid td {
-      border-bottom: 1px solid #eee !important;
-    }
-
-    #groupGrid th:nth-child(2),
-    #groupGrid td:nth-child(2) {
-      border-left: none !important;
-      margin-left: -1px; 
-  }
-  `
-
   let groupGrid = null
   let timeslots = $state([])
   let groupRooms = []
@@ -91,6 +32,13 @@
     return tuesday.getMonth() === friday.getMonth() && tuesday.getFullYear() === friday.getFullYear()
       ? `${format(tuesday, false)} - ${friday.getDate()}, ${friday.getFullYear()}`
       : `${format(tuesday)} - ${format(friday)}`
+  }
+
+  // --- Toast Handler ---
+  function handleToast(e, label = 'Schedule') {
+    const messages = { create: `${label} created`, update: `${label} updated`, delete: `${label} deleted` }
+    const types = { create: toast.success, update: toast.info, delete: toast.error }
+    if (types[e.action]) types[e.action](messages[e.action])
   }
 
   const formatCell = (cellData) => {
@@ -239,46 +187,25 @@
   }
 
   onMount(() => {
-    loadTimeslots().then(() => {
-      loadGroupSchedule()
-    })
+    loadGroupSchedule()
 
-    pb.collection('groupAdvanceBooking').subscribe('*', (e) => {
-      if (e.action === 'create') {
-        toast.success('New group booking added')
-      } else if (e.action === 'update') {
-        toast.info('Group booking updated')
-      } else if (e.action === 'delete') {
-        toast.warning('Group booking removed')
-      }
+    const sub1 = pb.collection('groupAdvanceBooking').subscribe('*', (e) => {
+      handleToast(e, 'Group Booking')
       debouncedReload()
     })
 
-    pb.collection('grouproom').subscribe('*', (e) => {
-      if (e.action === 'create') {
-        toast.success('New group room added')
-      } else if (e.action === 'update') {
-        toast.info('Group room updated')
-      } else if (e.action === 'delete') {
-        toast.warning('Group room removed')
-      }
-      groupRooms = []
+    const sub2 = pb.collection('grouproom').subscribe('*', (e) => {
+      handleToast(e, 'Group Room')
       debouncedReload()
     })
-  })
 
-  onDestroy(() => {
-    clearTimeout(reloadTimeout)
-    groupGrid?.destroy()
-    groupGrid = null
-    pb.collection('groupAdvanceBooking').unsubscribe()
-    pb.collection('grouproom').unsubscribe()
+    return () => {
+      sub1.then((u) => u())
+      sub2.then((u) => u())
+      groupGrid?.destroy()
+    }
   })
 </script>
-
-<svelte:head>
-  {@html `<style>${stickyStyles}</style>`}
-</svelte:head>
 
 <div class="p-6 bg-base-100">
   <div class="mb-4 text-2xl font-bold">
@@ -308,3 +235,43 @@
 
   <div id="groupGrid" class="border rounded-lg"></div>
 </div>
+
+<style>
+  #group-grid :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  #group-grid :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: inset -1px 0 0 #ddd;
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+    color: #ffffff; /* white text */
+  }
+
+  #group-grid :global(th:nth-child(1)),
+  #group-grid :global(td:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #group-grid :global(th:nth-child(1)) {
+    z-index: 25;
+  }
+
+  #group-grid :global(th:nth-child(2)),
+  #group-grid :global(td:nth-child(2)) {
+    position: sticky;
+    left: 120px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #group-grid :global(th:nth-child(2)) {
+    z-index: 25;
+  }
+</style>

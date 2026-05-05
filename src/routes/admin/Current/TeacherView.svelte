@@ -229,13 +229,9 @@
   })
 </script>
 
-<!-- <svelte:head>
-  {@html `<style>${stickyStyles}</style>`}
-</svelte:head> -->
-
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
-    <h2 class="text-center flex-1">Teacher View Table</h2>
+    <h2 class="text-center flex-1">Teacher View Table (Current)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 

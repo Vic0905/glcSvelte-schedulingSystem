@@ -7,22 +7,6 @@
   import ScheduleModal from './scheduleModal.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  // const stickyStyles = `
-  //   #grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-  //   #grid th {
-  //   position: sticky;
-  //   top: 0;
-  //   z-index: 20;
-  //   box-shadow: inset -1px 0 0 #ddd;
-  //   background-color: #484b4f; /* dark (Tailwind gray-800) */
-  //      color: #ffffff; /* white text */
-  //   }
-  //   #grid th:nth-child(1), #grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-  //   #grid th:nth-child(1) { z-index: 25; }
-  //   #grid th:nth-child(2), #grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-  //   #grid th:nth-child(2) { z-index: 25; }
-  // `
-
   // Anchors to Tuesday (2) of the current week
   function getWeekStart(date) {
     const d = new Date(date)
@@ -349,10 +333,6 @@
     pb.collection('lessonSchedule').unsubscribe()
   })
 </script>
-
-<!-- <svelte:head>
-  {@html `<style>${stickyStyles}</style>`}
-</svelte:head> -->
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">

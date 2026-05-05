@@ -5,34 +5,6 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
 
-  const stickyStyles = `
-    #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #studentGrid th { 
-    position: sticky; 
-    top: 0; 
-    z-index: 20; 
-    box-shadow: 0 1px 0 #ddd; 
-    background-color: #484b4f; /* dark (Tailwind gray-800) */
-       color: #ffffff; /* white text */
-    }
-    #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(1) { z-index: 25; }
-
-    #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 180px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(2) { z-index: 25; }
-
-    #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 320px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(3) { z-index: 25; }
-
-    #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 440px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-    #studentGrid th:nth-child(4) { z-index: 25; }
-  `
-
-  // #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 300px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-  //   #studentGrid th:nth-child(3) { z-index: 25; }
-  //   #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 450px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-  //   #studentGrid th:nth-child(4) { z-index: 25; }
-
   let studentGrid = null
   let timeslots = []
 
@@ -59,6 +31,13 @@
     return tuesday.getMonth() === friday.getMonth() && tuesday.getFullYear() === friday.getFullYear()
       ? `${format(tuesday, false)} - ${friday.getDate()}, ${friday.getFullYear()}`
       : `${format(tuesday)} - ${format(friday)}`
+  }
+
+  // --- Toast Handler ---
+  function handleToast(e, label = 'Schedule') {
+    const messages = { create: `${label} created`, update: `${label} updated`, delete: `${label} deleted` }
+    const types = { create: toast.success, update: toast.info, delete: toast.error }
+    if (types[e.action]) types[e.action](messages[e.action])
   }
 
   const formatCell = (cell) => {
@@ -271,41 +250,22 @@
   onMount(() => {
     loadStudentSchedule()
 
-    // Add toast notifications for real-time updates
-    pb.collection('advanceBooking').subscribe('*', (e) => {
-      if (e.action === 'create') {
-        toast.success('New booking added')
-      } else if (e.action === 'update') {
-        toast.info('Booking updated')
-      } else if (e.action === 'delete') {
-        toast.warning('Booking removed')
-      }
+    const sub1 = pb.collection('advanceBooking').subscribe('*', (e) => {
+      handleToast(e, 'Individual Booking')
+      loadStudentSchedule()
+    })
+    const sub2 = pb.collection('groupAdvanceBooking').subscribe('*', (e) => {
+      handleToast(e, 'Group Booking')
       loadStudentSchedule()
     })
 
-    pb.collection('groupAdvanceBooking').subscribe('*', (e) => {
-      if (e.action === 'create') {
-        toast.success('New group booking added')
-      } else if (e.action === 'update') {
-        toast.info('Group booking updated')
-      } else if (e.action === 'delete') {
-        toast.warning('Group booking removed')
-      }
-      loadStudentSchedule()
-    })
-  })
-
-  onDestroy(() => {
-    studentGrid?.destroy()
-    studentGrid = null
-    pb.collection('advanceBooking').unsubscribe()
-    pb.collection('groupAdvanceBooking').unsubscribe()
+    return () => {
+      sub1.then((u) => u())
+      sub2.then((u) => u())
+      studentGrid?.destroy()
+    }
   })
 </script>
-
-<svelte:head>
-  {@html `<style>${stickyStyles}</style>`}
-</svelte:head>
 
 <div class="p-6 bg-base-100">
   <div class="mb-4 text-2xl font-bold">
@@ -319,3 +279,75 @@
 
   <div id="studentGrid" class="border rounded-lg"></div>
 </div>
+
+<style>
+  #studentGrid :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  #studentGrid :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: inset -1px 0 0 #ddd;
+    background-color: #484b4f;
+    color: #ffffff;
+  }
+
+  #studentGrid :global(th:nth-child(1)),
+  #studentGrid :global(td:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #studentGrid :global(th:nth-child(1)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+
+  #studentGrid :global(th:nth-child(2)),
+  #studentGrid :global(td:nth-child(2)) {
+    position: sticky;
+    left: 180px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #studentGrid :global(th:nth-child(2)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+
+  #studentGrid :global(th:nth-child(3)),
+  #studentGrid :global(td:nth-child(3)) {
+    position: sticky;
+    left: 320px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #studentGrid :global(th:nth-child(3)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+
+  #studentGrid :global(th:nth-child(4)),
+  #studentGrid :global(td:nth-child(4)) {
+    position: sticky;
+    left: 440px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #studentGrid :global(th:nth-child(4)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+</style>

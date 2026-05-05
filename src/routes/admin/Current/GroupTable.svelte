@@ -306,8 +306,8 @@
               ),
           },
           {
-            name: 'Group Room',
-            width: '120px',
+            name: 'Room',
+            width: '150px',
             formatter: (cell) => h('div', { class: 'text-center text-neutral-700 font-bold' }, cell.value || '—'),
           },
           ...timeslots.map((t) => ({
@@ -321,7 +321,7 @@
         grid.groupSchedule = new Grid({
           columns,
           data,
-          className: { table: 'w-full border text-xs !border-collapse' },
+          className: { table: 'w-full border text-xs !border-collapse', th: 'text-center' },
           style: { table: { 'table-layout': 'fixed' } },
         }).render(document.getElementById('group-grid'))
 
@@ -364,10 +364,6 @@
     pb.collection('groupLessonSchedule').unsubscribe()
   })
 </script>
-
-<!-- <svelte:head>
-  {@html `<style>${stickyStyles}</style>`}
-</svelte:head> -->
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">

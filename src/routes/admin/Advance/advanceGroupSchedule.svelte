@@ -6,22 +6,6 @@
   import GroupGoLiveModal from './GroupGoLiveModal.svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  const stickyStyles = `
-    #advance-group-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #advance-group-grid th { 
-    position: sticky; 
-    top: 0; 
-    z-index: 20; 
-    box-shadow: inset -1px 0 0 #ddd; 
-    background-color: #484b4f; /* dark (Tailwind gray-800) */
-       color: #ffffff; /* white text */
-    }
-    #advance-group-grid th:nth-child(1), #advance-group-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-group-grid th:nth-child(1) { z-index: 25; }
-    #advance-group-grid th:nth-child(2), #advance-group-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-group-grid th:nth-child(2) { z-index: 25; }
-  `
-
   let currentWeekStart = $state('')
   let timeslots = []
   let allGroupRooms = []
@@ -94,11 +78,11 @@
     const header = h(
       'div',
       {
-        class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full text-center',
+        class: 'font-bold text-neutral-700 border-b border-base-500 mb-1 pb-1 w-full text-center',
       },
       [
         h('div', {}, cell.subject?.name || 'No Subject'),
-        h('div', { class: 'text-[10px] uppercase' }, cell.teacher?.name || 'No Teacher'),
+        h('div', { class: 'text-[10px] uppercase mt-1' }, cell.teacher?.name || 'No Teacher'),
       ]
     )
 
@@ -341,12 +325,21 @@
         {
           name: 'Teacher',
           width: '120px',
-          formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
+          formatter: (cell) =>
+            h(
+              'div',
+              { class: 'flex flex-col items-center text-neutral-700 font-bold' },
+              [
+                h('span', { class: 'font-semibold' }, cell.value),
+                // Including the badge logic in case you need it for consistency
+                cell.status === 'new' && h('span', { class: 'badge badge-success badge-xs' }, 'New'),
+              ].filter(Boolean)
+            ),
         },
         {
-          name: 'Group Room',
-          width: '120px',
-          formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
+          name: 'Room',
+          width: '150px',
+          formatter: (cell) => h('div', { class: 'text-center text-neutral-700 font-bold' }, cell.value || '—'),
         },
         ...timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
@@ -368,6 +361,7 @@
           pagination: false,
           className: {
             table: 'w-full border text-xs !border-collapse',
+            th: 'text-center',
             // th: 'bg-base-200 p-2 border-t border-d !border-x-0 text-center',
             // td: 'border-t border-d !border-x-0 p-2 align-middle text-center',
           },
@@ -450,10 +444,6 @@
   })
 </script>
 
-<svelte:head>
-  {@html `<style>${stickyStyles}</style>`}
-</svelte:head>
-
 <div class="p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">GRP Schedule Table (Advance Template)</h2>
@@ -489,3 +479,43 @@
   }}
 />
 <GroupGoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} />
+
+<style>
+  #advance-group-grid :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  #advance-group-grid :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: inset -1px 0 0 #ddd;
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+    color: #ffffff; /* white text */
+  }
+
+  #advance-group-grid :global(th:nth-child(1)),
+  #advance-group-grid :global(td:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #advance-group-grid :global(th:nth-child(1)) {
+    z-index: 25;
+  }
+
+  #advance-group-grid :global(th:nth-child(2)),
+  #advance-group-grid :global(td:nth-child(2)) {
+    position: sticky;
+    left: 120px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #advance-group-grid :global(th:nth-child(2)) {
+    z-index: 25;
+  }
+</style>

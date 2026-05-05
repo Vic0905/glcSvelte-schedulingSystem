@@ -6,22 +6,6 @@
   import AdvanceBookingModal from './AdvanceBookingModal.svelte'
   import GoLiveModal from './GoLiveModal.svelte'
 
-  const stickyStyles = `
-    #advance-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #advance-grid th { 
-    position: sticky; 
-    top: 0; 
-    z-index: 20; 
-    box-shadow: inset -1px 0 0 #ddd; 
-    background-color: #484b4f; /* dark (Tailwind gray-800) */
-       color: #ffffff; /* white text */
-    }
-    #advance-grid th:nth-child(1), #advance-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-grid th:nth-child(1) { z-index: 25; }
-    #advance-grid th:nth-child(2), #advance-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; }
-    #advance-grid th:nth-child(2) { z-index: 25; }
-  `
-
   let currentWeekStart = $state('')
   let timeslots = []
   let rooms = []
@@ -76,15 +60,13 @@
     monday.setDate(monday.getDate() + weeks * 7)
     currentWeekStart = monday.toISOString().split('T')[0]
   }
-  // ORIGINAL CSS FORMAT FOR TABLE
-  // const formatCell = (cell) => {
-  //   if (!cell || cell.label === 'Empty') return h('span', {}, '—')
-  //   return h('div', { class: 'flex flex-col gap-1 text-xs items-center font-semibold' }, [
-  //     h('div', { class: 'badge badge-ghost badge-xs p-3' }, cell.subject.name),
-  //     h('div', { class: 'badge badge-ghost badge-xs' }, cell.student.englishName),
-  //     h('div', { class: 'badge badge-ghost badge-xs' }, cell.teacher.name),
-  //   ])
-  // }
+
+  // --- Toast Handler ---
+  function handleToast(e, label = 'Schedule') {
+    const messages = { create: `${label} created`, update: `${label} updated`, delete: `${label} deleted` }
+    const types = { create: toast.success, update: toast.info, delete: toast.error }
+    if (types[e.action]) types[e.action](messages[e.action])
+  }
 
   const formatCell = (cell) => {
     if (!cell || cell.label === 'Empty') return h('span', {}, '—')
@@ -93,9 +75,9 @@
       h(
         'div',
         {
-          class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full',
+          class: 'font-bold text-neutral-700 border-b border-base-500 mb-1 pb-1 w-full',
         },
-        [h('div', {}, cell.subject.name), h('div', { class: 'text-[10px] uppercase' }, cell.teacher.name)]
+        [h('div', {}, cell.subject.name), h('div', { class: 'text-[10px] uppercase mt-1' }, cell.teacher.name)]
       ),
 
       // 🔹 Student (separate section)
@@ -292,12 +274,26 @@
         {
           name: 'Teacher',
           width: '120px',
-          formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
+          formatter: (cell) =>
+            h(
+              'div',
+              {
+                className: 'text-center text-neutral-700 font-bold',
+              },
+              cell.value
+            ),
         },
         {
           name: 'Room',
           width: '120px',
-          formatter: (cell) => h('span', { class: 'cursor-not-allowed' }, cell.value),
+          formatter: (cell) =>
+            h(
+              'div',
+              {
+                className: 'text-center text-neutral-700 font-bold',
+              },
+              cell.value
+            ),
         },
         ...timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
@@ -410,10 +406,6 @@
   })
 </script>
 
-<svelte:head>
-  {@html `<style>${stickyStyles}</style>`}
-</svelte:head>
-
 <div class="p-6 bg-base-100">
   <div class="mb-4 text-2xl font-bold text-center">
     <h2>MTM Schedule Table (Advance Template)</h2>
@@ -444,3 +436,43 @@
   }}
 />
 <GoLiveModal bind:show={showGoLiveModal} {getWeekRange} {currentWeekStart} {getWeekDates} />
+
+<style>
+  #advance-grid :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  #advance-grid :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: 0 1px 0 #ddd;
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+    color: #ffffff; /* white text */
+  }
+
+  #advance-grid :global(th:nth-child(1)),
+  #advance-grid :global(td:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #advance-grid :global(th:nth-child(1)) {
+    z-index: 25;
+  }
+
+  #advance-grid :global(th:nth-child(2)),
+  #advance-grid :global(td:nth-child(2)) {
+    position: sticky;
+    left: 120px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #advance-grid :global(th:nth-child(2)) {
+    z-index: 25;
+  }
+</style>
