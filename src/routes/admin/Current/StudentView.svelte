@@ -5,29 +5,6 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
 
-  // const stickyStyles = `
-  //   #studentGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-  //   #studentGrid th {
-  //   position: sticky;
-  //   top: 0;
-  //   z-index: 20;
-  //   box-shadow: 0 1px 0 #ddd;
-  //   background-color: #484b4f; /* dark (Tailwind gray-800) */
-  //      color: #ffffff; /* white text */
-  //   }
-  //   #studentGrid th:nth-child(1), #studentGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd;  }
-  //   #studentGrid th:nth-child(1) { z-index: 25; }
-
-  //   #studentGrid th:nth-child(2), #studentGrid td:nth-child(2) { position: sticky; left: 180px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-  //   #studentGrid th:nth-child(2) { z-index: 25; }
-
-  //   #studentGrid th:nth-child(3), #studentGrid td:nth-child(3) { position: sticky; left: 320px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-  //   #studentGrid th:nth-child(3) { z-index: 25; }
-
-  //   #studentGrid th:nth-child(4), #studentGrid td:nth-child(4) { position: sticky; left: 440px; z-index: 10; box-shadow: inset -1px 0 0 #ddd;  }
-  //   #studentGrid th:nth-child(4) { z-index: 25; }
-  // `
-
   // Cache for frequently accessed data
   const cache = {
     timeslots: null,

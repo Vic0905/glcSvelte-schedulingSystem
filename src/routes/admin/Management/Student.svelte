@@ -403,52 +403,52 @@
   }
 
   async function importCSV() {
-    if (csvPreview.length === 0) {
-      toast.error('No valid students found in CSV')
-      return
-    }
+    if (csvPreview.length === 0) return
 
     isProcessing = true
-    let successCount = 0
-    let skippedCount = 0
-    let errorCount = 0
-
     try {
       const existingStudents = await pb.collection('student').getFullList()
-      const existingEnglishNames = existingStudents
-        .map((s) => (s.englishName ? s.englishName.toLowerCase().trim() : ''))
-        .filter((name) => name)
+      const existingNames = new Set(existingStudents.map((s) => s.englishName?.toLowerCase().trim()))
 
-      for (const student of csvPreview) {
-        try {
-          if (student.englishName && existingEnglishNames.includes(student.englishName.toLowerCase().trim())) {
-            console.log(`Skipping duplicate English Name: ${student.englishName}`)
-            skippedCount++
-            continue
-          }
-
-          await pb.collection('student').create(student)
-          successCount++
-
-          if (student.englishName) {
-            existingEnglishNames.push(student.englishName.toLowerCase().trim())
-          }
-        } catch (err) {
-          console.error(`Error adding ${student.englishName}:`, err)
-          errorCount++
+      // 1. Filter out duplicates first
+      const newStudents = csvPreview.filter((student) => {
+        const normalized = student.englishName?.toLowerCase().trim()
+        if (normalized && !existingNames.has(normalized)) {
+          existingNames.add(normalized) // Prevent duplicates within the CSV itself
+          return true
         }
+        return false
+      })
+
+      if (newStudents.length === 0) {
+        toast.info('No new students to import.')
+        isProcessing = false
+        return
       }
 
-      const message = `Added ${successCount} students!${skippedCount > 0 ? ` Skipped ${skippedCount} duplicates.` : ''}${errorCount > 0 ? ` ${errorCount} failed.` : ''}`
-      toast.success(message)
+      // 2. Split into chunks of 50
+      const CHUNK_SIZE = 50
+      let successCount = 0
 
+      for (let i = 0; i < newStudents.length; i += CHUNK_SIZE) {
+        const chunk = newStudents.slice(i, i + CHUNK_SIZE)
+        const batch = pb.createBatch()
+
+        for (const student of chunk) {
+          batch.collection('student').create(student)
+        }
+
+        // Send the chunk (max 50 requests)
+        await batch.send()
+        successCount += chunk.length
+      }
+
+      toast.success(`Successfully imported ${successCount} students!`)
       showCSVModal = false
-      csvFile = null
-      csvPreview = []
       await loadStudent()
     } catch (err) {
-      console.error(err)
-      toast.error('Error importing CSV')
+      console.error('Batch Error:', err.response)
+      toast.error(err.message || 'Error importing CSV')
     } finally {
       isProcessing = false
     }

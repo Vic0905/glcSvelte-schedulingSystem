@@ -170,7 +170,10 @@
         ...base,
         label: 'Empty',
         subject: { name: '', id: '' },
-        teacher: { name: '', id: '' },
+        teacher: {
+          name: teacher?.name || '',
+          id: teacher?.id || '',
+        },
         student: { englishName: '', id: '' },
       }
     }
@@ -342,7 +345,7 @@
 
   <div class="mb-2 flex flex-wrap items-center justify-between gap-4">
     <button class="btn btn-ghost btn-sm gap-2" onclick={copyToAdvanceBooking} disabled={isCopying}>
-      {#if isCopying}<span class="loading loading-spinner"></span>{:else}Copy to Next Week{/if}
+      {#if isCopying}<span class="loading loading-spinner"></span>{:else}Copy to Advance{/if}
     </button>
 
     <h3 class="text-xl font-semibold text-center mr-20">{getWeekRangeDisplay(weekStart)}</h3>
