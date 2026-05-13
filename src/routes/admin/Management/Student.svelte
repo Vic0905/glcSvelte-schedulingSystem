@@ -37,7 +37,7 @@
     })
 
     const now = new Date()
-    const isTesting = true // Set to false when you go live
+    const isTesting = false // Set to false when you go live
     let cutoffDate
 
     if (isTesting) {
