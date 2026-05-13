@@ -386,7 +386,7 @@
         },
         {
           name: 'Level',
-          width: '100px',
+          width: '120px',
           formatter: (cell) => h('div', { className: 'text-center text-neutral-700 font-bold' }, cell.value),
         },
         ...cache.timeslots.map((t) => ({
