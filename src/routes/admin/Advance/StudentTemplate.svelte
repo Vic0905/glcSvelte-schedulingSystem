@@ -206,7 +206,7 @@
         },
         {
           name: 'Level',
-          width: '100px',
+          width: '120px',
           formatter: (cell) => h('div', { className: 'text-center text-neutral-700 font-bold' }, cell.value),
         },
         ...timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '180px', formatter: formatCell })),
