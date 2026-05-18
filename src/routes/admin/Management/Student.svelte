@@ -45,10 +45,7 @@
       cutoffDate = new Date(now.getTime() - 1 * 60 * 1000)
     } else {
       // Production mode: Monday logic
-      const day = now.getDay()
-      cutoffDate = new Date(now)
-      cutoffDate.setDate(now.getDate() - (day === 0 ? 6 : day - 1))
-      cutoffDate.setHours(0, 0, 0, 0)
+      cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
     }
 
     // 1. Filter students using the dynamic cutoffDate
