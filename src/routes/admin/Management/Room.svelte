@@ -118,7 +118,7 @@
           },
           pagination: {
             enabled: true,
-            limit: 50,
+            limit: 10,
           },
           search: true,
           sort: true,

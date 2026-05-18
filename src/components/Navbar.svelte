@@ -27,7 +27,7 @@
   }
 </script>
 
-<div class="navbar">
+<div class="navbar sticky top-0 z-50 bg-base-100">
   <div class="navbar-start">
     <div class="dropdown">
       <div tabindex="0" role="button" class="btn btn-ghost lg:hidden">
