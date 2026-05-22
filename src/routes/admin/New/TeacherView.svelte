@@ -1,48 +1,24 @@
 <script>
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
-  import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import { toast } from 'svelte-sonner'
 
-  const stickyStyles = `
-    #teacherGrid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #teacherGrid th { 
-      position: sticky; 
-      top: 0; 
-      z-index: 20; 
-      box-shadow: 0 1px 0 #ddd; 
-      background-color: #484b4f; 
-      color: #ffffff; 
-    }
-    #teacherGrid th:nth-child(1), #teacherGrid td:nth-child(1) { position: sticky; left: 0; z-index: 15; box-shadow: inset -1px 0 0 #ddd; background: #fff; }
-    #teacherGrid th:nth-child(1) { z-index: 25; background-color: #484b4f; }
-    #teacherGrid th:nth-child(2), #teacherGrid td:nth-child(2) { position: sticky; left: 150px; z-index: 10; box-shadow: inset -1px 0 0 #ddd; background: #fff; }
-    #teacherGrid th:nth-child(2) { z-index: 25; background-color: #484b4f; }
-  `
-
-  const cache = {
-    timeslots: null,
-    teachers: null,
-    rooms: null,
-    grouprooms: null,
-    schedules: new Map(),
-    cacheDuration: 30000,
-    isValid: (key) => {
-      const cached = cache.schedules.get(key)
-      return cached && Date.now() - cached.timestamp < cache.cacheDuration
-    },
-  }
-
+  let teacherGrid = $state(null)
   let weekStart = $state(getWeekStart(new Date()))
-  let teacherGrid = null
   let isLoading = $state(false)
-  let abortController = null
-  let scrollPositions = $state({ top: 0, left: 0 })
+
+  // Stable data — fetched once
+  let cachedTimeslots = []
+  let cachedRoomTypes = []
+  let cachedTeachers = []
+  let teacherRoomMap = new Map()
 
   function getWeekStart(date) {
     const d = new Date(date)
-    const diff = d.getDay() === 0 ? -5 : d.getDay() === 1 ? 1 : 2 - d.getDay()
-    d.setDate(d.getDate() + diff)
+    const day = d.getDay()
+    const diff = day < 2 ? day + 5 : day - 2
+    d.setDate(d.getDate() - diff)
     return d.toISOString().split('T')[0]
   }
 
@@ -50,232 +26,236 @@
     const start = new Date(startDate)
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
-    return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
+    const opts = { month: 'long', day: 'numeric' }
+    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
   }
 
-  const saveScrollPosition = () => {
-    const wrapper = document.querySelector('#teacherGrid .gridjs-wrapper')
-    if (wrapper) scrollPositions = { top: wrapper.scrollTop, left: wrapper.scrollLeft }
+  const changeWeek = async (weeks) => {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + weeks * 7)
+    weekStart = getWeekStart(d)
+    await loadSchedules()
   }
 
-  const restoreScrollPosition = () => {
-    requestAnimationFrame(() => {
-      const wrapper = document.querySelector('#teacherGrid .gridjs-wrapper')
-      if (wrapper) {
-        wrapper.scrollTop = scrollPositions.top
-        wrapper.scrollLeft = scrollPositions.left
-      }
-    })
+  function handleToast(e, label = 'Schedule') {
+    const messages = { create: `${label} created`, update: `${label} updated`, delete: `${label} deleted` }
+    const types = { create: toast.success, update: toast.info, delete: toast.error }
+    if (types[e.action]) types[e.action](messages[e.action])
   }
 
   const formatCell = (cell) => {
-    if (!cell?.length) return h('span', {}, '—')
-    return h(
-      'div',
-      { class: 'text-xs flex flex-col gap-1 items-center font-semibold' },
-      cell.map((item) =>
-        h('div', { class: 'flex flex-col gap-1 items-center' }, [
-          h('span', { class: 'badge badge-ghost badge-xs p-3' }, item.subject?.name || 'No Subject'),
-          item.isGroup
-            ? h('span', { class: 'badge badge-primary badge-outline badge-xs' }, 'Group Class')
-            : h('span', { class: 'badge badge-ghost badge-xs' }, item.student?.englishName || 'One-on-One'),
-          h('span', { class: 'badge badge-ghost badge-xs' }, item.room?.name || item.grouproom?.name || 'No Room'),
-        ])
-      )
-    )
+    if (!cell?.schedules?.length) return h('span', { class: 'text-gray-400' }, '—')
+
+    const { schedules } = cell
+    return h('div', { class: 'flex flex-col gap-1 p-1 items-center text-center' }, [
+      h('div', { class: 'font-bold text-neutral-700 border-b border-base-700 mb-1 pb-1 w-full' }, [
+        h('div', {}, schedules[0].subject?.name || 'No Subject'),
+        h('span', { class: 'badge badge-ghost badge-xs' }, schedules[0].roomName || 'No Room'),
+      ]),
+      h(
+        'div',
+        { class: 'flex flex-wrap justify-center gap-1' },
+        schedules.flatMap((s) =>
+          s.students.map((std) => h('span', { class: 'badge badge-ghost badge-xs whitespace-nowrap' }, std.name))
+        )
+      ),
+    ])
   }
 
-  async function loadTeacherSchedule(forceRefresh = false) {
+  async function loadStaticData() {
+    const [timeslots, roomTypes, teachers] = await Promise.all([
+      pb.collection('timeslot').getFullList({ sort: 'start' }),
+      pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher' }),
+      pb.collection('teacher').getFullList({ sort: 'name', fields: 'id,name,status' }),
+    ])
+    cachedTimeslots = timeslots
+    cachedRoomTypes = roomTypes
+    cachedTeachers = teachers
+    teacherRoomMap = new Map(roomTypes.filter((rt) => rt.expand?.teacher).map((rt) => [rt.expand.teacher.id, rt.name]))
+  }
+
+  async function loadSchedules() {
     if (isLoading) return
-    abortController?.abort()
-    abortController = new AbortController()
-
-    saveScrollPosition()
-
-    if (!forceRefresh && cache.isValid(weekStart)) {
-      updateGrid(cache.schedules.get(weekStart).data)
-      return
-    }
-
     isLoading = true
     try {
-      const filterStr = `start ~ "${weekStart}"`
+      const endD = new Date(weekStart)
+      endD.setDate(endD.getDate() + 3)
+      const endDateStr = `${endD.toISOString().split('T')[0]} 23:59:59`
 
-      const [ts, tch, rms, grms, mtm, grp] = await Promise.all([
-        !cache.timeslots ? pb.collection('timeSlot').getFullList({ sort: 'start' }) : Promise.resolve(cache.timeslots),
-        !cache.teachers ? pb.collection('teacher').getFullList({ sort: 'name' }) : Promise.resolve(cache.teachers),
-        !cache.rooms ? pb.collection('room').getFullList({ expand: 'teacher' }) : Promise.resolve(cache.rooms),
-        !cache.grouprooms
-          ? pb.collection('grouproom').getFullList({ expand: 'teacher' })
-          : Promise.resolve(cache.grouprooms),
-        pb
-          .collection('MtmSchedule')
-          .getFullList({ filter: filterStr, expand: 'teacher,student,subject,room,timeslot' }),
-        pb
-          .collection('GrpSchedule')
-          .getFullList({ filter: filterStr, expand: 'teacher,student,subject,grouproom,timeslot' }),
+      const schedules = await pb.collection('schedule').getFullList({
+        filter: `start <= "${endDateStr}" && end >= "${weekStart} 00:00:00"`,
+        expand: 'teacher,student,subject,room,timeslot',
+      })
+
+      // Build scheduleMap: "teacherId-timeslotId" -> [entries]
+      const scheduleMap = new Map()
+      const bookedTeacherIds = new Set()
+
+      schedules.forEach((s) => {
+        const tId = s.expand?.teacher?.id
+        const tsId = s.expand?.timeslot?.id
+        if (!tId || !tsId) return
+        bookedTeacherIds.add(tId)
+        const key = `${tId}-${tsId}`
+        if (!scheduleMap.has(key)) scheduleMap.set(key, [])
+        scheduleMap.get(key).push({
+          subject: s.expand?.subject,
+          students: s.expand?.student ? [{ name: s.expand.student.englishName }] : [],
+          roomName: s.expand?.room?.name ?? null,
+        })
+      })
+
+      // Show all non-disabled teachers + any disabled teacher who has a booking this week
+      const teachers = cachedTeachers
+        .filter((t) => t.status !== 'disabled' || bookedTeacherIds.has(t.id))
+        .sort((a, b) => {
+          const aRoom = teacherRoomMap.get(a.id),
+            bRoom = teacherRoomMap.get(b.id)
+          const getWeight = (room) => (room ? 1 : 2)
+          if (getWeight(aRoom) !== getWeight(bRoom)) return getWeight(aRoom) - getWeight(bRoom)
+          return (aRoom || a.name).localeCompare(bRoom || b.name)
+        })
+
+      const data = teachers.map((t) => [
+        { value: t.name, status: t.status },
+        { value: teacherRoomMap.get(t.id) || '—' },
+        ...cachedTimeslots.map((ts) => ({ schedules: scheduleMap.get(`${t.id}-${ts.id}`) || [] })),
       ])
 
-      cache.timeslots = ts
-      cache.teachers = tch
-      cache.rooms = rms
-      cache.grouprooms = grms
-
-      const assignmentMap = new Map()
-      rms.forEach((r) => r.teacher && assignmentMap.set(r.teacher, { name: r.name, type: 'room' }))
-      grms.forEach(
-        (g) =>
-          g.teacher &&
-          !assignmentMap.has(g.teacher) &&
-          assignmentMap.set(g.teacher, { name: g.name, type: 'grouproom' })
-      )
-
-      const scheduleMap = new Map()
-      mtm.forEach((s) => {
-        const tid = s.expand?.teacher?.id
-        const tsid = s.expand?.timeslot?.id
-        if (!tid || !tsid) return
-        if (!scheduleMap.has(tid)) scheduleMap.set(tid, new Map())
-        if (!scheduleMap.get(tid).has(tsid)) scheduleMap.get(tid).set(tsid, [])
-        scheduleMap
-          .get(tid)
-          .get(tsid)
-          .push({ subject: s.expand?.subject, student: s.expand?.student, room: s.expand?.room, isGroup: false })
-      })
-
-      grp.forEach((s) => {
-        const tid = s.expand?.teacher?.id
-        const tsid = s.expand?.timeslot?.id
-        if (!tid || !tsid) return
-        if (!scheduleMap.has(tid)) scheduleMap.set(tid, new Map())
-        if (!scheduleMap.get(tid).has(tsid)) scheduleMap.get(tid).set(tsid, [])
-        scheduleMap.get(tid).get(tsid).push({ subject: s.expand?.subject, room: s.expand?.grouproom, isGroup: true })
-      })
-
-      // THE UPDATED SORTING LOGIC
-      const data = cache.teachers
-        .filter((t) => t.status !== 'disabled' || scheduleMap.has(t.id))
-        .map((t) => {
-          const tMap = scheduleMap.get(t.id) || new Map()
-          const assign = assignmentMap.get(t.id)
-          return {
-            teacherObj: t,
-            roomName: assign?.name || null,
-            row: [
-              { name: t.name },
-              { roomName: assign?.name || '—' },
-              ...cache.timeslots.map((ts) => tMap.get(ts.id) || []),
-            ],
+      if (teacherGrid) {
+        const wrapper = document.querySelector('#teacherGridNew .gridjs-wrapper')
+        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
+        teacherGrid.updateConfig({ data }).forceRender()
+        requestAnimationFrame(() => {
+          const w = document.querySelector('#teacherGridNew .gridjs-wrapper')
+          if (w) {
+            w.scrollTop = scroll.top
+            w.scrollLeft = scroll.left
           }
         })
-        .sort((a, b) => {
-          if (a.roomName && !b.roomName) return -1
-          if (!a.roomName && b.roomName) return 1
-          if (a.roomName && b.roomName) {
-            const roomCompare = a.roomName.localeCompare(b.roomName, undefined, { numeric: true })
-            if (roomCompare !== 0) return roomCompare
-          }
-          return a.teacherObj.name.localeCompare(b.teacherObj.name)
-        })
-        .map((item) => item.row)
-
-      const columns = [
-        {
-          name: 'Teacher',
-          width: '150px',
-          formatter: (cell) => h('span', { class: 'font-semibold text-xs' }, cell.name),
-        },
-        { name: 'Room', width: '150px', formatter: (cell) => h('span', { class: 'text-xs' }, cell.roomName) },
-        ...cache.timeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '160px', formatter: formatCell })),
-      ]
-
-      const result = { data, columns }
-      cache.schedules.set(weekStart, { data: result, timestamp: Date.now() })
-      updateGrid(result)
-    } catch (e) {
-      console.error('Error loading Teacher schedule:', e)
+      } else {
+        const columns = [
+          {
+            name: 'Teacher',
+            width: '150px',
+            formatter: (c) =>
+              h(
+                'div',
+                { class: 'flex flex-col items-center text-neutral-700 font-bold' },
+                [
+                  h('span', {}, c.value),
+                  c.status === 'new' ? h('span', { class: 'badge badge-success badge-xs' }, 'New') : null,
+                ].filter(Boolean)
+              ),
+          },
+          {
+            name: 'Room',
+            width: '120px',
+            formatter: (c) => h('div', { class: 'text-center font-bold text-neutral-700' }, c.value),
+          },
+          ...cachedTimeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '180px', formatter: formatCell })),
+        ]
+        teacherGrid = new Grid({
+          columns,
+          data,
+          className: { table: 'w-full border text-xs !border-collapse', th: 'text-center' },
+          style: { table: { 'border-collapse': 'collapse' } },
+        }).render(document.getElementById('teacherGridNew'))
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load teacher schedule')
     } finally {
       isLoading = false
     }
   }
 
-  function updateGrid({ data, columns }) {
-    const container = document.getElementById('teacherGrid')
-    if (!container) return
+  $effect(() => {
+    loadStaticData().then(loadSchedules)
 
-    if (teacherGrid) {
-      teacherGrid.updateConfig({ data }).forceRender()
-      restoreScrollPosition()
-    } else {
-      container.innerHTML = ''
-      teacherGrid = new Grid({
-        columns,
-        data,
-        className: { table: 'w-full border text-xs !border-collapse' },
-        style: { table: { 'border-collapse': 'collapse' } },
-      }).render(container)
+    const subSchedule = pb.collection('schedule').subscribe('*', (e) => {
+      handleToast(e, 'Schedule')
+      loadSchedules()
+    })
+
+    // Invalidate static cache + reload if rooms or teachers change
+    const subRoomType = pb.collection('roomType').subscribe('*', async () => {
+      await loadStaticData()
+      loadSchedules()
+    })
+    const subTeacher = pb.collection('teacher').subscribe('*', async () => {
+      await loadStaticData()
+      loadSchedules()
+    })
+
+    return () => {
+      subSchedule.then((u) => u())
+      subRoomType.then((u) => u())
+      subTeacher.then((u) => u())
+      teacherGrid?.destroy()
     }
-  }
-
-  onMount(() => {
-    loadTeacherSchedule()
-    const collections = ['MtmSchedule', 'GrpSchedule', 'teacher', 'room', 'grouproom']
-    collections.forEach((c) => pb.collection(c).subscribe('*', () => loadTeacherSchedule(true)))
-  })
-
-  onDestroy(() => {
-    abortController?.abort()
-    teacherGrid?.destroy()
-    const collections = ['MtmSchedule', 'GrpSchedule', 'teacher', 'room', 'grouproom']
-    collections.forEach((c) => pb.collection(c).unsubscribe())
   })
 </script>
 
-<svelte:head>{@html `<style>${stickyStyles}</style>`}</svelte:head>
-
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-2xl font-bold flex-1 text-center">Teacher Schedule View</h2>
-    {#if isLoading}<div class="loading loading-spinner"></div>{/if}
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
+    <h2 class="text-center flex-1">Teacher View Table (MTM + GRP)</h2>
+    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
-  <div class="grid grid-cols-3 items-center mb-4">
-    <div class="flex justify-start">
-      <input
-        type="date"
-        bind:value={weekStart}
-        class="input input-bordered input-sm w-40"
-        onchange={() => loadTeacherSchedule(true)}
-      />
-    </div>
-
-    <div class="flex justify-center">
-      <h3 class="text-xl font-bold whitespace-nowrap">
-        {getWeekRangeDisplay(weekStart)}
-      </h3>
-    </div>
-
-    <div class="flex justify-end join">
-      <button
-        class="btn btn-sm join-item"
-        onclick={() => {
-          const d = new Date(weekStart)
-          d.setDate(d.getDate() - 7)
-          weekStart = getWeekStart(d)
-          loadTeacherSchedule(true)
-        }}>&larr;</button
-      >
-      <button
-        class="btn btn-sm join-item"
-        onclick={() => {
-          const d = new Date(weekStart)
-          d.setDate(d.getDate() + 7)
-          weekStart = getWeekStart(d)
-          loadTeacherSchedule(true)
-        }}>&rarr;</button
-      >
+  <div class="mb-2 flex flex-wrap items-center justify-between relative">
+    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
+      {getWeekRangeDisplay(weekStart)}
+    </h3>
+    <div class="ml-auto flex items-center gap-2">
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)} disabled={isLoading}>&larr;</button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)} disabled={isLoading}>&rarr;</button>
     </div>
   </div>
 
-  <div id="teacherGrid"></div>
+  <div id="teacherGridNew" class="border rounded-lg"></div>
 </div>
+
+<style>
+  #teacherGridNew :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  #teacherGridNew :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: inset -1px 0 0 #ddd;
+    background-color: #484b4f;
+    color: #ffffff;
+  }
+
+  #teacherGridNew :global(th:nth-child(1)),
+  #teacherGridNew :global(td:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #teacherGridNew :global(th:nth-child(1)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+
+  #teacherGridNew :global(th:nth-child(2)),
+  #teacherGridNew :global(td:nth-child(2)) {
+    position: sticky;
+    left: 150px;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+    background: white;
+  }
+
+  #teacherGridNew :global(th:nth-child(2)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+</style>
