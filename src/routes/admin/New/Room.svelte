@@ -27,10 +27,15 @@
     try {
       const [teacherList, roomList] = await Promise.all([
         pb.collection('teacher').getFullList({ sort: 'name' }),
-        pb.collection('roomType').getFullList({ sort: '-created', sort: 'name', expand: 'teacher' }),
+        pb.collection('roomType').getFullList({ expand: 'teacher' }), // Let JS handle the sorting
       ])
+
       teachers = teacherList
-      rooms = roomList
+
+      // Sort naturally using JS localeCompare
+      rooms = roomList.sort((a, b) => {
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      })
     } catch (err) {
       toast.error('Failed to synchronize data')
     }
@@ -133,7 +138,6 @@
 
   // 2. Update the data whenever 'rooms' changes
   $effect(() => {
-    // We need to track 'rooms' so this effect re-runs when data updates
     const currentRooms = rooms
 
     if (gridInstance && currentRooms.length >= 0) {
@@ -187,52 +191,84 @@
 </main>
 
 {#if showModal}
-  <div class="modal modal-open bg-black/40">
-    <div class="modal-box max-w-md border border-base-300">
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <div class="modal modal-open bg-black/40" role="dialog" onclick={(e) => e.target === e.currentTarget && closeModal()}>
+    <div class="modal-box max-w-md border border-base-300 p-6">
       <div class="flex justify-between items-center mb-6">
-        <h3 class="font-bold text-xl">{formData.id ? 'Update' : 'Create'} Room</h3>
+        <h3 class="font-bold text-xl text-base-content">{formData.id ? 'Update' : 'Create'} Room</h3>
         <button class="btn btn-sm btn-circle btn-ghost" onclick={closeModal}>✕</button>
       </div>
 
-      <div class="space-y-5">
-        <label class="form-control w-full">
-          <span class="label-text font-semibold mb-1">Room Name</span>
+      <!-- Main Form Container -->
+      <div class="flex flex-col gap-5">
+        <!-- Room Name Input -->
+        <div class="form-control w-full">
+          <label class="label py-1" for="room-name">
+            <span class="label-text font-semibold text-base-content">Room Name</span>
+          </label>
           <input
+            id="room-name"
             bind:value={formData.name}
             type="text"
-            class="input input-bordered focus:input-primary"
+            class="input input-bordered w-full focus:input-primary"
             placeholder="e.g. A101, B202"
           />
-        </label>
+        </div>
 
+        <!-- Two Column Inputs Split -->
         <div class="grid grid-cols-2 gap-4">
-          <label class="form-control w-full">
-            <span class="label-text font-semibold mb-1">Room Type</span>
-            <select bind:value={formData.roomType} class="select select-bordered focus:select-primary">
+          <div class="form-control w-full">
+            <label class="label py-1" for="room-type">
+              <span class="label-text font-semibold text-base-content">Room Type</span>
+            </label>
+            <select
+              id="room-type"
+              bind:value={formData.roomType}
+              class="select select-bordered w-full focus:select-primary"
+            >
               <option value="mtm">1-on-1 (MTM)</option>
               <option value="grp">Group Session</option>
             </select>
-          </label>
-          <label class="form-control w-full">
-            <span class="label-text font-semibold mb-1">Capacity</span>
-            <input bind:value={formData.maxStudents} type="number" class="input input-bordered focus:input-primary" />
-          </label>
+          </div>
+
+          <div class="form-control w-full">
+            <label class="label py-1" for="capacity">
+              <span class="label-text font-semibold text-base-content">Capacity</span>
+            </label>
+            <input
+              id="capacity"
+              bind:value={formData.maxStudents}
+              type="number"
+              min="0"
+              class="input input-bordered w-full focus:input-primary"
+            />
+          </div>
         </div>
 
-        <label class="form-control w-full">
-          <span class="label-text font-semibold mb-1">Assigned Teacher</span>
-          <select bind:value={formData.selectedTeacherId} class="select select-bordered focus:select-primary">
+        <!-- Assigned Teacher Input -->
+        <div class="form-control w-full">
+          <label class="label py-1" for="teacher">
+            <span class="label-text font-semibold text-base-content">Assigned Teacher</span>
+          </label>
+          <select
+            id="teacher"
+            bind:value={formData.selectedTeacherId}
+            class="select select-bordered w-full focus:select-primary"
+          >
             <option value="">Unassigned</option>
             {#each teachers as t}
               <option value={t.id}>{t.name}</option>
             {/each}
           </select>
-        </label>
+        </div>
       </div>
 
-      <div class="modal-action mt-8">
-        <button class="btn btn-outline btn-ghost px-8" onclick={closeModal}>Cancel</button>
-        <button class="btn btn-outline btn-primary px-8" onclick={saveRoom}>
+      <!-- Action Footer Buttons -->
+      <div class="modal-action mt-8 gap-2">
+        <button class="btn btn-ghost px-6" onclick={closeModal}>Cancel</button>
+        <button class="btn btn-primary px-6 shadow-sm" onclick={saveRoom}>
           {formData.id ? 'Save Changes' : 'Create Room'}
         </button>
       </div>
@@ -241,7 +277,11 @@
 {/if}
 
 <style>
-  /* Custom override for Grid.js theme to match professional look */
+  /* Forces the vertical scrollbar to always reserve its layout space */
+  :global(html) {
+    scrollbar-gutter: stable;
+  }
+
   :global(.gridjs-container) {
     border-radius: 0.75rem;
     overflow: hidden;

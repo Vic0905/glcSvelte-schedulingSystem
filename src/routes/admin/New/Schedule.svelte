@@ -13,21 +13,6 @@
   let rooms = $state([])
   let isLoading = $state(false)
 
-  const stickyStyles = `
-    #unified-grid .gridjs-wrapper { max-height: 700px; overflow: auto; }
-    #unified-grid th { 
-      position: sticky; 
-      top: 0; 
-      z-index: 20; 
-      background-color: #484b4f;
-      color: #fff;
-    }
-    #unified-grid th:nth-child(1), #unified-grid td:nth-child(1) { position: sticky; left: 0; z-index: 15; background-color: #f9fafb; }
-    #unified-grid th:nth-child(1) { z-index: 25; background-color: #484b4f; }
-    #unified-grid th:nth-child(2), #unified-grid td:nth-child(2) { position: sticky; left: 120px; z-index: 10; background-color: #f9fafb; }
-    #unified-grid th:nth-child(2) { z-index: 25; background-color: #484b4f; }
-  `
-
   // --- Helper Functions ---
   function getWeekStart(date) {
     const d = new Date(date)
@@ -64,9 +49,9 @@
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
 
     return h('div', { class: 'flex flex-col gap-1 p-1 items-center text-center' }, [
-      h('div', { class: 'font-bold text-neutral-700 border-b border-base-300 mb-1 pb-1 w-full' }, [
+      h('div', { class: 'font-bold text-neutral-700 border-b border-base-700 mb-1 pb-1 w-full' }, [
         h('div', { class: '' }, subjectName),
-        h('div', { class: 'text-[10px] uppercase' }, teacherName),
+        h('div', { class: 'text-[10px] uppercase mt-1' }, teacherName),
       ]),
       h(
         'div',
@@ -104,6 +89,8 @@
         students: s.expand?.student ? [{ id: s.expand.student.id, name: s.expand.student.englishName }] : [],
         subject: s.expand?.subject,
         teacher: s.expand?.teacher,
+        start: s.start?.split(' ')[0],
+        end: s.end?.split(' ')[0],
       }))
 
       const scheduleMap = new Map()
@@ -165,6 +152,7 @@
         gridInstance = new Grid({
           columns,
           data,
+          height: '700px',
           className: { table: 'w-full border text-xs !border-collapse' },
           style: { table: { 'table-layout': 'fixed' } },
         }).render(document.getElementById('unified-grid'))
@@ -173,15 +161,27 @@
           const cell = args[1].data
           if (cell.disabled) return
 
+          const isCreateMode = cell.label === 'Empty'
+          const firstSched = cell.schedules?.[0]
+
           const endDate = new Date(weekStart)
           endDate.setDate(endDate.getDate() + 3)
+
+          // Explicitly fallback to cell.room's assigned teacher if creating fresh
+          const activeTeacher = isCreateMode ? cell.room?.expand?.teacher : firstSched?.teacher
+
+          const modalStartDate = !isCreateMode ? firstSched?.start || weekStart : weekStart
+          const modalEndDate = !isCreateMode
+            ? firstSched?.end || endDate.toISOString().split('T')[0]
+            : endDate.toISOString().split('T')[0]
 
           combineModal.open({
             room: cell.room,
             timeslot: cell.timeslot,
-            startDate: weekStart,
-            endDate: endDate.toISOString().split('T')[0],
-            mode: cell.label === 'Empty' ? 'create' : 'edit',
+            teacher: activeTeacher, // 👈 Explicitly passing the teacher object here
+            startDate: modalStartDate,
+            endDate: modalEndDate,
+            mode: isCreateMode ? 'create' : 'edit',
             schedules: cell.schedules,
           })
         })
@@ -196,19 +196,16 @@
 
   $effect(() => {
     loadSchedules()
+
     return () => {
       gridInstance?.destroy()
     }
   })
 </script>
 
-<svelte:head>
-  {@html `<style>${stickyStyles}</style>`}
-</svelte:head>
-
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
-    <h2 class="text-center flex-1">Current Schedule (MTM + GRP)</h2>
+    <h2 class="text-center flex-1">Weekly Schedule (MTM + GRP)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
@@ -227,3 +224,47 @@
 </div>
 
 <CombineModal bind:this={combineModal} onrefresh={loadSchedules} />
+
+<style>
+  :global(html) {
+    scrollbar-gutter: stable;
+  }
+
+  #grid :global(.gridjs-wrapper) {
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  #unified-grid :global(th) {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    box-shadow: 0 1px 0 #ddd;
+    background-color: #484b4f; /* dark (Tailwind gray-800) */
+    color: #ffffff; /* white text */
+  }
+
+  #unified-grid :global(th:nth-child(1)),
+  #unified-grid :global(td:nth-child(1)) {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #unified-grid :global(th:nth-child(1)) {
+    z-index: 25;
+  }
+
+  #unified-grid :global(th:nth-child(2)),
+  #unified-grid :global(td:nth-child(2)) {
+    position: sticky;
+    left: 120px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+  }
+
+  #unified-grid :global(th:nth-child(2)) {
+    z-index: 25;
+  }
+</style>
