@@ -271,7 +271,7 @@
 
 {#if show}
   <dialog class="modal modal-open">
-    <div class="modal-box max-w-3xl border border-base-300 shadow-2xl">
+    <div class="modal-box max-w-4xl border border-base-300 shadow-2xl">
       <header class="mb-6 text-center">
         <h3 class="text-xl font-bold">
           {form.mode === 'edit' ? 'Edit' : 'Create'}

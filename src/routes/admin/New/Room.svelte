@@ -21,6 +21,12 @@
     selectedTeacherId: '',
   })
 
+  $effect(() => {
+    if (formData.roomType === 'mtm') {
+      formData.maxStudents = 1
+    }
+  })
+
   // --- Logic ---
 
   async function loadInitialData() {
@@ -242,6 +248,7 @@
               bind:value={formData.maxStudents}
               type="number"
               min="0"
+              disabled={formData.roomType === 'mtm'}
               class="input input-bordered w-full focus:input-primary"
             />
           </div>

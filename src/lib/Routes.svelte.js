@@ -82,6 +82,12 @@ export const adminRoutes = {
   '/new/random': wrap({
     asyncComponent: () => import('../routes/admin/New/Random.svelte'),
   }),
+  '/new/teacherinfo': wrap({
+    asyncComponent: () => import('../routes/admin/New/TeacherInfo.svelte'),
+  }),
+  '/new/studentinfo': wrap({
+    asyncComponent: () => import('../routes/admin/New/StudentInfo.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),
