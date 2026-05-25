@@ -280,7 +280,7 @@
   onMount(loadTeachers)
 </script>
 
-<main class="p-8 max-w-6xl mx-auto space-y-6">
+<main class="p-8 max-w-7xl mx-auto space-y-6">
   <!-- Header -->
   <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
     <div>
@@ -342,6 +342,7 @@
 {#if showModal}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div class="modal modal-open bg-black/40" role="dialog" onclick={(e) => e.target === e.currentTarget && closeModal()}>
     <div class="modal-box max-w-md border border-base-300 p-6">
       <div class="flex justify-between items-center mb-6">
@@ -399,6 +400,7 @@
 <!-- Bulk Add Modal -->
 {#if showBulkAddModal}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div
     class="modal modal-open bg-black/40"
     role="dialog"
