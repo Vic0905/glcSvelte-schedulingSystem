@@ -85,18 +85,18 @@
     } else {
       gridInstance = new Grid({
         columns: [
-          { name: 'Select', width: '100px', sort: false },
-          { name: 'Engish Name', width: '150px' },
+          { name: 'Select', width: '70px', sort: false },
+          { name: 'Engish Name', width: '100px' },
           { name: 'Name', width: '150px' },
           { name: 'Course', width: '120px' },
-          { name: 'Level', width: '100px' },
-          { name: 'Status', width: '110px' },
+          { name: 'Level', width: '80px' },
+          { name: 'Status', width: '80px' },
           { name: 'Actions', width: '130px', sort: false },
         ],
         data,
         search: true,
         pagination: { limit: 10 },
-        className: { table: 'table w-full' },
+        className: { table: 'table w-full', th: 'text-center', td: 'text-center' },
       }).render(gridElement)
     }
   }

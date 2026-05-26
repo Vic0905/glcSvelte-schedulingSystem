@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
   import { toast } from 'svelte-sonner'
@@ -12,6 +13,9 @@
   let timeslots = $state([])
   let rooms = $state([])
   let isLoading = $state(false)
+
+  // Store for scroll restoration
+  let scrollContainer = $state(null)
 
   // --- Helper Functions ---
   function getWeekStart(date) {
@@ -31,10 +35,18 @@
   }
 
   const changeWeek = async (weeks) => {
+    // Store current scroll position before anything changes
+    const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+    const savedScrollTop = wrapper?.scrollTop || 0
+    const savedScrollLeft = wrapper?.scrollLeft || 0
+
+    // Update week and reload
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-    await loadSchedules()
+
+    // Pass saved scroll position to loadSchedules
+    await loadSchedules(savedScrollTop, savedScrollLeft)
   }
 
   const formatCell = (cell) => {
@@ -61,7 +73,16 @@
     ])
   }
 
-  async function loadSchedules() {
+  async function loadSchedules(savedScrollTop = null, savedScrollLeft = null) {
+    if (isLoading) return
+
+    // Auto-capture scroll if not provided by caller
+    if (savedScrollTop === null) {
+      const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+      savedScrollTop = wrapper?.scrollTop || 0
+      savedScrollLeft = wrapper?.scrollLeft || 0
+    }
+
     isLoading = true
     try {
       const startD = new Date(weekStart)
@@ -120,22 +141,31 @@
       })
 
       if (gridInstance) {
-        // --- SCROLL RESTORATION LOGIC ---
-        // 1. Capture current scroll position
-        const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
-        const scrollTop = wrapper ? wrapper.scrollTop : 0
-        const scrollLeft = wrapper ? wrapper.scrollLeft : 0
+        // Hide the grid briefly to prevent visual jump
+        const gridContainer = document.getElementById('unified-grid')
+        if (gridContainer) {
+          gridContainer.style.opacity = '0'
+        }
 
-        // 2. Update and re-render
+        // Update data
         gridInstance.updateConfig({ data }).forceRender()
 
-        // 3. Restore scroll position after the DOM has updated
+        // Restore scroll position after render with RAF to ensure smooth
         requestAnimationFrame(() => {
-          const newWrapper = document.querySelector('#unified-grid .gridjs-wrapper')
-          if (newWrapper) {
-            newWrapper.scrollTop = scrollTop
-            newWrapper.scrollLeft = scrollLeft
-          }
+          setTimeout(() => {
+            const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+            if (wrapper) {
+              if (savedScrollTop !== null) {
+                wrapper.scrollTop = savedScrollTop
+                wrapper.scrollLeft = savedScrollLeft || 0
+              }
+            }
+
+            // Fade back in
+            if (gridContainer) {
+              gridContainer.style.opacity = '1'
+            }
+          }, 0)
         })
       } else {
         const columns = [
@@ -153,7 +183,11 @@
           columns,
           data,
           height: '700px',
-          className: { table: 'w-full border text-xs !border-collapse' },
+          className: {
+            table: 'w-full border text-xs !border-collapse',
+            th: 'text-center',
+            td: 'text-center',
+          },
           style: { table: { 'table-layout': 'fixed' } },
         }).render(document.getElementById('unified-grid'))
 
@@ -167,7 +201,6 @@
           const endDate = new Date(weekStart)
           endDate.setDate(endDate.getDate() + 3)
 
-          // Explicitly fallback to cell.room's assigned teacher if creating fresh
           const activeTeacher = isCreateMode ? cell.room?.expand?.teacher : firstSched?.teacher
 
           const modalStartDate = !isCreateMode ? firstSched?.start || weekStart : weekStart
@@ -178,7 +211,7 @@
           combineModal.open({
             room: cell.room,
             timeslot: cell.timeslot,
-            teacher: activeTeacher, // 👈 Explicitly passing the teacher object here
+            teacher: activeTeacher,
             startDate: modalStartDate,
             endDate: modalEndDate,
             mode: isCreateMode ? 'create' : 'edit',
@@ -194,11 +227,15 @@
     }
   }
 
-  $effect(() => {
+  // Initialize on mount
+  onMount(() => {
     loadSchedules()
 
     return () => {
-      gridInstance?.destroy()
+      if (gridInstance) {
+        gridInstance.destroy()
+        gridInstance = null
+      }
     }
   })
 </script>
@@ -220,7 +257,7 @@
     </div>
   </div>
 
-  <div id="unified-grid" class="border rounded-lg"></div>
+  <div id="unified-grid" class="border rounded-lg transition-opacity duration-150"></div>
 </div>
 
 <CombineModal bind:this={combineModal} onrefresh={loadSchedules} />
@@ -230,9 +267,11 @@
     scrollbar-gutter: stable;
   }
 
-  #grid :global(.gridjs-wrapper) {
+  #unified-grid :global(.gridjs-wrapper) {
     max-height: 700px;
     overflow: auto;
+    /* Prevent scroll anchoring issues */
+    contain: strict;
   }
 
   #unified-grid :global(th) {
@@ -240,8 +279,8 @@
     top: 0;
     z-index: 20;
     box-shadow: 0 1px 0 #ddd;
-    background-color: #484b4f; /* dark (Tailwind gray-800) */
-    color: #ffffff; /* white text */
+    background-color: #484b4f;
+    color: #ffffff;
   }
 
   #unified-grid :global(th:nth-child(1)),

@@ -74,15 +74,15 @@
     } else {
       gridInstance = new Grid({
         columns: [
-          { name: 'Select', width: '52px', sort: false },
-          { name: 'Name' },
-          { name: 'Status', width: '110px' },
+          { name: 'Select', width: '80px', sort: false },
+          { name: 'Name', width: '150px' },
+          { name: 'Status', width: '100px' },
           { name: 'Actions', width: '130px', sort: false },
         ],
         data,
         search: true,
         pagination: { limit: 10 },
-        className: { table: 'table w-full' },
+        className: { table: 'table w-full', th: 'text-center', td: 'text-center' },
       }).render(gridElement)
     }
   }

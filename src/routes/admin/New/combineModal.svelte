@@ -4,48 +4,49 @@
 
   let { onrefresh } = $props()
 
-  // Modal State
+  // ─── Modal State ──────────
   let show = $state(false)
   let loading = $state(false)
   let showDeleteConfirm = $state(false)
 
-  // Dropdown Data
+  // ─── Dropdown Data ──────────
   let subjects = $state([])
   let students = $state([])
   let teachers = $state([])
   let rooms = $state([])
   let timeslots = $state([])
 
+  // ─── Form ──────────
+  let form = $state({
+    mode: 'create',
+    id: null,
+    subject: null,
+    teacher: null,
+    room: null,
+    timeslot: null,
+    startDate: null,
+    endDate: null,
+  })
+
+  // The original timeslot/room/date so we can find & replace records in edit mode
+  let originalState = $state({ timeslotId: null, roomId: null, startDate: null })
+
+  // ─── Students ──────────
+  // Each entry: { id, startDate, endDate }
+  let selectedStudents = $state([])
   let searchQuery = $state('')
   let filteredStudents = $derived(
     students.filter((s) => s.englishName?.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
-  // Form State
-  // selectedStudents is now: { id, startDate, endDate }[]
-  let selectedStudents = $state([])
-  let originalState = $state({ timeslotId: null, roomId: null, startDate: null })
-
-  let form = $state({
-    id: null,
-    mode: 'create',
-    room: null,
-    timeslot: null,
-    subject: null,
-    teacher: null,
-    startDate: null,
-    endDate: null,
-  })
-
-  // Derived Values
+  // ─── Derived ──────────
   let maxCapacity = $derived(form.room?.maxStudents || 0)
   let currentCount = $derived(selectedStudents.length)
   let isOverCapacity = $derived(maxCapacity > 0 && currentCount > maxCapacity)
 
-  /**
-   * Loads all necessary dropdown data once
-   */
-  async function loadData() {
+  // ─── Data Loading ──────────
+
+  async function loadDropdowns() {
     try {
       const [subj, stu, teach, room, ts] = await Promise.all([
         pb.collection('subject').getFullList({ sort: 'name' }),
@@ -60,191 +61,167 @@
       rooms = room
       timeslots = ts
     } catch (e) {
-      console.error(e)
       toast.error('Failed to load dropdown options')
     }
   }
 
+  // ─── Open / Close ──────────
+
   export async function open(data) {
-    if (subjects.length === 0) await loadData()
+    if (subjects.length === 0) await loadDropdowns()
 
     const existing = data.schedule || data.schedules?.[0]
 
     form = {
       mode: data.mode,
       id: existing?.id || null,
-      room: rooms.find((r) => r.id === (existing?.roomId || data.room?.id)),
-      timeslot: timeslots.find((t) => t.id === (existing?.timeslotId || data.timeslot?.id)),
       subject: subjects.find((s) => s.id === (existing?.subject?.id || data.room?.expand?.subject?.id)) || null,
       teacher: teachers.find((t) => t.id === (existing?.teacher?.id || data.teacher?.id)) || null,
+      room: rooms.find((r) => r.id === (existing?.roomId || data.room?.id)),
+      timeslot: timeslots.find((t) => t.id === (existing?.timeslotId || data.timeslot?.id)),
       startDate: data.startDate,
       endDate: data.endDate,
     }
 
-    // Store original state to find records to replace during Edit
     originalState = {
       timeslotId: form.timeslot?.id,
       roomId: form.room?.id,
       startDate: data.startDate,
     }
 
-    if (data.mode === 'edit' && data.schedules) {
-      // Preserve each student's own start/end dates from existing records
-      selectedStudents = data.schedules.flatMap((s) => {
-        const getId = (stu) => (typeof stu === 'object' ? stu.id : stu)
-        const startDate = s.start?.split(' ')[0] || data.startDate
-        const endDate = s.end?.split(' ')[0] || data.endDate
-
-        if (Array.isArray(s.students)) {
-          return s.students.map((stu) => ({ id: getId(stu), startDate, endDate }))
-        }
-        const id = s.student?.id ?? s.student ?? s.studentId
-        return id ? [{ id, startDate, endDate }] : []
-      })
-    } else {
-      selectedStudents = []
-    }
+    selectedStudents = data.mode === 'edit' && data.schedules ? extractStudentsFromSchedules(data.schedules, data) : []
 
     showDeleteConfirm = false
     show = true
   }
 
-  function close() {
-    show = false
-    selectedStudents = []
-    searchQuery = ''
-    loading = false
-    showDeleteConfirm = false
+  function extractStudentsFromSchedules(schedules, data) {
+    return schedules.flatMap((s) => {
+      const startDate = s.start?.split(' ')[0] || data.startDate
+      const endDate = s.end?.split(' ')[0] || data.endDate
+      const getId = (stu) => (typeof stu === 'object' ? stu.id : stu)
+
+      if (Array.isArray(s.students)) {
+        return s.students.map((stu) => ({ id: getId(stu), startDate, endDate }))
+      }
+
+      const id = s.student?.id ?? s.student ?? s.studentId
+      return id ? [{ id, startDate, endDate }] : []
+    })
   }
 
+  function close() {
+    show = false
+    loading = false
+    showDeleteConfirm = false
+    selectedStudents = []
+    searchQuery = ''
+  }
+
+  // ─── Student Selection ──────────
+
   function toggleStudent(id) {
-    if (selectedStudents.find((s) => s.id === id)) {
+    const alreadySelected = selectedStudents.find((s) => s.id === id)
+
+    if (alreadySelected) {
       selectedStudents = selectedStudents.filter((s) => s.id !== id)
-    } else {
-      if (maxCapacity > 0 && currentCount >= maxCapacity) {
-        return toast.error(`Room capacity reached (${maxCapacity})`)
-      }
-      // Default to the group's global dates when first checked
-      selectedStudents = [...selectedStudents, { id, startDate: form.startDate, endDate: form.endDate }]
+      return
     }
+
+    if (maxCapacity > 0 && currentCount >= maxCapacity) {
+      toast.error(`Room capacity reached (${maxCapacity})`)
+      return
+    }
+
+    selectedStudents = [...selectedStudents, { id, startDate: form.startDate, endDate: form.endDate }]
   }
 
   function updateStudentDate(id, field, value) {
     selectedStudents = selectedStudents.map((s) => (s.id === id ? { ...s, [field]: value } : s))
   }
 
+  // ─── Validation ──────────
+
+  function validateForm() {
+    if (!form.subject || !form.teacher || !form.room || !form.timeslot) return 'Please fill all required fields'
+    if (selectedStudents.length === 0) return 'Select at least one student'
+
+    for (const stu of selectedStudents) {
+      const name = students.find((s) => s.id === stu.id)?.englishName || 'A student'
+      if (!stu.startDate || !stu.endDate) return `${name} is missing a start or end date`
+      if (stu.endDate < stu.startDate) return `${name}'s end date is before their start date`
+    }
+
+    return null
+  }
+
+  // ─── Conflict Check ──────────
+
   async function checkConflicts() {
-    // Check conflicts per-student using their individual date ranges
     for (const stu of selectedStudents) {
       const startStr = `${stu.startDate} 00:00:00.000Z`
       const endStr = `${stu.endDate} 00:00:00.000Z`
 
-      const filter = `timeslot = "${form.timeslot.id}" && start <= "${endStr}" && end >= "${startStr}"`
-
-      const existingSchedules = await pb.collection('schedule').getFullList({
-        filter,
+      const records = await pb.collection('schedule').getFullList({
+        filter: `timeslot = "${form.timeslot.id}" && start <= "${endStr}" && end >= "${startStr}"`,
         expand: 'room,teacher',
       })
 
-      // Filter out the records we are currently editing
+      // Exclude the records we're currently editing
       const others =
         form.mode === 'edit'
-          ? existingSchedules.filter(
+          ? records.filter(
               (s) =>
                 s.room !== originalState.roomId ||
                 s.timeslot !== originalState.timeslotId ||
                 s.start.split(' ')[0] !== originalState.startDate
             )
-          : existingSchedules
+          : records
 
-      // 1. Teacher Conflict
-      const tConflict = others.find((s) => s.teacher === form.teacher.id)
-      if (tConflict)
-        throw new Error(`Teacher ${form.teacher.name} is busy in ${tConflict.expand?.room?.name || 'another room'}.`)
+      // Teacher already booked elsewhere
+      const teacherBusy = others.find((s) => s.teacher === form.teacher.id)
+      if (teacherBusy)
+        throw new Error(`${form.teacher.name} is busy in ${teacherBusy.expand?.room?.name || 'another room'}.`)
 
-      // 2. Room Conflict (different teacher in same room/time)
-      const rConflict = others.find((s) => s.room === form.room.id && s.teacher !== form.teacher.id)
-      if (rConflict)
-        throw new Error(
-          `Room ${form.room.name} is occupied by ${rConflict.expand?.teacher?.name || 'another teacher'}.`
-        )
+      // Room taken by a different teacher
+      const roomTaken = others.find((s) => s.room === form.room.id && s.teacher !== form.teacher.id)
+      if (roomTaken)
+        throw new Error(`${form.room.name} is occupied by ${roomTaken.expand?.teacher?.name || 'another teacher'}.`)
 
-      // 3. Student Conflict (only check this specific student)
-      const sConflict = others.find((s) => {
-        const studentId = typeof s.student === 'object' ? s.student.id : s.student
-        return studentId === stu.id
+      // Student already has a class at this time
+      const studentBusy = others.find((s) => {
+        const sid = typeof s.student === 'object' ? s.student.id : s.student
+        return sid === stu.id
       })
-      if (sConflict) {
-        const name = students.find((std) => std.id === stu.id)?.englishName || 'Student'
-        throw new Error(`${name} already has a class in ${sConflict.expand?.room?.name}.`)
+      if (studentBusy) {
+        const name = students.find((s) => s.id === stu.id)?.englishName || 'Student'
+        throw new Error(`${name} already has a class in ${studentBusy.expand?.room?.name}.`)
       }
     }
   }
 
-  async function deleteSchedule() {
-    loading = true
-    try {
-      const existing = await pb.collection('schedule').getFullList({
-        filter: `timeslot = "${originalState.timeslotId}" && room = "${originalState.roomId}" && start = "${originalState.startDate} 00:00:00.000Z"`,
-        fields: 'id',
-      })
-
-      if (existing.length === 0) {
-        toast.error('No matching schedule records found')
-        return
-      }
-
-      const batch = pb.createBatch()
-      existing.forEach((rec) => batch.collection('schedule').delete(rec.id))
-      await batch.send()
-
-      toast.success('Schedule deleted')
-      onrefresh?.()
-      close()
-    } catch (e) {
-      toast.error(e.message || 'Failed to delete schedule')
-    } finally {
-      loading = false
-      showDeleteConfirm = false
-    }
-  }
+  // ─── Save ──────────
 
   async function save() {
-    if (!form.subject || !form.teacher || !form.room || !form.timeslot) {
-      return toast.error('Please fill all required fields')
-    }
-    if (selectedStudents.length === 0) return toast.error('Select at least one student')
-
-    // Validate each student has their own dates filled
-    const missingDates = selectedStudents.find((s) => !s.startDate || !s.endDate)
-    if (missingDates) {
-      const name = students.find((std) => std.id === missingDates.id)?.englishName || 'A student'
-      return toast.error(`${name} is missing a start or end date`)
-    }
-
-    // Validate each student's end date is not before start date
-    const invalidRange = selectedStudents.find((s) => s.endDate < s.startDate)
-    if (invalidRange) {
-      const name = students.find((std) => std.id === invalidRange.id)?.englishName || 'A student'
-      return toast.error(`${name}'s end date is before their start date`)
-    }
+    const error = validateForm()
+    if (error) return toast.error(error)
 
     loading = true
     try {
       await checkConflicts()
 
-      // Use a Batch to group all deletes and creates into ONE network request
       const batch = pb.createBatch()
 
+      // In edit mode, delete existing records first
       if (form.mode === 'edit') {
-        const existing = await pb.collection('schedule').getFullList({
+        const toDelete = await pb.collection('schedule').getFullList({
           filter: `timeslot = "${originalState.timeslotId}" && room = "${originalState.roomId}" && start = "${originalState.startDate} 00:00:00.000Z"`,
           fields: 'id',
         })
-        existing.forEach((rec) => batch.collection('schedule').delete(rec.id))
+        toDelete.forEach((rec) => batch.collection('schedule').delete(rec.id))
       }
 
-      // Each student uses their own startDate/endDate
+      // Create one record per student
       selectedStudents.forEach(({ id: studentId, startDate, endDate }) => {
         batch.collection('schedule').create({
           timeslot: form.timeslot.id,
@@ -267,6 +244,33 @@
       loading = false
     }
   }
+
+  // ─── Delete ────────
+
+  async function deleteSchedule() {
+    loading = true
+    try {
+      const toDelete = await pb.collection('schedule').getFullList({
+        filter: `timeslot = "${originalState.timeslotId}" && room = "${originalState.roomId}" && start = "${originalState.startDate} 00:00:00.000Z"`,
+        fields: 'id',
+      })
+
+      if (toDelete.length === 0) return toast.error('No matching schedule records found')
+
+      const batch = pb.createBatch()
+      toDelete.forEach((rec) => batch.collection('schedule').delete(rec.id))
+      await batch.send()
+
+      toast.success('Schedule deleted')
+      onrefresh?.()
+      close()
+    } catch (e) {
+      toast.error(e.message || 'Failed to delete schedule')
+    } finally {
+      loading = false
+      showDeleteConfirm = false
+    }
+  }
 </script>
 
 {#if show}
@@ -281,7 +285,7 @@
       </header>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <!-- Left Column: Schedule Fields -->
+        <!-- Left: Schedule Fields -->
         <div class="space-y-4">
           <div class="grid grid-cols-2 gap-2">
             <div class="form-control">
@@ -334,7 +338,7 @@
           </div>
         </div>
 
-        <!-- Right Column: Students with per-student dates -->
+        <!-- Right: Student Selection -->
         <div class="flex flex-col">
           <div class="flex justify-between items-center mb-2">
             <!-- svelte-ignore a11y_label_has_associated_control -->
@@ -344,21 +348,19 @@
             </span>
           </div>
 
-          <div class="mb-3">
-            <input
-              type="text"
-              placeholder="Search students..."
-              bind:value={searchQuery}
-              class="input input-bordered input-sm w-full"
-            />
-          </div>
+          <input
+            type="text"
+            placeholder="Search students..."
+            bind:value={searchQuery}
+            class="input input-bordered input-sm w-full mb-3"
+          />
 
           <div class="border rounded-lg overflow-y-auto bg-base-200/50 p-2 h-72">
             {#each filteredStudents as s (s.id)}
               {@const entry = selectedStudents.find((x) => x.id === s.id)}
               {@const isSelected = !!entry}
+
               <div class="mb-1 rounded-md {isSelected ? 'bg-base-300/60' : ''}">
-                <!-- Student row -->
                 <label class="flex items-center gap-3 p-2 hover:bg-base-300 rounded-md cursor-pointer transition-all">
                   <input
                     type="checkbox"
@@ -372,7 +374,6 @@
                   </span>
                 </label>
 
-                <!-- Per-student date pickers, only visible when checked -->
                 {#if isSelected}
                   <div class="grid grid-cols-2 gap-1 px-2 pb-2">
                     <div class="form-control">
@@ -409,7 +410,7 @@
         </div>
       </div>
 
-      <!-- Delete confirmation inline prompt -->
+      <!-- Delete Confirmation -->
       {#if showDeleteConfirm}
         <div class="alert alert-soft alert-error mt-6 flex items-center justify-between gap-4">
           <span class="text-sm font-medium">Delete all records for this schedule? This cannot be undone.</span>
@@ -428,8 +429,8 @@
         </div>
       {/if}
 
+      <!-- Actions -->
       <div class="modal-action mt-8">
-        <!-- Delete button only visible in edit mode -->
         {#if form.mode === 'edit'}
           <button
             class="btn btn-error btn-soft mr-auto"
