@@ -14,9 +14,6 @@
   let rooms = $state([])
   let isLoading = $state(false)
 
-  // Store for scroll restoration
-  let scrollContainer = $state(null)
-
   // --- Helper Functions ---
   function getWeekStart(date) {
     const d = new Date(date)
@@ -35,17 +32,15 @@
   }
 
   const changeWeek = async (weeks) => {
-    // Store current scroll position before anything changes
+    // Capture scroll position before changing week
     const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
     const savedScrollTop = wrapper?.scrollTop || 0
     const savedScrollLeft = wrapper?.scrollLeft || 0
 
-    // Update week and reload
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
 
-    // Pass saved scroll position to loadSchedules
     await loadSchedules(savedScrollTop, savedScrollLeft)
   }
 
@@ -75,13 +70,6 @@
 
   async function loadSchedules(savedScrollTop = null, savedScrollLeft = null) {
     if (isLoading) return
-
-    // Auto-capture scroll if not provided by caller
-    if (savedScrollTop === null) {
-      const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
-      savedScrollTop = wrapper?.scrollTop || 0
-      savedScrollLeft = wrapper?.scrollLeft || 0
-    }
 
     isLoading = true
     try {
@@ -141,33 +129,26 @@
       })
 
       if (gridInstance) {
-        // Hide the grid briefly to prevent visual jump
-        const gridContainer = document.getElementById('unified-grid')
-        if (gridContainer) {
-          gridContainer.style.opacity = '0'
+        // Capture current scroll if not provided
+        if (savedScrollTop === null) {
+          const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+          savedScrollTop = wrapper?.scrollTop || 0
+          savedScrollLeft = wrapper?.scrollLeft || 0
         }
 
-        // Update data
+        // Update data without hiding
         gridInstance.updateConfig({ data }).forceRender()
 
-        // Restore scroll position after render with RAF to ensure smooth
+        // Restore scroll position after render
         requestAnimationFrame(() => {
-          setTimeout(() => {
-            const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
-            if (wrapper) {
-              if (savedScrollTop !== null) {
-                wrapper.scrollTop = savedScrollTop
-                wrapper.scrollLeft = savedScrollLeft || 0
-              }
-            }
-
-            // Fade back in
-            if (gridContainer) {
-              gridContainer.style.opacity = '1'
-            }
-          }, 0)
+          const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+          if (wrapper) {
+            wrapper.scrollTop = savedScrollTop
+            wrapper.scrollLeft = savedScrollLeft || 0
+          }
         })
       } else {
+        // ... rest of initialization code remains the same
         const columns = [
           { name: 'Teacher', width: '120px', formatter: (c) => c.value },
           { name: 'Room', width: '120px', formatter: (c) => c.value },
@@ -227,6 +208,14 @@
     }
   }
 
+  // Refresh function that preserves scroll
+  const refreshWithScroll = async () => {
+    const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+    const savedScrollTop = wrapper?.scrollTop || 0
+    const savedScrollLeft = wrapper?.scrollLeft || 0
+    await loadSchedules(savedScrollTop, savedScrollLeft)
+  }
+
   // Initialize on mount
   onMount(() => {
     loadSchedules()
@@ -257,10 +246,11 @@
     </div>
   </div>
 
-  <div id="unified-grid" class="border rounded-lg transition-opacity duration-150"></div>
+  <div id="unified-grid" class="border rounded-lg"></div>
 </div>
 
-<CombineModal bind:this={combineModal} onrefresh={loadSchedules} />
+<!-- Pass the refresh function that preserves scroll -->
+<CombineModal bind:this={combineModal} onrefresh={refreshWithScroll} />
 
 <style>
   :global(html) {
