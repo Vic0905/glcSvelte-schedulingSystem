@@ -36,7 +36,13 @@
   let selectedStudents = $state([])
   let searchQuery = $state('')
   let filteredStudents = $derived(
-    students.filter((s) => s.englishName?.toLowerCase().includes(searchQuery.toLowerCase()))
+    students
+      .filter((s) => s.englishName?.toLowerCase().includes(searchQuery.toLowerCase()))
+      .sort((a, b) => {
+        const aSelected = selectedStudents.some((x) => x.id === a.id)
+        const bSelected = selectedStudents.some((x) => x.id === b.id)
+        return bSelected - aSelected
+      })
   )
 
   // ─── Derived ──────────
@@ -288,14 +294,26 @@
         <!-- Left: Schedule Fields -->
         <div class="space-y-4">
           <div class="grid grid-cols-2 gap-2">
-            <div class="form-control">
+            <!-- <div class="form-control">
               <label class="label text-xs font-bold" for="start">Default Start</label>
-              <input id="start" type="date" bind:value={form.startDate} class="input input-bordered input-sm w-full" />
+              <input
+                id="start"
+                type="date"
+                bind:value={form.startDate}
+                class="input input-bordered input-sm w-full"
+                disabled={form.mode === 'edit'}
+              />
             </div>
             <div class="form-control">
               <label class="label text-xs font-bold" for="end">Default End</label>
-              <input id="end" type="date" bind:value={form.endDate} class="input input-bordered input-sm w-full" />
-            </div>
+              <input
+                id="end"
+                type="date"
+                bind:value={form.endDate}
+                class="input input-bordered input-sm w-full"
+                disabled={form.mode === 'edit'}
+              />
+            </div> -->
           </div>
 
           <div class="form-control">

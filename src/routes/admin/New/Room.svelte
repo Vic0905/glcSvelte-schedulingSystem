@@ -1,5 +1,5 @@
 <script>
-  import { onMount, untrack } from 'svelte'
+  import { onMount } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
   import { toast } from 'svelte-sonner'
@@ -29,14 +29,42 @@
 
   // --- Logic ---
 
+  /**
+   * Checks whether a given teacher ID belongs to a disabled teacher.
+   * Uses the full (unfiltered) teachers list stored in allTeachers.
+   */
+  let allTeachers = $state([])
+
+  function isTeacherActive(teacherId) {
+    if (!teacherId) return false
+    const teacher = allTeachers.find((t) => t.id === teacherId)
+    return teacher ? teacher.status !== 'disabled' : false
+  }
+
   async function loadInitialData() {
     try {
       const [teacherList, roomList] = await Promise.all([
         pb.collection('teacher').getFullList({ sort: 'name' }),
-        pb.collection('roomType').getFullList({ expand: 'teacher' }), // Let JS handle the sorting
+        pb.collection('roomType').getFullList({ expand: 'teacher' }),
       ])
 
-      teachers = teacherList
+      // Keep the full list for status checks
+      allTeachers = teacherList
+
+      // Only show active (non-disabled) teachers in the dropdown
+      teachers = teacherList.filter((t) => t.status !== 'disabled')
+
+      // Auto-unassign any room whose teacher is disabled — fire-and-forget in parallel
+      const disabledTeacherIds = new Set(teacherList.filter((t) => t.status === 'disabled').map((t) => t.id))
+      const roomsToFix = roomList.filter((r) => r.teacher && disabledTeacherIds.has(r.teacher))
+      if (roomsToFix.length > 0) {
+        await Promise.all(roomsToFix.map((r) => pb.collection('roomType').update(r.id, { teacher: null })))
+        // Reflect the fix locally so the grid shows Unassigned immediately
+        roomsToFix.forEach((r) => {
+          r.teacher = null
+          r.expand = {}
+        })
+      }
 
       // Sort naturally using JS localeCompare
       rooms = roomList.sort((a, b) => {
@@ -147,30 +175,40 @@
     const currentRooms = rooms
 
     if (gridInstance && currentRooms.length >= 0) {
-      const data = currentRooms.map((r) => [
-        r.name,
-        r.roomType?.toUpperCase(),
-        r.maxStudents,
-        r.expand?.teacher?.name || 'Unassigned',
-        h('div', { className: 'flex gap-2' }, [
-          h(
-            'button',
-            {
-              className: 'btn btn-xs btn-outline btn-info',
-              onclick: () => openEdit(r),
-            },
-            'Edit'
-          ),
-          h(
-            'button',
-            {
-              className: 'btn btn-xs btn-outline btn-error',
-              onclick: () => deleteRoom(r.id),
-            },
-            'Delete'
-          ),
-        ]),
-      ])
+      const data = currentRooms.map((r) => {
+        // Determine teacher display: show "(Disabled)" badge if teacher is inactive
+        const assignedTeacher = r.expand?.teacher
+        const teacherName = assignedTeacher
+          ? assignedTeacher.status === 'disabled'
+            ? `${assignedTeacher.name} (Disabled)`
+            : assignedTeacher.name
+          : 'Unassigned'
+
+        return [
+          r.name,
+          r.roomType?.toUpperCase(),
+          r.maxStudents,
+          teacherName,
+          h('div', { className: 'flex gap-2' }, [
+            h(
+              'button',
+              {
+                className: 'btn btn-xs btn-outline btn-info',
+                onclick: () => openEdit(r),
+              },
+              'Edit'
+            ),
+            h(
+              'button',
+              {
+                className: 'btn btn-xs btn-outline btn-error',
+                onclick: () => deleteRoom(r.id),
+              },
+              'Delete'
+            ),
+          ]),
+        ]
+      })
 
       gridInstance.updateConfig({ data }).forceRender()
     }
