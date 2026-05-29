@@ -118,6 +118,20 @@
       </ul>
     </details>
   </li>
+  <li>
+    <details>
+      <summary>Combined Booking</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/new/schedule">Combine Input Table</a></li>
+        <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
+        <li><a href="/#/new/studentview">StudentView Table</a></li>
+        <li><a href="/#/new/teacherview">TeacherView Table</a></li>
+        <li><a href="/#/new/teacherinfo">Teacher Information</a></li>
+        <li><a href="/#/new/studentinfo">Student Information</a></li>
+        <li><a href="/#/new/room">Room Information</a></li>
+      </ul>
+    </details>
+  </li>
 {:else if current.user && current.user.role === 'teacher'}
   <!-- teacher routes -->
   <!-- <li>
