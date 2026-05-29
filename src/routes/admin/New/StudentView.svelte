@@ -5,37 +5,10 @@
   import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
 
-  // Centralized, isolated cache object
-  const cache = {
-    timeslots: null,
-    students: null,
-    teachers: null,
-    schedules: new Map(),
-    cacheDuration: 30000,
-    isValid: (key) => {
-      const cached = cache.schedules.get(key)
-      return cached && Date.now() - cached.timestamp < cache.cacheDuration
-    },
-    clearDependencies: () => {
-      cache.schedules.clear()
-      cache.teachers = null
-      cache.students = null
-    },
-  }
-
-  // Reactive States using Svelte 5 Runes
   let weekStart = $state(getWeekStart(new Date()))
   let isLoading = $state(false)
-  let scrollPositions = $state({ top: 0, left: 0 })
-
-  let studentGrid = null
-  let abortController = null
-  let reloadTimeout = null
-
-  // Track specific unsubscribe closures to prevent tearing down global listeners
-  let unsubSchedules = null
-  let unsubTeachers = null
-  let unsubStudents = null
+  let grid = null
+  let unsubSchedule = null
 
   function getWeekStart(date) {
     const d = new Date(date)
@@ -51,27 +24,12 @@
     return `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
   }
 
-  const saveScrollPosition = () => {
-    const wrapper = document.querySelector('#studentGridNew .gridjs-wrapper')
-    if (wrapper) scrollPositions = { top: wrapper.scrollTop, left: wrapper.scrollLeft }
-  }
-
-  const restoreScrollPosition = () => {
-    requestAnimationFrame(() => {
-      const wrapper = document.querySelector('#studentGridNew .gridjs-wrapper')
-      if (wrapper) {
-        wrapper.scrollTop = scrollPositions.top
-        wrapper.scrollLeft = scrollPositions.left
-      }
-    })
-  }
-
   const changeWeek = (weeks) => {
     if (isLoading) return
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-    loadStudentSchedule(true)
+    load() // new week — intentionally start at top
   }
 
   const formatCell = (cell) => {
@@ -99,138 +57,67 @@
     )
   }
 
-  async function loadStudentSchedule(forceRefresh = false) {
-    if (isLoading) return
-
-    abortController?.abort()
-    abortController = new AbortController()
-    const { signal } = abortController
-
-    saveScrollPosition()
-
-    if (!forceRefresh && cache.isValid(weekStart)) {
-      updateGrid(cache.schedules.get(weekStart).data)
-      return
-    }
-
+  async function load(savedScrollTop = null, savedScrollLeft = null) {
     isLoading = true
-
     try {
       const endD = new Date(weekStart)
       endD.setDate(endD.getDate() + 3)
-      const endDateStr = `${endD.toISOString().split('T')[0]} 23:59:59`
-      const startDateStr = `${weekStart} 00:00:00`
-      const dateFilter = `start <= "${endDateStr}" && end >= "${startDateStr}"`
+      const dateFilter = `start <= "${endD.toISOString().split('T')[0]} 23:59:59" && end >= "${weekStart} 00:00:00"`
 
-      const promises = []
-
-      if (!cache.timeslots) {
-        promises.push(pb.collection('timeslot').getFullList({ sort: 'start', requestKey: 'timeslots' }))
-      }
-      if (!cache.students) {
-        // Optimization: Server-side exclusion of graduated students
-        promises.push(
-          pb.collection('student').getFullList({
-            filter: 'status != "graduated"',
-            fields: 'id,name,englishName,course,level,status,created',
-            requestKey: 'students',
-          })
-        )
-      }
-      if (!cache.teachers) {
-        // Optimization: Server-side filter to omit dead records immediately
-        promises.push(
-          pb.collection('teacher').getFullList({
-            sort: 'name',
-            filter: 'status != "disabled"',
-            fields: 'id,name,status',
-            requestKey: 'teachers',
-          })
-        )
-      }
-
-      promises.push(
+      const [timeslots, students, schedules] = await Promise.all([
+        pb.collection('timeslot').getFullList({ sort: 'start' }),
+        pb.collection('student').getFullList({
+          filter: 'status != "graduated"',
+          fields: 'id,name,englishName,course,level,status,created',
+        }),
         pb.collection('schedule').getFullList({
           filter: dateFilter,
           expand: 'teacher,student,subject,room,timeslot',
-          $autoCancel: false,
-          requestKey: `schedules_${weekStart}`,
-        })
-      )
+        }),
+      ])
 
-      const results = await Promise.all(promises)
-      if (signal.aborted) return
-
-      let idx = 0
-      if (!cache.timeslots) cache.timeslots = results[idx++]
-      if (!cache.students) cache.students = results[idx++]
-      if (!cache.teachers) cache.teachers = results[idx++]
-
-      const allSchedules = results[idx++]
-
-      // Create indexed Maps for fast O(1) correlation matching
-      const teacherMap = new Map(cache.teachers.map((t) => [t.id, t]))
       const scheduleMap = new Map()
-
-      for (const s of allSchedules) {
+      for (const s of schedules) {
         const timeslotId = s.expand?.timeslot?.id
-        const teacherId = s.expand?.teacher?.id
         if (!timeslotId) continue
-
-        const teacher = teacherMap.get(teacherId)
-        // If teacher is disabled and has no live historical slot payload, skip it cleanly
-        if (!teacher && teacherId) continue
 
         const entry = {
           subject: s.expand?.subject,
-          teacher: teacher ? { ...s.expand?.teacher, status: teacher.status } : null,
+          teacher: s.expand?.teacher,
           room: s.expand?.room,
-          isGroup: Array.isArray(s.expand?.student),
         }
 
-        const students = Array.isArray(s.expand?.student)
+        const studentList = Array.isArray(s.expand?.student)
           ? s.expand.student
           : s.expand?.student
             ? [s.expand.student]
             : []
 
-        for (const student of students) {
+        for (const student of studentList) {
           if (!scheduleMap.has(student.id)) scheduleMap.set(student.id, new Map())
-
-          const isIndividual = !Array.isArray(s.expand?.student)
-          const studentTimeSlots = scheduleMap.get(student.id)
-
-          if (isIndividual || !studentTimeSlots.has(timeslotId)) {
-            studentTimeSlots.set(timeslotId, entry)
-          }
+          const slots = scheduleMap.get(student.id)
+          if (!slots.has(timeslotId)) slots.set(timeslotId, entry)
         }
       }
 
-      const data = cache.students.map((student) => {
-        const studentSchedules = scheduleMap.get(student.id) || new Map()
-        return [
-          { label: 'Student', value: student.name, status: student.status, created: student.created },
-          { label: 'English Name', value: student.englishName || '' },
-          { label: 'Course', value: student.course || '' },
-          { label: 'Level', value: student.level || '' },
-          ...cache.timeslots.map((ts) => {
-            const sched = studentSchedules.get(ts.id)
-            return sched ? [sched] : []
-          }),
-        ]
-      })
-
-      // Sort data layout: Mirror the original behavior exactly
-      data.sort((a, b) => {
-        const statusA = a[0].status === 'new' ? 1 : 0
-        const statusB = b[0].status === 'new' ? 1 : 0
-
-        // 1. Primary Sort: Revert to your original configuration (Old students float up, New students drop down)
-        if (statusA !== statusB) return statusA - statusB
-
-        // 2. Tie-breaker: Chronological alignment (Oldest created accounts remain at the absolute top)
-        return new Date(a[0].created).getTime() - new Date(b[0].created).getTime()
-      })
+      const data = students
+        .sort((a, b) => {
+          const diff = (a.status === 'new' ? 1 : 0) - (b.status === 'new' ? 1 : 0)
+          return diff !== 0 ? diff : new Date(a.created) - new Date(b.created)
+        })
+        .map((student) => {
+          const slots = scheduleMap.get(student.id) || new Map()
+          return [
+            { value: student.name, status: student.status },
+            { value: student.englishName || '' },
+            { value: student.course || '' },
+            { value: student.level || '' },
+            ...timeslots.map((ts) => {
+              const s = slots.get(ts.id)
+              return s ? [s] : []
+            }),
+          ]
+        })
 
       const columns = [
         {
@@ -241,7 +128,7 @@
               'div',
               { class: 'flex flex-col items-center text-center text-neutral-700 font-bold' },
               [
-                h('span', { class: 'font-semibold' }, cell.value),
+                h('span', {}, cell.value),
                 cell.status === 'new' && h('span', { class: 'badge badge-soft badge-success badge-xs mt-1' }, 'New'),
               ].filter(Boolean)
             ),
@@ -261,98 +148,64 @@
           width: '120px',
           formatter: (cell) => h('div', { class: 'text-center text-neutral-700 font-bold' }, cell.value),
         },
-        ...cache.timeslots.map((t) => ({
+        ...timeslots.map((t) => ({
           name: `${t.start} - ${t.end}`,
           width: '180px',
           formatter: formatCell,
         })),
       ]
 
-      const result = { data, columns }
-      cache.schedules.set(weekStart, { data: result, timestamp: Date.now() })
+      if (grid) {
+        // If caller didn't provide scroll, capture it now before forceRender wipes the DOM
+        if (savedScrollTop === null) {
+          const wrapper = document.querySelector('#studentGrid .gridjs-wrapper')
+          savedScrollTop = wrapper?.scrollTop ?? 0
+          savedScrollLeft = wrapper?.scrollLeft ?? 0
+        }
 
-      if (signal.aborted) return
-      updateGrid(result)
-    } catch (error) {
-      if (error.name === 'AbortError' || signal?.aborted) return
-      console.error('Error loading student schedule:', error)
-      toast.error('Failed to load student schedule')
-    } finally {
-      if (!signal.aborted) {
-        isLoading = false
-        abortController = null
+        grid.updateConfig({ data, columns }).forceRender()
+
+        requestAnimationFrame(() => {
+          const wrapper = document.querySelector('#studentGrid .gridjs-wrapper')
+          if (wrapper) {
+            wrapper.scrollTop = savedScrollTop
+            wrapper.scrollLeft = savedScrollLeft
+          }
+        })
+      } else {
+        grid = new Grid({
+          columns,
+          data,
+          search: false,
+          sort: false,
+          pagination: false,
+          className: { table: 'w-full border text-xs !border-collapse', th: 'text-center' },
+          style: { table: { 'border-collapse': 'collapse', 'table-layout': 'fixed' } },
+        }).render(document.getElementById('studentGrid'))
       }
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load schedule')
+    } finally {
+      isLoading = false
     }
   }
 
-  function updateGrid({ data, columns }) {
-    const targetEl = document.getElementById('studentGridNew')
-    if (!targetEl) return
-
-    if (studentGrid) {
-      studentGrid.updateConfig({ data, columns }).forceRender()
-      restoreScrollPosition()
-    } else {
-      studentGrid = new Grid({
-        columns,
-        data,
-        search: false,
-        sort: false,
-        pagination: false,
-        className: { table: 'w-full border text-xs !border-collapse', th: 'text-center' },
-        style: { table: { 'border-collapse': 'collapse', 'table-layout': 'fixed' } },
-      }).render(targetEl)
-    }
-  }
-
-  function handleToast(e, label = 'Schedule') {
-    const messages = { create: `${label} created`, update: `${label} updated`, delete: `${label} deleted` }
-    const types = { create: toast.success, update: toast.info, delete: toast.error }
-    types[e.action]?.(messages[e.action])
-  }
-
-  const debouncedReload = () => {
-    if (isLoading) return
-    clearTimeout(reloadTimeout)
-    reloadTimeout = setTimeout(() => {
-      cache.clearDependencies()
-      loadStudentSchedule(true)
-    }, 200)
-  }
-
-  onMount(() => {
-    loadStudentSchedule()
-
-    // Fixed: Capture subscription functions directly to avoid app-wide unmount leaks
-    pb.collection('schedule')
-      .subscribe('*', (e) => {
-        handleToast(e, 'Schedule')
-        cache.schedules.delete(weekStart)
-        loadStudentSchedule(true)
-      })
-      .then((unsub) => (unsubSchedules = unsub))
-
-    pb.collection('teacher')
-      .subscribe('*', debouncedReload)
-      .then((unsub) => (unsubTeachers = unsub))
-    pb.collection('student')
-      .subscribe('*', debouncedReload)
-      .then((unsub) => (unsubStudents = unsub))
+  onMount(async () => {
+    await load()
+    unsubSchedule = await pb.collection('schedule').subscribe('*', () => {
+      // Read scroll SYNCHRONOUSLY before load() fires any awaits
+      const wrapper = document.querySelector('#studentGrid .gridjs-wrapper')
+      const top = wrapper?.scrollTop ?? 0
+      const left = wrapper?.scrollLeft ?? 0
+      load(top, left)
+    })
   })
 
   onDestroy(() => {
-    clearTimeout(reloadTimeout)
-    abortController?.abort()
-
-    // Safely execute targeted cleanups
-    if (typeof unsubSchedules === 'function') unsubSchedules()
-    if (typeof unsubTeachers === 'function') unsubTeachers()
-    if (typeof unsubStudents === 'function') unsubStudents()
-
-    if (studentGrid) {
-      studentGrid.destroy()
-      studentGrid = null
-    }
+    unsubSchedule?.()
+    grid?.destroy()
+    grid = null
   })
 </script>
 
@@ -372,21 +225,21 @@
     </div>
   </div>
 
-  <div id="studentGridNew" class="border rounded-lg overflow-hidden"></div>
+  <div id="studentGrid" class="border rounded-lg overflow-hidden"></div>
 </div>
 
 <style>
-  #studentGridNew :global(.gridjs-wrapper) {
+  #studentGrid :global(.gridjs-wrapper) {
     max-height: 700px;
     overflow: auto;
   }
 
   /* Structural improvement: target the table row background explicitly to guarantee inheriting values smoothly */
-  #studentGridNew :global(tr) {
+  #studentGrid :global(tr) {
     background-color: #ffffff;
   }
 
-  #studentGridNew :global(th) {
+  #studentGrid :global(th) {
     position: sticky;
     top: 0;
     z-index: 20;
@@ -395,12 +248,12 @@
     color: #ffffff;
   }
 
-  #studentGridNew :global(td) {
+  #studentGrid :global(td) {
     background-color: inherit;
   }
 
-  #studentGridNew :global(th:nth-child(1)),
-  #studentGridNew :global(td:nth-child(1)) {
+  #studentGrid :global(th:nth-child(1)),
+  #studentGrid :global(td:nth-child(1)) {
     position: sticky;
     left: 0;
     z-index: 15;
@@ -408,13 +261,13 @@
     background-color: inherit;
   }
 
-  #studentGridNew :global(th:nth-child(1)) {
+  #studentGrid :global(th:nth-child(1)) {
     z-index: 25;
     background-color: #484b4f !important;
   }
 
-  #studentGridNew :global(th:nth-child(2)),
-  #studentGridNew :global(td:nth-child(2)) {
+  #studentGrid :global(th:nth-child(2)),
+  #studentGrid :global(td:nth-child(2)) {
     position: sticky;
     left: 180px;
     z-index: 10;
@@ -422,13 +275,13 @@
     background-color: inherit;
   }
 
-  #studentGridNew :global(th:nth-child(2)) {
+  #studentGrid :global(th:nth-child(2)) {
     z-index: 25;
     background-color: #484b4f !important;
   }
 
-  #studentGridNew :global(th:nth-child(3)),
-  #studentGridNew :global(td:nth-child(3)) {
+  #studentGrid :global(th:nth-child(3)),
+  #studentGrid :global(td:nth-child(3)) {
     position: sticky;
     left: 320px;
     z-index: 10;
@@ -436,13 +289,13 @@
     background-color: inherit;
   }
 
-  #studentGridNew :global(th:nth-child(3)) {
+  #studentGrid :global(th:nth-child(3)) {
     z-index: 25;
     background-color: #484b4f !important;
   }
 
-  #studentGridNew :global(th:nth-child(4)),
-  #studentGridNew :global(td:nth-child(4)) {
+  #studentGrid :global(th:nth-child(4)),
+  #studentGrid :global(td:nth-child(4)) {
     position: sticky;
     left: 440px;
     z-index: 10;
@@ -450,7 +303,7 @@
     background-color: inherit;
   }
 
-  #studentGridNew :global(th:nth-child(4)) {
+  #studentGrid :global(th:nth-child(4)) {
     z-index: 25;
     background-color: #484b4f !important;
   }

@@ -293,8 +293,8 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <!-- Left: Schedule Fields -->
         <div class="space-y-4">
-          <div class="grid grid-cols-2 gap-2">
-            <!-- <div class="form-control">
+          <!-- <div class="grid grid-cols-2 gap-2">
+            <div class="form-control">
               <label class="label text-xs font-bold" for="start">Default Start</label>
               <input
                 id="start"
@@ -313,8 +313,8 @@
                 class="input input-bordered input-sm w-full"
                 disabled={form.mode === 'edit'}
               />
-            </div> -->
-          </div>
+            </div>
+          </div> -->
 
           <div class="form-control">
             <label class="label text-xs font-bold" for="subject">Subject</label>

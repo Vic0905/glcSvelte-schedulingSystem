@@ -1,16 +1,19 @@
 <script>
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
+  import { onDestroy, onMount } from 'svelte'
   import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
 
-  let teacherGrid = $state(null)
   let weekStart = $state(getWeekStart(new Date()))
   let isLoading = $state(false)
+  let grid = null
+  let unsubSchedule = null
+  let unsubRoomType = null
+  let unsubTeacher = null
 
-  // Stable data — fetched once
+  // Static data — fetched once, refreshed only when rooms/teachers change
   let cachedTimeslots = []
-  let cachedRoomTypes = []
   let cachedTeachers = []
   let teacherRoomMap = new Map()
 
@@ -30,17 +33,12 @@
     return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
   }
 
-  const changeWeek = async (weeks) => {
+  const changeWeek = (weeks) => {
+    if (isLoading) return
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-    await loadSchedules()
-  }
-
-  function handleToast(e, label = 'Schedule') {
-    const messages = { create: `${label} created`, update: `${label} updated`, delete: `${label} deleted` }
-    const types = { create: toast.success, update: toast.info, delete: toast.error }
-    if (types[e.action]) types[e.action](messages[e.action])
+    load() // new week — intentionally start at top
   }
 
   const formatCell = (cell) => {
@@ -69,32 +67,30 @@
       pb.collection('teacher').getFullList({ sort: 'name', fields: 'id,name,status' }),
     ])
     cachedTimeslots = timeslots
-    cachedRoomTypes = roomTypes
     cachedTeachers = teachers
     teacherRoomMap = new Map(roomTypes.filter((rt) => rt.expand?.teacher).map((rt) => [rt.expand.teacher.id, rt.name]))
   }
 
-  async function loadSchedules() {
+  async function load(savedScrollTop = null, savedScrollLeft = null) {
     if (isLoading) return
     isLoading = true
     try {
       const endD = new Date(weekStart)
       endD.setDate(endD.getDate() + 3)
-      const endDateStr = `${endD.toISOString().split('T')[0]} 23:59:59`
+      const dateFilter = `start <= "${endD.toISOString().split('T')[0]} 23:59:59" && end >= "${weekStart} 00:00:00"`
 
       const schedules = await pb.collection('schedule').getFullList({
-        filter: `start <= "${endDateStr}" && end >= "${weekStart} 00:00:00"`,
+        filter: dateFilter,
         expand: 'teacher,student,subject,room,timeslot',
       })
 
-      // Build scheduleMap: "teacherId-timeslotId" -> [entries]
       const scheduleMap = new Map()
       const bookedTeacherIds = new Set()
 
-      schedules.forEach((s) => {
+      for (const s of schedules) {
         const tId = s.expand?.teacher?.id
         const tsId = s.expand?.timeslot?.id
-        if (!tId || !tsId) return
+        if (!tId || !tsId) continue
         bookedTeacherIds.add(tId)
         const key = `${tId}-${tsId}`
         if (!scheduleMap.has(key)) scheduleMap.set(key, [])
@@ -103,14 +99,13 @@
           students: s.expand?.student ? [{ name: s.expand.student.englishName }] : [],
           roomName: s.expand?.room?.name ?? null,
         })
-      })
+      }
 
-      // Show all non-disabled teachers + any disabled teacher who has a booking this week
       const teachers = cachedTeachers
         .filter((t) => t.status !== 'disabled' || bookedTeacherIds.has(t.id))
         .sort((a, b) => {
-          const aRoom = teacherRoomMap.get(a.id),
-            bRoom = teacherRoomMap.get(b.id)
+          const aRoom = teacherRoomMap.get(a.id)
+          const bRoom = teacherRoomMap.get(b.id)
           const getWeight = (room) => (room ? 1 : 2)
           if (getWeight(aRoom) !== getWeight(bRoom)) return getWeight(aRoom) - getWeight(bRoom)
           return (aRoom || a.name).localeCompare(bRoom || b.name)
@@ -122,40 +117,50 @@
         ...cachedTimeslots.map((ts) => ({ schedules: scheduleMap.get(`${t.id}-${ts.id}`) || [] })),
       ])
 
-      if (teacherGrid) {
-        const wrapper = document.querySelector('#teacherGridNew .gridjs-wrapper')
-        const scroll = { top: wrapper?.scrollTop || 0, left: wrapper?.scrollLeft || 0 }
-        teacherGrid.updateConfig({ data }).forceRender()
+      const columns = [
+        {
+          name: 'Teacher',
+          width: '150px',
+          formatter: (c) =>
+            h(
+              'div',
+              { class: 'flex flex-col items-center text-neutral-700 font-bold' },
+              [
+                h('span', {}, c.value),
+                c.status === 'new' && h('span', { class: 'badge badge-success badge-xs' }, 'New'),
+              ].filter(Boolean)
+            ),
+        },
+        {
+          name: 'Room',
+          width: '120px',
+          formatter: (c) => h('div', { class: 'text-center font-bold text-neutral-700' }, c.value),
+        },
+        ...cachedTimeslots.map((t) => ({
+          name: `${t.start} - ${t.end}`,
+          width: '180px',
+          formatter: formatCell,
+        })),
+      ]
+
+      if (grid) {
+        if (savedScrollTop === null) {
+          const wrapper = document.querySelector('#teacherGridNew .gridjs-wrapper')
+          savedScrollTop = wrapper?.scrollTop ?? 0
+          savedScrollLeft = wrapper?.scrollLeft ?? 0
+        }
+
+        grid.updateConfig({ data, columns }).forceRender()
+
         requestAnimationFrame(() => {
-          const w = document.querySelector('#teacherGridNew .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = scroll.top
-            w.scrollLeft = scroll.left
+          const wrapper = document.querySelector('#teacherGridNew .gridjs-wrapper')
+          if (wrapper) {
+            wrapper.scrollTop = savedScrollTop
+            wrapper.scrollLeft = savedScrollLeft
           }
         })
       } else {
-        const columns = [
-          {
-            name: 'Teacher',
-            width: '150px',
-            formatter: (c) =>
-              h(
-                'div',
-                { class: 'flex flex-col items-center text-neutral-700 font-bold' },
-                [
-                  h('span', {}, c.value),
-                  c.status === 'new' ? h('span', { class: 'badge badge-success badge-xs' }, 'New') : null,
-                ].filter(Boolean)
-              ),
-          },
-          {
-            name: 'Room',
-            width: '120px',
-            formatter: (c) => h('div', { class: 'text-center font-bold text-neutral-700' }, c.value),
-          },
-          ...cachedTimeslots.map((t) => ({ name: `${t.start} - ${t.end}`, width: '180px', formatter: formatCell })),
-        ]
-        teacherGrid = new Grid({
+        grid = new Grid({
           columns,
           data,
           className: { table: 'w-full border text-xs !border-collapse', th: 'text-center' },
@@ -170,30 +175,40 @@
     }
   }
 
-  $effect(() => {
-    loadStaticData().then(loadSchedules)
+  onMount(async () => {
+    await loadStaticData()
+    await load()
 
-    const subSchedule = pb.collection('schedule').subscribe('*', (e) => {
-      handleToast(e, 'Schedule')
-      loadSchedules()
+    unsubSchedule = await pb.collection('schedule').subscribe('*', () => {
+      const wrapper = document.querySelector('#teacherGridNew .gridjs-wrapper')
+      const top = wrapper?.scrollTop ?? 0
+      const left = wrapper?.scrollLeft ?? 0
+      load(top, left)
     })
 
-    // Invalidate static cache + reload if rooms or teachers change
-    const subRoomType = pb.collection('roomType').subscribe('*', async () => {
+    unsubRoomType = await pb.collection('roomType').subscribe('*', async () => {
       await loadStaticData()
-      loadSchedules()
-    })
-    const subTeacher = pb.collection('teacher').subscribe('*', async () => {
-      await loadStaticData()
-      loadSchedules()
+      const wrapper = document.querySelector('#teacherGridNew .gridjs-wrapper')
+      const top = wrapper?.scrollTop ?? 0
+      const left = wrapper?.scrollLeft ?? 0
+      load(top, left)
     })
 
-    return () => {
-      subSchedule.then((u) => u())
-      subRoomType.then((u) => u())
-      subTeacher.then((u) => u())
-      teacherGrid?.destroy()
-    }
+    unsubTeacher = await pb.collection('teacher').subscribe('*', async () => {
+      await loadStaticData()
+      const wrapper = document.querySelector('#teacherGridNew .gridjs-wrapper')
+      const top = wrapper?.scrollTop ?? 0
+      const left = wrapper?.scrollLeft ?? 0
+      load(top, left)
+    })
+  })
+
+  onDestroy(() => {
+    unsubSchedule?.()
+    unsubRoomType?.()
+    unsubTeacher?.()
+    grid?.destroy()
+    grid = null
   })
 </script>
 
