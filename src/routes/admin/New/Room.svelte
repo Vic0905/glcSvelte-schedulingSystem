@@ -157,7 +157,7 @@
         data: [], // Start empty
         search: true,
         pagination: { limit: 10 },
-        className: { table: 'table w-full' },
+        className: { table: 'table w-full', th: 'text-center', td: 'text-center' },
       }).render(gridElement)
     }
 
@@ -189,7 +189,7 @@
           r.roomType?.toUpperCase(),
           r.maxStudents,
           teacherName,
-          h('div', { className: 'flex gap-2' }, [
+          h('div', { className: 'flex gap-2 justify-center' }, [
             h(
               'button',
               {

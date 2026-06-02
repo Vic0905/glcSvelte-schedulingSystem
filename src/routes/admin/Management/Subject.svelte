@@ -5,208 +5,214 @@
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  let name = ''
-  let editingId = null
-  let showModal = false
-  let grid
-  let totalSubjects = 0
+  // --- State Management (Svelte 5 Runes) ---
+  let subjects = $state([])
+  let showModal = $state(false)
+  let gridElement = $state(null)
+  let gridInstance = null
 
-  async function loadSubject() {
-    const records = await pb.collection('subject').getFullList({
-      sort: '-created',
-    })
+  // Form State grouped into one object
+  let formData = $state({
+    id: null,
+    name: '',
+  })
 
-    //calculate the total subjects
-    totalSubjects = records.length
+  // --- Logic ---
 
-    const data = records.map((t) => [
-      t.name,
-      h('div', { className: 'flex gap-2 justify-center' }, [
-        h(
-          'button',
-          {
-            className: 'btn btn-ghost btn-sm btn-success',
-            onClick: () => openEdit(t),
-          },
-          'Edit'
-        ),
-        h(
-          'button',
-          {
-            className: 'btn btn-ghost btn-sm btn-error',
-            onClick: () => deleteSubject(t.id),
-          },
-          'Delete'
-        ),
-      ]),
-    ])
+  async function loadInitialData() {
+    try {
+      const records = await pb.collection('subject').getFullList({
+        sort: '-created',
+      })
 
-    if (grid) {
-      grid.updateConfig({ data }).forceRender()
-    } else {
-      grid = new Grid({
-        columns: [
-          { name: 'Name', width: '90px' },
-          { name: 'Actions', width: '10px' },
-        ],
-        data,
-        className: {
-          table: 'w-full text-xs !border-collapse',
-          th: 'bg-base-200 p-3 border-t border-b !border-x-0 text-center font-semibold',
-          td: 'p-3 border-t border-b !border-x-0 align-middle text-center',
-        },
-        pagination: {
-          enabled: true,
-          limit: 10,
-        },
-        search: true,
-        sort: true,
-      }).render(document.getElementById('subjectGrid'))
+      // Sort naturally using JS localeCompare like Room does
+      subjects = records.sort((a, b) => {
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      })
+    } catch (err) {
+      toast.error('Failed to synchronize data')
     }
   }
 
   async function saveSubject() {
-    if (!name.trim()) {
-      toast.error('Subject name is required')
-      return
-    }
+    const trimmedName = formData.name.trim()
+    if (!trimmedName) return toast.error('Subject name is required')
+
+    // Check if name already exists (Local Check)
+    const nameExists = subjects.find((s) => s.name.toLowerCase() === trimmedName.toLowerCase() && s.id !== formData.id)
+    if (nameExists) return toast.error(`A subject named "${trimmedName}" already exists!`)
 
     try {
-      // Check if subject name already exists (only for new subjects, not editing)
-      if (!editingId) {
-        // Get all existing subjects
-        const existingSubjects = await pb.collection('subject').getFullList({
-          fields: 'name',
-        })
-
-        // Check if name already exists (case-insensitive)
-        const normalizedInput = name.trim().toLowerCase()
-        const exists = existingSubjects.some((subject) => subject.name.toLowerCase() === normalizedInput)
-
-        if (exists) {
-          toast.error(`Subject "${name}" already exists!`)
-          return
-        }
+      const payload = {
+        name: trimmedName,
       }
 
-      // For editing: check if other subjects have this name
-      if (editingId) {
-        // Get all existing subjects
-        const existingSubjects = await pb.collection('subject').getFullList({
-          fields: 'name,id',
-        })
-
-        // Check if name already exists (case-insensitive) and it's not the current subject
-        const normalizedInput = name.trim().toLowerCase()
-        const exists = existingSubjects.some(
-          (subject) => subject.name.toLowerCase() === normalizedInput && subject.id !== editingId
-        )
-
-        if (exists) {
-          toast.error(`Subject "${name}" already exists!`)
-          return
-        }
-      }
-
-      if (editingId) {
-        await pb.collection('subject').update(editingId, { name })
-        toast.success('Subject updated successfully!')
+      if (formData.id) {
+        await pb.collection('subject').update(formData.id, payload)
+        toast.success('Subject updated')
       } else {
-        await pb.collection('subject').create({ name })
-        toast.success('Subject added successfully!')
+        await pb.collection('subject').create(payload)
+        toast.success('Subject created')
       }
 
-      name = ''
-      editingId = null
-      showModal = false
-      await loadSubject()
+      closeModal()
+      await loadInitialData()
     } catch (err) {
-      console.error(err)
-      toast.error('Error saving subject')
+      if (err.status === 400) {
+        toast.error('Save failed: This subject name is already in use.')
+      } else {
+        toast.error('An unexpected error occurred.')
+      }
     }
   }
 
   function openEdit(subject) {
-    name = subject.name
-    editingId = subject.id
+    formData = {
+      id: subject.id,
+      name: subject.name,
+    }
     showModal = true
+  }
+
+  function closeModal() {
+    showModal = false
+    formData = { id: null, name: '' }
   }
 
   async function deleteSubject(id) {
     if (confirm('Are you sure you want to delete this subject?')) {
       try {
         await pb.collection('subject').delete(id)
-        toast.success('Subject deleted successfully!')
-        await loadSubject()
+        toast.success('Deleted')
+        await loadInitialData()
       } catch (err) {
-        console.error(err)
-        toast.error('Failed to delete subject')
+        toast.error('Delete failed')
       }
     }
   }
 
-  function openAddModal() {
-    name = ''
-    editingId = null
-    showModal = true
-  }
+  // 1. Initialize the Grid ONLY ONCE
+  $effect(() => {
+    if (gridElement && !gridInstance) {
+      gridInstance = new Grid({
+        columns: [
+          { name: 'Subject Name', width: '300px' },
+          { name: 'Actions', width: '200px', sort: false },
+        ],
+        data: [], // Start empty
+        search: true,
+        pagination: { limit: 10 },
+        className: { table: 'table w-full', th: 'text-center', td: 'text-center' },
+      }).render(gridElement)
+    }
 
-  onMount(loadSubject)
+    return () => {
+      if (gridInstance) {
+        gridElement.innerHTML = ''
+        gridInstance = null
+      }
+    }
+  })
+
+  // 2. Update the data whenever 'subjects' changes
+  $effect(() => {
+    const currentSubjects = subjects
+
+    if (gridInstance && currentSubjects.length >= 0) {
+      const data = currentSubjects.map((s) => {
+        return [
+          s.name,
+          h('div', { className: 'flex gap-2 justify-center' }, [
+            h(
+              'button',
+              {
+                className: 'btn btn-xs btn-outline btn-info',
+                onclick: () => openEdit(s),
+              },
+              'Edit'
+            ),
+            h(
+              'button',
+              {
+                className: 'btn btn-xs btn-outline btn-error',
+                onclick: () => deleteSubject(s.id),
+              },
+              'Delete'
+            ),
+          ]),
+        ]
+      })
+
+      gridInstance.updateConfig({ data }).forceRender()
+    }
+  })
+
+  onMount(loadInitialData)
 </script>
 
-<div class="min-h-screen bg-base-200 py-8 px-4">
-  <div class="max-w-7xl mx-auto">
-    <!-- Header Section -->
-    <div class="bg-base-100 shadow-xl rounded-2xl p-6 mb-6">
-      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 class="text-2xl font-bold mb-2">Subject Management</h1>
-          <div class="flex gap=2 mt-2">
-            <div class="flex items-center gap-3">
-              <div>
-                <p class="text-xs text-base-content/60">Total Subjects</p>
-                <p class="text-lg font-bold">{totalSubjects}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="flex gap-3">
-          <button class="btn btn-ghost gap-2" on:click={openAddModal}> Add Subject </button>
-        </div>
-      </div>
+<main class="p-8 max-w-6xl mx-auto space-y-8">
+  <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
+    <div>
+      <h1 class="text-3xl font-extrabold tracking-tight text-base-content">Subject Management</h1>
     </div>
-
-    <!-- Data Grid Section -->
-    <div class="bg-base-100 shadow-xl rounded-2xl p-6">
-      <div id="subjectGrid" class="overflow-x-auto"></div>
+    <div class="flex items-center gap-4">
+      <button class="btn btn-outline btn-primary shadow-sm" onclick={() => (showModal = true)}> Add Subject </button>
     </div>
-  </div>
-</div>
+  </header>
 
-<!-- Add/Edit Modal -->
+  <section class="card bg-base-100 border border-base-200">
+    <div class="card-body p-0">
+      <div bind:this={gridElement}></div>
+    </div>
+  </section>
+</main>
+
 {#if showModal}
-  <div class="modal modal-open">
-    <div class="modal-box max-w-sm">
-      <h3 class="font-bold text-2xl mb-6 text-base-content">{editingId ? 'Edit Subject' : 'Add Subject'}</h3>
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="modal modal-open bg-black/40" role="dialog" onclick={(e) => e.target === e.currentTarget && closeModal()}>
+    <div class="modal-box max-w-md border border-base-300 p-6">
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="font-bold text-xl text-base-content">{formData.id ? 'Update' : 'Create'} Subject</h3>
+        <button class="btn btn-sm btn-circle btn-ghost" onclick={closeModal}>✕</button>
+      </div>
 
-      <div class="space-y-6">
-        <div class="form-control">
-          <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label class="label">
-            <span class="label-text font-medium">Subject Name <span class="text-error">*</span></span>
+      <div class="flex flex-col gap-5">
+        <div class="form-control w-full">
+          <label class="label py-1" for="subject-name">
+            <span class="label-text font-semibold text-base-content">Subject Name</span>
           </label>
-          <input type="text" bind:value={name} class="input input-bordered w-full" required />
+          <input
+            id="subject-name"
+            bind:value={formData.name}
+            type="text"
+            class="input input-bordered w-full focus:input-primary"
+            placeholder="e.g. Mathematics"
+          />
         </div>
       </div>
 
-      <div class="modal-action mt-8">
-        <button class="btn btn-ghost" on:click={() => (showModal = false)}>Cancel</button>
-        <button class="btn btn-ghost btn-neutral" on:click={saveSubject}>
-          {editingId ? 'Update' : 'Add'}
+      <div class="modal-action mt-8 gap-2">
+        <button class="btn btn-ghost px-6" onclick={closeModal}>Cancel</button>
+        <button class="btn btn-primary px-6 shadow-sm" onclick={saveSubject}>
+          {formData.id ? 'Save Changes' : 'Create Subject'}
         </button>
       </div>
     </div>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="modal-backdrop" on:click={() => (showModal = false)}></div>
   </div>
 {/if}
+
+<style>
+  /* Forces the vertical scrollbar to always reserve its layout space */
+  :global(html) {
+    scrollbar-gutter: stable;
+  }
+
+  :global(.gridjs-container) {
+    border-radius: 0.75rem;
+    overflow: hidden;
+  }
+  :global(.gridjs-search-input) {
+    border-radius: 0.5rem !important;
+  }
+</style>
