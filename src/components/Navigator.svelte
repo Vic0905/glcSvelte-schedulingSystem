@@ -103,23 +103,23 @@
       </ul>
     </details>
   </li> -->
-  <li>
+  <!-- <li>
     <details>
       <summary>Advance Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/new/advanceschedule">Combined Input Table</a></li>
-        <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
+        
         <li><a href="/#/new/advancestudentview">StudentView Table</a></li>
         <li><a href="/#/new/advanceteacherview">TeacherView Table</a></li>
-        <!-- <li><a href="/#/new/teacherinfo">Teacher Information</a></li>
+        <li><a href="/#/new/teacherinfo">Teacher Information</a></li>
         <li><a href="/#/new/studentinfo">Student Information</a></li>
-        <li><a href="/#/new/room">Room Information</a></li> -->
+        <li><a href="/#/new/room">Room Information</a></li>
       </ul>
     </details>
-  </li>
+  </li> -->
   <li>
     <details>
-      <summary>Current Booking</summary>
+      <summary>Combined Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/new/schedule">Combined Input Table</a></li>
         <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
