@@ -319,7 +319,7 @@
 
     <div class="ml-auto flex items-center gap-2">
       <!-- ← NEW button -->
-      <button
+      <!-- <button
         class="btn btn-outline btn-info btn-sm gap-1"
         onclick={copyToAdvance}
         disabled={isCopying || isLoading}
@@ -329,7 +329,7 @@
           <span class="loading loading-spinner loading-xs"></span>
         {:else}{/if}
         Copy to Advance
-      </button>
+      </button> -->
 
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
