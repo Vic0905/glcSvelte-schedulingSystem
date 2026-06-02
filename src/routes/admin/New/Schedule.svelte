@@ -242,7 +242,7 @@
         gridInstance = new Grid({
           columns,
           data,
-          height: '700px',
+          height: '600px',
           className: {
             table: 'w-full border text-xs !border-collapse',
             th: 'text-center',
@@ -347,7 +347,7 @@
   }
 
   #unified-grid :global(.gridjs-wrapper) {
-    max-height: 700px;
+    max-height: 650px;
     overflow: auto;
     contain: strict;
   }

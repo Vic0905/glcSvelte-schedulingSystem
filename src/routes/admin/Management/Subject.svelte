@@ -153,7 +153,7 @@
 <main class="p-8 max-w-6xl mx-auto space-y-8">
   <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
     <div>
-      <h1 class="text-3xl font-extrabold tracking-tight text-base-content">Subject Management</h1>
+      <h1 class="text-3xl font-extrabold tracking-tight text-base-content">Subject Information</h1>
     </div>
     <div class="flex items-center gap-4">
       <button class="btn btn-outline btn-primary shadow-sm" onclick={() => (showModal = true)}> Add Subject </button>

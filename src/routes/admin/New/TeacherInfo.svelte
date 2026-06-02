@@ -284,7 +284,7 @@
   <!-- Header -->
   <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
     <div>
-      <h1 class="text-3xl font-extrabold tracking-tight text-base-content">Teacher Management</h1>
+      <h1 class="text-3xl font-extrabold tracking-tight text-base-content">Teacher Information</h1>
       <div class="flex gap-4 mt-2 text-sm text-base-content/60">
         <span>Total <strong class="text-base-content">{stats.total}</strong></span>
         <span>Enabled <strong class="text-success">{stats.enabled}</strong></span>

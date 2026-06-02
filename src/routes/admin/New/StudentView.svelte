@@ -230,7 +230,7 @@
 
 <style>
   #studentGrid :global(.gridjs-wrapper) {
-    max-height: 700px;
+    max-height: 600px;
     overflow: auto;
   }
 

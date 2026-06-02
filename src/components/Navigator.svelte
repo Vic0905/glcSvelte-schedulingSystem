@@ -121,10 +121,10 @@
     <details>
       <summary>Combined Booking</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/new/schedule">Combined Input Table</a></li>
+        <li><a href="/#/new/schedule">Combined Input</a></li>
         <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
-        <li><a href="/#/new/studentview">StudentView Table</a></li>
-        <li><a href="/#/new/teacherview">TeacherView Table</a></li>
+        <li><a href="/#/new/studentview">StudentView</a></li>
+        <li><a href="/#/new/teacherview">TeacherView</a></li>
         <!-- <li><a href="/#/new/teacherinfo">Teacher Information</a></li>
         <li><a href="/#/new/studentinfo">Student Information</a></li>
         <li><a href="/#/new/room">Room Information</a></li> -->
@@ -135,15 +135,15 @@
     <details>
       <summary>Management</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/management/subject">Subject Information</a></li>
-        <li><a href="/#/new/room">Room Information</a></li>
+        <li><a href="/#/management/subject">Subject</a></li>
+        <li><a href="/#/new/room">Room</a></li>
         <!-- <li><a href="/#/management/room">Room</a></li> -->
         <!-- <li><a href="/#/management/group">Group</a></li> -->
         <!-- <li><a href="/#/management/student">Student</a></li> -->
         <!-- <li><a href="/#/management/teacher">Teacher</a></li> -->
         <!-- <li><a href="/#/management/bookings">Bookings</a></li> -->
-        <li><a href="/#/new/teacherinfo">Teacher Information</a></li>
-        <li><a href="/#/new/studentinfo">Student Information</a></li>
+        <li><a href="/#/new/teacherinfo">Teacher</a></li>
+        <li><a href="/#/new/studentinfo">Student</a></li>
       </ul>
     </details>
   </li>
