@@ -414,6 +414,7 @@
 <!-- Add / Edit Modal -->
 {#if showModal}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus -->
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div class="modal modal-open bg-black/40" role="dialog" onclick={(e) => e.target === e.currentTarget && closeModal()}>
     <div class="modal-box max-w-lg border border-base-300 p-6">
       <div class="flex justify-between items-center mb-6">
@@ -508,6 +509,7 @@
 <!-- Bulk Add Modal -->
 {#if showBulkModal}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus -->
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div
     class="modal modal-open bg-black/40"
     role="dialog"
@@ -521,7 +523,7 @@
       <p class="text-sm text-base-content/50 mb-2">One student per line. Duplicates are skipped automatically.</p>
       <div class="alert alert-info py-2 px-3 mb-4 text-xs">
         Paste from <strong>Google Sheets</strong> or type manually with commas. Column order:
-        <code class="font-mono font-bold mx-1">Name · English Name · Course · Level</code>
+        <code class="font-mono font-bold mx-1">Name · EnglishName · Course · Level</code>
         — only <strong>English Name</strong> is required.
       </div>
 
@@ -544,7 +546,7 @@
             id="bulk-names"
             bind:value={bulkRawInput}
             class="textarea textarea-bordered w-full h-40 resize-none focus:textarea-primary font-mono text-sm"
-            placeholder="Juan Dela Cruz&#9;John&#9;BSIT&#9;2&#10;Jane&#9;&#9;BSCS&#9;3"
+            placeholder="Full name&#9;English name&#9;Course&#9;Level&#9;&#9"
           ></textarea>
         </div>
 

@@ -13,6 +13,7 @@
   let timeslots = $state([])
   let rooms = $state([])
   let isLoading = $state(false)
+  let isCopying = $state(false) // ← NEW
 
   // --- Helper Functions ---
   function getWeekStart(date) {
@@ -32,7 +33,6 @@
   }
 
   const changeWeek = async (weeks) => {
-    // Capture scroll position before changing week
     const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
     const savedScrollTop = wrapper?.scrollTop || 0
     const savedScrollLeft = wrapper?.scrollLeft || 0
@@ -67,6 +67,89 @@
       ),
     ])
   }
+
+  // ─── NEW: Copy to Advance ────────────────────────────────────────────────
+  const copyToAdvance = async () => {
+    if (isCopying) return
+
+    const confirmed = confirm(`Copy all schedules for ${getWeekRangeDisplay(weekStart)} to Advance Booking?`)
+    if (!confirmed) return
+
+    isCopying = true
+    try {
+      const startD = new Date(weekStart)
+      const endD = new Date(startD)
+      endD.setDate(startD.getDate() + 3)
+
+      const startDateStr = `${weekStart} 00:00:00`
+      const endDateStr = `${endD.toISOString().split('T')[0]} 23:59:59`
+
+      // Fetch this week's schedules AND existing advance schedules in parallel
+      const [schedules, existing] = await Promise.all([
+        pb.collection('schedule').getFullList({
+          filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
+          expand: 'teacher,student,subject,room,timeslot',
+        }),
+        pb.collection('advanceSchedule').getFullList({
+          fields: 'timeslot,room,teacher,student,subject',
+        }),
+      ])
+
+      if (schedules.length === 0) {
+        toast.info('No schedules found for this week to copy.')
+        return
+      }
+
+      // Build a set of existing keys to detect duplicates
+      const existingKeys = new Set(
+        existing.map((e) => `${e.timeslot}-${e.room}-${e.teacher}-${e.student}-${e.subject}`)
+      )
+
+      const toCreate = schedules.filter((s) => {
+        const key = `${s.timeslot}-${s.room}-${s.teacher}-${s.student}-${s.subject}`
+        return !existingKeys.has(key)
+      })
+
+      const skipped = schedules.length - toCreate.length
+
+      if (toCreate.length === 0) {
+        toast.info(`All ${schedules.length} schedule(s) already exist in Advance Booking — nothing to copy.`)
+        return
+      }
+
+      // Create only the non-duplicate records in parallel
+      const results = await Promise.allSettled(
+        toCreate.map((s) =>
+          pb.collection('advanceSchedule').create({
+            timeslot: s.timeslot,
+            room: s.room,
+            teacher: s.teacher,
+            student: s.student,
+            subject: s.subject,
+          })
+        )
+      )
+
+      const succeeded = results.filter((r) => r.status === 'fulfilled').length
+      const failed = results.filter((r) => r.status === 'rejected').length
+
+      if (failed === 0) {
+        const skipMsg = skipped > 0 ? ` (${skipped} duplicate(s) skipped)` : ''
+        toast.success(`✓ Copied ${succeeded} schedule(s) to Advance Booking.${skipMsg}`)
+      } else {
+        toast.warning(`Copied ${succeeded}, skipped ${skipped} duplicate(s), but ${failed} failed. Check console.`)
+        results
+          .filter((r) => r.status === 'rejected')
+          .forEach((r) => console.error('advanceSchedule create error:', r.reason))
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to copy schedules to Advance Booking.')
+    } finally {
+      isCopying = false
+    }
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   async function loadSchedules(savedScrollTop = null, savedScrollLeft = null) {
     if (isLoading) return
@@ -129,17 +212,14 @@
       })
 
       if (gridInstance) {
-        // Capture current scroll if not provided
         if (savedScrollTop === null) {
           const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
           savedScrollTop = wrapper?.scrollTop || 0
           savedScrollLeft = wrapper?.scrollLeft || 0
         }
 
-        // Update data without hiding
         gridInstance.updateConfig({ data }).forceRender()
 
-        // Restore scroll position after render
         requestAnimationFrame(() => {
           const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
           if (wrapper) {
@@ -148,7 +228,6 @@
           }
         })
       } else {
-        // ... rest of initialization code remains the same
         const columns = [
           { name: 'Teacher', width: '120px', formatter: (c) => c.value },
           { name: 'Room', width: '120px', formatter: (c) => c.value },
@@ -208,7 +287,6 @@
     }
   }
 
-  // Refresh function that preserves scroll
   const refreshWithScroll = async () => {
     const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
     const savedScrollTop = wrapper?.scrollTop || 0
@@ -216,7 +294,6 @@
     await loadSchedules(savedScrollTop, savedScrollLeft)
   }
 
-  // Initialize on mount
   onMount(() => {
     loadSchedules()
 
@@ -241,6 +318,19 @@
     </h3>
 
     <div class="ml-auto flex items-center gap-2">
+      <!-- ← NEW button -->
+      <button
+        class="btn btn-outline btn-info btn-sm gap-1"
+        onclick={copyToAdvance}
+        disabled={isCopying || isLoading}
+        title="Copy all schedules this week to Advance Booking"
+      >
+        {#if isCopying}
+          <span class="loading loading-spinner loading-xs"></span>
+        {:else}{/if}
+        Copy to Advance
+      </button>
+
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
     </div>
@@ -249,7 +339,6 @@
   <div id="unified-grid" class="border rounded-lg"></div>
 </div>
 
-<!-- Pass the refresh function that preserves scroll -->
 <CombineModal bind:this={combineModal} onrefresh={refreshWithScroll} />
 
 <style>
@@ -260,7 +349,6 @@
   #unified-grid :global(.gridjs-wrapper) {
     max-height: 700px;
     overflow: auto;
-    /* Prevent scroll anchoring issues */
     contain: strict;
   }
 

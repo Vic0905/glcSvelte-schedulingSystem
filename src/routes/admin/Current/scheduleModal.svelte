@@ -215,7 +215,7 @@
 
     toast.promise(
       async () => {
-        // 1. Initialize the Batch
+        // 1. Initialize the Batch this is the old schedule
         const batch = pb.createBatch()
 
         if (mode === 'edit') {

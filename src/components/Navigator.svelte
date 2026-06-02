@@ -120,7 +120,21 @@
   </li>
   <li>
     <details>
-      <summary>Combined Booking</summary>
+      <summary>Combined Advance Booking</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/new/advanceschedule">Combine Input Table</a></li>
+        <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
+        <li><a href="/#/new/advancestudentview">StudentView Table</a></li>
+        <li><a href="/#/new/advanceteacherview">TeacherView Table</a></li>
+        <!-- <li><a href="/#/new/teacherinfo">Teacher Information</a></li>
+        <li><a href="/#/new/studentinfo">Student Information</a></li>
+        <li><a href="/#/new/room">Room Information</a></li> -->
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Combined Current Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/new/schedule">Combine Input Table</a></li>
         <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
