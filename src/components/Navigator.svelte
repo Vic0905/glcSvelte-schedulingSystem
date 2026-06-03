@@ -119,13 +119,27 @@
   </li> -->
   <li>
     <details>
-      <summary>Combined Booking</summary>
+      <summary>Weekly Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/new/schedule">Combined Input</a></li>
-        <li><a href="/#/new/dailyschedule">Daily Input</a></li>
+        <!-- <li><a href="/#/new/dailyschedule">Daily Input</a></li> -->
         <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
         <li><a href="/#/new/studentview">StudentView</a></li>
         <li><a href="/#/new/teacherview">TeacherView</a></li>
+        <!-- <li><a href="/#/new/teacherinfo">Teacher Information</a></li>
+        <li><a href="/#/new/studentinfo">Student Information</a></li>
+        <li><a href="/#/new/room">Room Information</a></li> -->
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Daily Booking</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/new/dailyschedule">Daily Input</a></li>
+        <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
+        <li><a href="/#/new/dailystudentview">StudentView</a></li>
+        <li><a href="/#/new/dailyteacherview">TeacherView</a></li>
         <!-- <li><a href="/#/new/teacherinfo">Teacher Information</a></li>
         <li><a href="/#/new/studentinfo">Student Information</a></li>
         <li><a href="/#/new/room">Room Information</a></li> -->
