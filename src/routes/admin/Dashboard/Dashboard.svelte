@@ -84,7 +84,7 @@
 
       <!-- Swapped button background to info-blue  -->
       <a
-        href="#/current/scheduleinput"
+        href="#/new/dailyschedule"
         class="group flex w-fit items-center gap-2 rounded-2xl bg-sky-600 px-7 py-4 text-sm font-medium text-white transition-all hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400"
       >
         Get started
@@ -122,15 +122,22 @@
 
         <div class="grid grid-cols-7 gap-1 text-center">
           {#each calCells as cell}
-            <span
-              class="flex aspect-square items-center justify-center rounded-lg text-xs transition-all
-              {cell.day === null ? 'invisible' : ''} 
-              {cell.day === todayDate
-                ? 'bg-sky-600 font-bold text-white dark:bg-sky-500'
-                : 'opacity-70 hover:bg-current/10'}"
-            >
-              {cell.day ?? ''}
-            </span>
+            {#if cell.day !== null}
+              <a
+                href="#/new/dailyschedule?date={year}-{String(month + 1).padStart(2, '0')}-{String(cell.day).padStart(
+                  2,
+                  '0'
+                )}"
+                class="flex aspect-square items-center justify-center rounded-lg text-xs transition-all cursor-pointer {cell.day ===
+                todayDate
+                  ? 'bg-sky-600 font-bold text-white dark:bg-sky-500'
+                  : 'opacity-70 hover:bg-current/10'}"
+              >
+                {cell.day}
+              </a>
+            {:else}
+              <span class="invisible flex aspect-square items-center justify-center rounded-lg text-xs"></span>
+            {/if}
           {/each}
         </div>
       </div>

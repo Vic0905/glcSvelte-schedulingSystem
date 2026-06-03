@@ -57,7 +57,7 @@
       const [subj, stu, teach, room, ts] = await Promise.all([
         pb.collection('subject').getFullList({ sort: 'name' }),
         pb.collection('student').getFullList({ sort: 'englishName', filter: 'status != "graduated"' }),
-        pb.collection('teacher').getFullList({ sort: 'name' }),
+        pb.collection('teacher').getFullList({ sort: 'name', filter: 'status != "disabled"' }),
         pb.collection('roomType').getFullList({ sort: 'name' }),
         pb.collection('timeslot').getFullList({ sort: 'start' }),
       ])

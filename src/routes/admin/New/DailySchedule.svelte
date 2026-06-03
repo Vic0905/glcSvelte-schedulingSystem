@@ -9,7 +9,16 @@
   // --- State Runes ---
   let combineModal = $state()
   let gridInstance = $state(null)
-  let selectedDate = $state(getTodayDate())
+  // With this:
+  function getInitialDate() {
+    const hash = window.location.hash // e.g. "#/new/dailyschedule?date=2026-06-03"
+    const queryString = hash.includes('?') ? hash.split('?')[1] : ''
+    const params = new URLSearchParams(queryString)
+    const dateParam = params.get('date')
+    return dateParam || getTodayDate()
+  }
+
+  let selectedDate = $state(getInitialDate())
   let timeslots = $state([])
   let rooms = $state([])
   let isLoading = $state(false)
