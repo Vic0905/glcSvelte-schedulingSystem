@@ -59,7 +59,7 @@
       (num >= 110 && num <= 125) || // A110 - A125
       (num >= 142 && num <= 157) // A142 - A157
 
-    return isGray ? 'bg-neutral-100/90 text-neutral-800' : 'bg-white text-neutral-800'
+    return isGray ? 'bg-neutral-200/90 text-neutral-800' : 'bg-white text-neutral-800'
   }
 
   const changeDay = async (days) => {
