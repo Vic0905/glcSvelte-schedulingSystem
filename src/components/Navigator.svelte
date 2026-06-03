@@ -122,6 +122,7 @@
       <summary>Combined Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/new/schedule">Combined Input</a></li>
+        <li><a href="/#/new/dailyschedule">Daily Input</a></li>
         <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
         <li><a href="/#/new/studentview">StudentView</a></li>
         <li><a href="/#/new/teacherview">TeacherView</a></li>

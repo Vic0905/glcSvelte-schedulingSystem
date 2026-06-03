@@ -9,27 +9,19 @@
   // --- State Runes ---
   let combineModal = $state()
   let gridInstance = $state(null)
-  let weekStart = $state(getWeekStart(new Date()))
+  let selectedDate = $state(getTodayDate())
   let timeslots = $state([])
   let rooms = $state([])
   let isLoading = $state(false)
-  let isCopying = $state(false)
 
   // --- Helper Functions ---
-  function getWeekStart(date) {
-    const d = new Date(date)
-    const day = d.getDay()
-    const diff = day < 2 ? day + 5 : day - 2
-    d.setDate(d.getDate() - diff)
-    return d.toISOString().split('T')[0]
+  function getTodayDate() {
+    return new Date().toISOString().split('T')[0]
   }
 
-  function getWeekRangeDisplay(startDate) {
-    const start = new Date(startDate)
-    const end = new Date(start)
-    end.setDate(start.getDate() + 3)
-    const opts = { month: 'long', day: 'numeric' }
-    return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
+  function formatDateDisplay(dateStr) {
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   }
 
   // Parses the room numeric string (e.g., "A005" -> 5, "A1033" -> 1033) and returns the background Tailwind class
@@ -61,15 +53,33 @@
     return isGray ? 'bg-neutral-100/90 text-neutral-800' : 'bg-white text-neutral-800'
   }
 
-  const changeWeek = async (weeks) => {
-    const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+  const changeDay = async (days) => {
+    const wrapper = document.querySelector('#daily-grid .gridjs-wrapper')
     const savedScrollTop = wrapper?.scrollTop || 0
     const savedScrollLeft = wrapper?.scrollLeft || 0
 
-    const d = new Date(weekStart)
-    d.setDate(d.getDate() + weeks * 7)
-    weekStart = getWeekStart(d)
+    const d = new Date(selectedDate)
+    d.setDate(d.getDate() + days)
+    selectedDate = d.toISOString().split('T')[0]
 
+    await loadSchedules(savedScrollTop, savedScrollLeft)
+  }
+
+  const onDateChange = async (e) => {
+    const wrapper = document.querySelector('#daily-grid .gridjs-wrapper')
+    const savedScrollTop = wrapper?.scrollTop || 0
+    const savedScrollLeft = wrapper?.scrollLeft || 0
+
+    selectedDate = e.target.value
+    await loadSchedules(savedScrollTop, savedScrollLeft)
+  }
+
+  const goToToday = async () => {
+    const wrapper = document.querySelector('#daily-grid .gridjs-wrapper')
+    const savedScrollTop = wrapper?.scrollTop || 0
+    const savedScrollLeft = wrapper?.scrollLeft || 0
+
+    selectedDate = getTodayDate()
     await loadSchedules(savedScrollTop, savedScrollLeft)
   }
 
@@ -103,95 +113,13 @@
     ])
   }
 
-  const copyToAdvance = async () => {
-    if (isCopying) return
-
-    const confirmed = confirm(`Copy all schedules for ${getWeekRangeDisplay(weekStart)} to Advance Booking?`)
-    if (!confirmed) return
-
-    isCopying = true
-    try {
-      const startD = new Date(weekStart)
-      const endD = new Date(startD)
-      endD.setDate(startD.getDate() + 3)
-
-      const startDateStr = `${weekStart} 00:00:00`
-      const endDateStr = `${endD.toISOString().split('T')[0]} 23:59:59`
-
-      const [schedules, existing] = await Promise.all([
-        pb.collection('schedule').getFullList({
-          filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
-          expand: 'teacher,student,subject,room,timeslot',
-        }),
-        pb.collection('advanceSchedule').getFullList({
-          fields: 'timeslot,room,teacher,student,subject',
-        }),
-      ])
-
-      if (schedules.length === 0) {
-        toast.info('No schedules found for this week to copy.')
-        return
-      }
-
-      const existingKeys = new Set(
-        existing.map((e) => `${e.timeslot}-${e.room}-${e.teacher}-${e.student}-${e.subject}`)
-      )
-
-      const toCreate = schedules.filter((s) => {
-        const key = `${s.timeslot}-${s.room}-${s.teacher}-${s.student}-${s.subject}`
-        return !existingKeys.has(key)
-      })
-
-      const skipped = schedules.length - toCreate.length
-
-      if (toCreate.length === 0) {
-        toast.info(`All ${schedules.length} schedule(s) already exist in Advance Booking — nothing to copy.`)
-        return
-      }
-
-      const results = await Promise.allSettled(
-        toCreate.map((s) =>
-          pb.collection('advanceSchedule').create({
-            timeslot: s.timeslot,
-            room: s.room,
-            teacher: s.teacher,
-            student: s.student,
-            subject: s.subject,
-          })
-        )
-      )
-
-      const succeeded = results.filter((r) => r.status === 'fulfilled').length
-      const failed = results.filter((r) => r.status === 'rejected').length
-
-      if (failed === 0) {
-        const skipMsg = skipped > 0 ? ` (${skipped} duplicate(s) skipped)` : ''
-        toast.success(`✓ Copied ${succeeded} schedule(s) to Advance Booking.${skipMsg}`)
-      } else {
-        toast.warning(`Copied ${succeeded}, skipped ${skipped} duplicate(s), but ${failed} failed. Check console.`)
-        results
-          .filter((r) => r.status === 'rejected')
-          .forEach((r) => console.error('advanceSchedule create error:', r.reason))
-      }
-    } catch (err) {
-      console.error(err)
-      toast.error('Failed to copy schedules to Advance Booking.')
-    } finally {
-      isCopying = false
-    }
-  }
-
   async function loadSchedules(savedScrollTop = null, savedScrollLeft = null) {
     if (isLoading) return
 
     isLoading = true
     try {
-      const startD = new Date(weekStart)
-      const endD = new Date(startD)
-      endD.setDate(startD.getDate() + 3)
-
-      const startDateStr = `${weekStart} 00:00:00`
-      const endDateStr = `${endD.toISOString().split('T')[0]} 23:59:59`
+      const startDateStr = `${selectedDate} 00:00:00`
+      const endDateStr = `${selectedDate} 23:59:59`
 
       const [ts, roomList, sched] = await Promise.all([
         pb.collection('timeslot').getFullList({ sort: 'start' }),
@@ -236,7 +164,7 @@
 
       const data = rooms.map((room) => {
         const teacher = room.expand?.teacher
-        const bgClass = getBgClass(room.name) // Determine current row color band
+        const bgClass = getBgClass(room.name)
 
         const row = [
           { value: teacher?.name || '-', disabled: true, bgClass },
@@ -250,7 +178,7 @@
             schedules,
             room,
             timeslot: ts,
-            bgClass, // Inject context to column renderers
+            bgClass,
           })
         }
         return row
@@ -299,7 +227,7 @@
 
       if (gridInstance) {
         if (savedScrollTop === null) {
-          const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+          const wrapper = document.querySelector('#daily-grid .gridjs-wrapper')
           savedScrollTop = wrapper?.scrollTop || 0
           savedScrollLeft = wrapper?.scrollLeft || 0
         }
@@ -307,7 +235,7 @@
         gridInstance.updateConfig({ columns, data }).forceRender()
 
         requestAnimationFrame(() => {
-          const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+          const wrapper = document.querySelector('#daily-grid .gridjs-wrapper')
           if (wrapper) {
             wrapper.scrollTop = savedScrollTop
             wrapper.scrollLeft = savedScrollLeft || 0
@@ -324,7 +252,7 @@
             td: 'text-center',
           },
           style: { table: { 'table-layout': 'fixed' } },
-        }).render(document.getElementById('unified-grid'))
+        }).render(document.getElementById('daily-grid'))
 
         gridInstance.on('cellClick', (...args) => {
           const cell = args[1].data
@@ -333,15 +261,10 @@
           const isCreateMode = cell.label === 'Empty'
           const firstSched = cell.schedules?.[0]
 
-          const endDate = new Date(weekStart)
-          endDate.setDate(endDate.getDate() + 3)
-
           const activeTeacher = isCreateMode ? cell.room?.expand?.teacher : firstSched?.teacher
 
-          const modalStartDate = !isCreateMode ? firstSched?.start || weekStart : weekStart
-          const modalEndDate = !isCreateMode
-            ? firstSched?.end || endDate.toISOString().split('T')[0]
-            : endDate.toISOString().split('T')[0]
+          const modalStartDate = !isCreateMode ? firstSched?.start || selectedDate : selectedDate
+          const modalEndDate = !isCreateMode ? firstSched?.end || selectedDate : selectedDate
 
           combineModal.open({
             room: cell.room,
@@ -363,7 +286,7 @@
   }
 
   const refreshWithScroll = async () => {
-    const wrapper = document.querySelector('#unified-grid .gridjs-wrapper')
+    const wrapper = document.querySelector('#daily-grid .gridjs-wrapper')
     const savedScrollTop = wrapper?.scrollTop || 0
     const savedScrollLeft = wrapper?.scrollLeft || 0
     await loadSchedules(savedScrollTop, savedScrollLeft)
@@ -383,22 +306,36 @@
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
-    <h2 class="text-center flex-1">Weekly Schedule (MTM + GRP)</h2>
+    <h2 class="text-center flex-1">Daily Schedule (MTM + GRP)</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
   <div class="mb-2 flex flex-wrap items-center justify-between relative">
     <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
-      {getWeekRangeDisplay(weekStart)}
+      {formatDateDisplay(selectedDate)}
     </h3>
 
     <div class="ml-auto flex items-center gap-2">
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}>&larr;</button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}>&rarr;</button>
+      <button
+        class="btn btn-outline btn-sm"
+        onclick={goToToday}
+        disabled={isLoading || selectedDate === getTodayDate()}
+      >
+        Today
+      </button>
+      <button class="btn btn-outline btn-sm" onclick={() => changeDay(-1)} disabled={isLoading}>&larr;</button>
+      <input
+        type="date"
+        class="input input-bordered input-sm"
+        value={selectedDate}
+        onchange={onDateChange}
+        disabled={isLoading}
+      />
+      <button class="btn btn-outline btn-sm" onclick={() => changeDay(1)} disabled={isLoading}>&rarr;</button>
     </div>
   </div>
 
-  <div id="unified-grid" class="border rounded-lg"></div>
+  <div id="daily-grid" class="border rounded-lg"></div>
 </div>
 
 <CombineModal bind:this={combineModal} onrefresh={refreshWithScroll} />
@@ -408,53 +345,54 @@
     scrollbar-gutter: stable;
   }
 
-  #unified-grid :global(.gridjs-table td:hover > div) {
+  #daily-grid :global(.gridjs-table td:hover > div) {
     background-color: #d1fae5 !important;
     transition: background-color 0.2s ease;
     cursor: pointer;
   }
 
-  #unified-grid :global(.gridjs-wrapper) {
+  #daily-grid :global(.gridjs-wrapper) {
     max-height: 650px;
     overflow: auto;
+    contain: strict;
   }
 
   /* Zero out padding on td to let background divs fill full width/height completely */
-  #unified-grid :global(td) {
+  #daily-grid :global(td) {
     padding: 0 !important;
     vertical-align: stretch;
   }
 
-  #unified-grid :global(th) {
+  #daily-grid :global(th) {
     position: sticky;
     top: 0;
     z-index: 20;
-    box-shadow: 0 1px 0;
+    box-shadow: 0 1px 0 #ddd;
     background-color: #484b4f;
     color: #ffffff;
   }
 
-  #unified-grid :global(th:nth-child(1)),
-  #unified-grid :global(td:nth-child(1)) {
+  #daily-grid :global(th:nth-child(1)),
+  #daily-grid :global(td:nth-child(1)) {
     position: sticky;
     left: 0;
     z-index: 15;
-    box-shadow: inset -1px 0 0;
+    box-shadow: inset -1px 0 0 #ddd;
   }
 
-  #unified-grid :global(th:nth-child(1)) {
+  #daily-grid :global(th:nth-child(1)) {
     z-index: 25;
   }
 
-  #unified-grid :global(th:nth-child(2)),
-  #unified-grid :global(td:nth-child(2)) {
+  #daily-grid :global(th:nth-child(2)),
+  #daily-grid :global(td:nth-child(2)) {
     position: sticky;
     left: 120px;
     z-index: 10;
-    box-shadow: inset -1px 0 0;
+    box-shadow: inset -1px 0 0 #ddd;
   }
 
-  #unified-grid :global(th:nth-child(2)) {
+  #daily-grid :global(th:nth-child(2)) {
     z-index: 25;
   }
 </style>

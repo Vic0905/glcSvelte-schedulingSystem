@@ -57,15 +57,26 @@
   const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 
   async function batchFetch(requests) {
-    const fd = new FormData()
-    fd.append('@jsonPayload', JSON.stringify({ requests }))
     const res = await fetch(`${pb.baseUrl}/api/batch`, {
       method: 'POST',
-      headers: { Authorization: pb.authStore.token },
-      body: fd,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${pb.authStore.token}`,
+      },
+      body: JSON.stringify({ requests }),
     })
-    const json = await res.json()
-    return Array.isArray(json) ? json : []
+
+    const text = await res.text()
+
+    // console.log('Batch status:', res.status)
+    // console.log('Batch response:', text)
+    // console.log('Batch size:', requests.length)
+
+    if (!res.ok) {
+      throw new Error(text)
+    }
+
+    return JSON.parse(text)
   }
 
   // ── Grid ──────────────────────────────────────────────────────────────────
@@ -122,12 +133,9 @@
       const toPromote = records.filter((s) => s.status === 'new' && new Date(s.created) < cutoff)
 
       if (toPromote.length) {
-        const batch = pb.createBatch()
-        toPromote.forEach((s) => batch.collection('student').update(s.id, { status: 'old' }))
-        await batch.send()
+        await Promise.allSettled(toPromote.map(({ id }) => pb.collection('student').update(id, { status: 'old' })))
         records = await pb.collection('student').getFullList({ sort: '-created' })
       }
-
       students = records
       await tick()
       renderGrid(students)

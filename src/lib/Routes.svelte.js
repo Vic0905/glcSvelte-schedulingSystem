@@ -78,6 +78,9 @@ export const adminRoutes = {
   '/new/teacherinfo': wrap({
     asyncComponent: () => import('../routes/admin/New/TeacherInfo.svelte'),
   }),
+  // '/new/studentinfo': wrap({
+  //   asyncComponent: () => import('../routes/admin/New/StudentInfo.svelte'),
+  // }),
   '/new/studentinfo': wrap({
     asyncComponent: () => import('../routes/admin/New/StudentInfo.svelte'),
   }),
@@ -89,6 +92,9 @@ export const adminRoutes = {
   }),
   '/new/advancestudentview': wrap({
     asyncComponent: () => import('../routes/admin/New/AdvanceStudentView.svelte'),
+  }),
+  '/new/dailyschedule': wrap({
+    asyncComponent: () => import('../routes/admin/New/DailySchedule.svelte'),
   }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
