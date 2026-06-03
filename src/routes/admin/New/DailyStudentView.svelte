@@ -209,21 +209,23 @@
     }
   }
 
+  let unsubSchedule = null // declare outside
+
   onMount(async () => {
     await load()
 
-    const unsubSchedule = await pb.collection('schedule').subscribe('*', async () => {
+    unsubSchedule = await pb.collection('schedule').subscribe('*', async () => {
       const wrapper = document.querySelector('#studentDailyGrid .gridjs-wrapper')
       const top = wrapper?.scrollTop || 0
       const left = wrapper?.scrollLeft || 0
       await load(top, left)
     })
+  })
 
-    onDestroy(() => {
-      unsubSchedule?.()
-      grid?.destroy()
-      grid = null
-    })
+  onDestroy(() => {
+    unsubSchedule?.()
+    grid?.destroy()
+    grid = null
   })
 </script>
 
