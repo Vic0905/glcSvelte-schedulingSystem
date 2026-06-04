@@ -132,7 +132,7 @@
 
       const [ts, roomList, sched] = await Promise.all([
         pb.collection('timeslot').getFullList({ sort: 'start' }),
-        pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher', filter: 'roomType = "mtm"' }),
+        pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher', filter: 'roomType = "grp"' }),
         pb.collection('schedule').getFullList({
           filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
           expand: 'teacher,student,subject,room,timeslot',
@@ -161,14 +161,15 @@
 
       const emptyRoomsCountMap = new Map()
       for (const tSlot of timeslots) {
-        let emptyCount = 0
+        let availableSlots = 0
         for (const rm of rooms) {
           const slotSchedules = scheduleMap.get(`${rm.id}-${tSlot.id}`) || []
-          if (slotSchedules.length === 0) {
-            emptyCount++
-          }
+          const currentStudents = slotSchedules.flatMap((s) => s.students).length
+          const maxStudents = rm.maxStudents || 0
+          const remaining = maxStudents - currentStudents
+          if (remaining > 0) availableSlots += remaining
         }
-        emptyRoomsCountMap.set(tSlot.id, emptyCount)
+        emptyRoomsCountMap.set(tSlot.id, availableSlots)
       }
 
       const data = rooms.map((room) => {
@@ -226,7 +227,7 @@
               h(
                 'span',
                 { class: 'text-[10px] font-normal text-teal-300 bg-teal-950/40 px-1.5 py-0.5 rounded-full' },
-                `${emptyCount} Available`
+                `${emptyCount} Slots Available`
               ),
             ]),
             formatter: formatCell,
@@ -315,7 +316,7 @@
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
-    <h2 class="text-center flex-1">Daily Schedule (MTM + GRP)</h2>
+    <h2 class="text-center flex-1">Daily Group Schedule</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
