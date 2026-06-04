@@ -105,8 +105,8 @@ export const adminRoutes = {
   '/new/graduatingstudent': wrap({
     asyncComponent: () => import('../routes/admin/New/GraduatingStudent.svelte'),
   }),
-  '/new/groupschedule': wrap({
-    asyncComponent: () => import('../routes/admin/New/GroupSchedule.svelte'),
+  '/new/dailygroupschedule': wrap({
+    asyncComponent: () => import('../routes/admin/New/DailyGroupSchedule.svelte'),
   }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),

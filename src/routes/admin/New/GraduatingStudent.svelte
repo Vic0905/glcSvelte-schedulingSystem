@@ -150,27 +150,27 @@
 </script>
 
 <div class="p-6 bg-base-100">
-  <div class="flex items-center justify-between mb-4">
-    <h2 class="text-2xl font-bold">Graduating Students</h2>
+  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
+    <h2 class="text-2xl text-center font-bold flex-1">Graduating Students</h2>
 
     {#if isLoading}
       <div class="loading loading-spinner loading-sm"></div>
     {/if}
   </div>
 
-  <div class="mb-4 flex items-center justify-between">
-    <h3 class="text-lg font-semibold">
+  <div class="mb-2 flex flex-wrap items-center justify-between relative">
+    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
       {getWeekRangeDisplay(weekStart)}
     </h3>
 
-    <div class="flex gap-2">
+    <div class="ml-auto flex items-center gap-2">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}> ← Previous Week </button>
 
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}> Next Week → </button>
     </div>
   </div>
 
-  <div id="graduating-grid" class="border rounded-lg overflow-hidden"></div>
+  <div id="graduating-grid" class="border rounded-lg"></div>
 </div>
 
 <style>

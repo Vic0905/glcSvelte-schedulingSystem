@@ -137,7 +137,7 @@
       <summary>Daily Booking</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/new/dailyschedule">MTM Input</a></li>
-        <li><a href="/#/new/groupschedule">GRP Input</a></li>
+        <li><a href="/#/new/dailygroupschedule">GRP Input</a></li>
         <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
         <li><a href="/#/new/dailystudentview">StudentView</a></li>
         <li><a href="/#/new/dailyteacherview">TeacherView</a></li>

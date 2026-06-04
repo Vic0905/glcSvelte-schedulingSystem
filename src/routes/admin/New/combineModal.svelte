@@ -251,6 +251,91 @@
     }
   }
 
+  // ─── Remove Student For One Day ──────────
+
+  async function removeStudentForDay(studentId, targetDate) {
+    const startDateStr = `${targetDate} 00:00:00`
+    const endDateStr = `${targetDate} 23:59:59`
+
+    // Only fetch records matching this exact timeslot + room + student
+    const records = await pb.collection('schedule').getFullList({
+      filter: `timeslot = "${form.timeslot.id}" && room = "${form.room.id}" && student = "${studentId}" && start <= "${endDateStr}" && end >= "${startDateStr}"`,
+      fields: 'id,start,end,timeslot,room,teacher,subject,student',
+    })
+
+    if (records.length === 0) {
+      toast.info('No schedule record found for this student on that day.')
+      return
+    }
+
+    const batch = pb.createBatch()
+
+    for (const rec of records) {
+      const recStart = rec.start.split(' ')[0]
+      const recEnd = rec.end.split(' ')[0]
+
+      if (recStart === recEnd || (recStart === targetDate && recEnd === targetDate)) {
+        // Single-day — delete entirely
+        batch.collection('schedule').delete(rec.id)
+      } else if (recStart === targetDate) {
+        // Target is the start — push forward
+        const nextDay = new Date(targetDate)
+        nextDay.setDate(nextDay.getDate() + 1)
+        batch.collection('schedule').update(rec.id, {
+          start: `${nextDay.toISOString().split('T')[0]} 00:00:00.000Z`,
+        })
+      } else if (recEnd === targetDate) {
+        // Target is the end — pull back
+        const prevDay = new Date(targetDate)
+        prevDay.setDate(prevDay.getDate() - 1)
+        batch.collection('schedule').update(rec.id, {
+          end: `${prevDay.toISOString().split('T')[0]} 00:00:00.000Z`,
+        })
+      } else {
+        // Target is in the middle — split into two
+        const prevDay = new Date(targetDate)
+        prevDay.setDate(prevDay.getDate() - 1)
+        const nextDay = new Date(targetDate)
+        nextDay.setDate(nextDay.getDate() + 1)
+
+        batch.collection('schedule').update(rec.id, {
+          end: `${prevDay.toISOString().split('T')[0]} 00:00:00.000Z`,
+        })
+        batch.collection('schedule').create({
+          timeslot: rec.timeslot,
+          room: rec.room,
+          teacher: rec.teacher,
+          subject: rec.subject,
+          student: rec.student,
+          start: `${nextDay.toISOString().split('T')[0]} 00:00:00.000Z`,
+          end: `${recEnd} 00:00:00.000Z`,
+        })
+      }
+    }
+
+    await batch.send()
+  }
+
+  // ─── Skip Day State ──────────
+  let skipDates = $state({}) // { [studentId]: 'YYYY-MM-DD' }
+
+  async function handleSkipDay(studentId) {
+    const targetDate = skipDates[studentId]
+    if (!targetDate) return toast.error('Pick a date to remove first')
+
+    loading = true
+    try {
+      await removeStudentForDay(studentId, targetDate)
+      skipDates[studentId] = ''
+      toast.success(`Removed student from ${targetDate}`)
+      onrefresh?.()
+    } catch (e) {
+      toast.error(e.message || 'Failed to remove day')
+    } finally {
+      loading = false
+    }
+  }
+
   // ─── Delete ────────
 
   async function deleteSchedule() {
@@ -393,7 +478,7 @@
                 </label>
 
                 {#if isSelected}
-                  <div class="grid grid-cols-2 gap-1 px-2 pb-2">
+                  <div class="grid grid-cols-[1fr_1fr_auto] gap-1 px-2 pb-2 items-end">
                     <div class="form-control">
                       <label class="label py-0 text-[10px] opacity-60" for="stu-start-{s.id}">Start</label>
                       <input
@@ -414,6 +499,20 @@
                         onchange={(e) => updateStudentDate(s.id, 'endDate', e.target.value)}
                       />
                     </div>
+
+                    {#if form.mode === 'edit'}
+                      <div class="form-control">
+                        <label class="label py-0 text-[10px] opacity-60">Skip Day</label>
+                        <input type="date" class="input input-bordered input-xs w-full" bind:value={skipDates[s.id]} />
+                      </div>
+                      <button
+                        class="btn btn-xs btn-warning btn-soft"
+                        disabled={!skipDates[s.id] || loading}
+                        onclick={() => handleSkipDay(s.id)}
+                      >
+                        Remove Day
+                      </button>
+                    {/if}
                   </div>
                 {/if}
               </div>
