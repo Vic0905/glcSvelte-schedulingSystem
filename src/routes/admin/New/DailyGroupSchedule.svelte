@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
   import { toast } from 'svelte-sonner'
@@ -7,11 +7,15 @@
   import CombineModal from './combineModal.svelte'
 
   // --- State Runes ---
+  let todayHoliday = $state(null)
   let combineModal = $state()
   let gridInstance = $state(null)
-  // With this:
+  let cachedHolidays = []
+  let cachedTimeslots = []
+  let cachedRooms = []
+
   function getInitialDate() {
-    const hash = window.location.hash // e.g. "#/new/dailyschedule?date=2026-06-03"
+    const hash = window.location.hash
     const queryString = hash.includes('?') ? hash.split('?')[1] : ''
     const params = new URLSearchParams(queryString)
     const dateParam = params.get('date')
@@ -23,7 +27,6 @@
   let rooms = $state([])
   let isLoading = $state(false)
 
-  // --- Helper Functions ---
   function getTodayDate() {
     return new Date().toISOString().split('T')[0]
   }
@@ -65,7 +68,7 @@
 
   const formatCell = (cell) => {
     if (!cell || !cell.schedules || cell.schedules.length === 0) {
-      return h('div', { class: `w-full h-full min-h-[55px] flex items-center justify-center text-gray-400 ` }, '—')
+      return h('div', { class: 'w-full h-full min-h-[55px] flex items-center justify-center text-gray-400' }, '—')
     }
 
     const { schedules } = cell
@@ -74,9 +77,9 @@
     const teacherName = firstSched.teacher?.name || 'No Teacher'
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
 
-    return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ` }, [
+    return h('div', { class: 'flex flex-col gap-1 p-2 items-center text-center w-full h-full' }, [
       h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full' }, [
-        h('div', { class: '' }, subjectName),
+        h('div', {}, subjectName),
         h('div', { class: 'text-[10px] uppercase mt-1 text-neutral-500' }, teacherName),
       ]),
       h(
@@ -95,27 +98,49 @@
       const startDateStr = `${selectedDate} 00:00:00`
       const endDateStr = `${selectedDate} 23:59:59`
 
-      const [ts, roomList, sched] = await Promise.all([
-        pb.collection('timeslot').getFullList({ sort: 'start' }),
-        pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher', filter: 'roomType = "grp"' }),
+      const [ts, roomList, sched, holidays] = await Promise.all([
+        cachedTimeslots.length
+          ? Promise.resolve(cachedTimeslots)
+          : pb.collection('timeslot').getFullList({ sort: 'start' }),
+        cachedRooms.length
+          ? Promise.resolve(cachedRooms)
+          : pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher', filter: 'roomType = "grp"' }),
         pb.collection('schedule').getFullList({
           filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
           expand: 'teacher,student,subject,room,timeslot',
         }),
+        cachedHolidays.length
+          ? Promise.resolve(cachedHolidays)
+          : pb.collection('holiday').getFullList({ fields: 'id,name,date' }),
       ])
+
+      if (!cachedTimeslots.length) cachedTimeslots = ts
+      if (!cachedRooms.length) cachedRooms = roomList
+      if (!cachedHolidays.length) cachedHolidays = holidays
+
+      const foundHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate)
+      todayHoliday = foundHoliday || null
 
       timeslots = ts
       rooms = roomList
-
-      const unified = sched.map((s) => ({
-        roomId: s.expand?.room?.id,
-        timeslotId: s.expand?.timeslot?.id,
-        students: s.expand?.student ? [{ id: s.expand.student.id, name: s.expand.student.englishName }] : [],
-        subject: s.expand?.subject,
-        teacher: s.expand?.teacher,
-        start: s.start?.split(' ')[0],
-        end: s.end?.split(' ')[0],
-      }))
+      const unified = sched
+        .filter((s) => {
+          if (todayHoliday) {
+            const recStart = s.start?.split(' ')[0]
+            const recEnd = s.end?.split(' ')[0]
+            return recStart === selectedDate && recEnd === selectedDate
+          }
+          return true
+        })
+        .map((s) => ({
+          roomId: s.expand?.room?.id,
+          timeslotId: s.expand?.timeslot?.id,
+          students: s.expand?.student ? [{ id: s.expand.student.id, name: s.expand.student.englishName }] : [],
+          subject: s.expand?.subject,
+          teacher: s.expand?.teacher,
+          start: s.start?.split(' ')[0],
+          end: s.end?.split(' ')[0],
+        }))
 
       const scheduleMap = new Map()
       for (const s of unified) {
@@ -158,18 +183,16 @@
         {
           name: 'Teacher',
           width: '120px',
-          formatter: (c, row) =>
-            h('div', { class: `w-full h-full p-2 flex items-center justify-center text-center ` }, c.value),
+          formatter: (c) =>
+            h('div', { class: 'w-full h-full p-2 flex items-center justify-center text-center' }, c.value),
         },
         {
           name: 'Room',
           width: '120px',
-          formatter: (c, row) =>
+          formatter: (c) =>
             h(
               'div',
-              {
-                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-center `,
-              },
+              { class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-center' },
               c.value
             ),
         },
@@ -180,18 +203,14 @@
             width: '180px',
             name: h('div', { class: 'flex flex-col items-center gap-0.5' }, [
               h('span', null, `${t.start} - ${t.end}`),
-              h(
-                'span',
-                {
-                  class: 'text-[10px] font-bold badge badge-success badge-xs',
-                },
-                `${emptyCount} Available`
-              ),
+              h('span', { class: 'text-[10px] font-bold badge badge-success badge-xs' }, `${emptyCount} Available`),
             ]),
             formatter: formatCell,
           }
         }),
       ]
+
+      await tick() // Ensure DOM is updated before manipulating the grid
 
       if (gridInstance) {
         if (savedScrollTop === null) {
@@ -228,9 +247,7 @@
 
           const isCreateMode = cell.label === 'Empty'
           const firstSched = cell.schedules?.[0]
-
           const activeTeacher = isCreateMode ? cell.room?.expand?.teacher : firstSched?.teacher
-
           const modalStartDate = !isCreateMode ? firstSched?.start || selectedDate : selectedDate
           const modalEndDate = !isCreateMode ? firstSched?.end || selectedDate : selectedDate
 
@@ -270,7 +287,6 @@
       const startDateStr = `${selectedDate} 00:00:00`
       const endDateStr = `${selectedDate} 23:59:59`
 
-      // Fetch all schedule records that overlap this day
       const records = await pb.collection('schedule').getFullList({
         filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
         fields: 'id,start,end,timeslot,room,teacher,subject,student',
@@ -290,47 +306,35 @@
         const isSingleDay = recStart === recEnd
 
         if (isSingleDay || (recStart === selectedDate && recEnd === selectedDate)) {
-          // Case 1: single-day record — just delete
           batch.collection('schedule').delete(rec.id)
         } else if (recStart === selectedDate) {
-          // Case 2: selected day is the start — push start forward by 1
           const nextDay = new Date(selectedDate)
           nextDay.setDate(nextDay.getDate() + 1)
-          const newStart = nextDay.toISOString().split('T')[0]
           batch.collection('schedule').update(rec.id, {
-            start: `${newStart} 00:00:00.000Z`,
+            start: `${nextDay.toISOString().split('T')[0]} 00:00:00.000Z`,
           })
         } else if (recEnd === selectedDate) {
-          // Case 3: selected day is the end — pull end back by 1
           const prevDay = new Date(selectedDate)
           prevDay.setDate(prevDay.getDate() - 1)
-          const newEnd = prevDay.toISOString().split('T')[0]
           batch.collection('schedule').update(rec.id, {
-            end: `${newEnd} 00:00:00.000Z`,
+            end: `${prevDay.toISOString().split('T')[0]} 00:00:00.000Z`,
           })
         } else {
-          // Case 4: selected day is in the middle — split into two records
           const prevDay = new Date(selectedDate)
           prevDay.setDate(prevDay.getDate() - 1)
-          const newEnd = prevDay.toISOString().split('T')[0]
-
           const nextDay = new Date(selectedDate)
           nextDay.setDate(nextDay.getDate() + 1)
-          const newStart = nextDay.toISOString().split('T')[0]
 
-          // Update original to be the "before" segment
           batch.collection('schedule').update(rec.id, {
-            end: `${newEnd} 00:00:00.000Z`,
+            end: `${prevDay.toISOString().split('T')[0]} 00:00:00.000Z`,
           })
-
-          // Create the "after" segment
           batch.collection('schedule').create({
             timeslot: rec.timeslot,
             room: rec.room,
             teacher: rec.teacher,
             subject: rec.subject,
             student: rec.student,
-            start: `${newStart} 00:00:00.000Z`,
+            start: `${nextDay.toISOString().split('T')[0]} 00:00:00.000Z`,
             end: `${recEnd} 00:00:00.000Z`,
           })
         }
@@ -338,7 +342,6 @@
 
       await batch.send()
       toast.success(`Cleared ${records.length} schedule record(s) for ${selectedDate}`)
-
       isLoading = false
       await refreshWithScroll()
     } catch (err) {
@@ -367,12 +370,26 @@
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
-  <div class="mb-2 flex flex-wrap items-center justify-between relative">
-    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
+  <div class="mb-2 grid grid-cols-3 items-center">
+    <!-- Left: holiday badge -->
+    <div class="flex items-center">
+      {#if todayHoliday}
+        <span
+          class="flex items-center gap-2 text-yellow-700 border border-yellow-300 bg-yellow-50 rounded-lg px-3 py-1"
+        >
+          <span class="text-lg">🎉</span>
+          <span class="text-sm font-semibold">{todayHoliday.name}</span>
+        </span>
+      {/if}
+    </div>
+
+    <!-- Center: date -->
+    <h3 class="text-xl font-semibold text-center">
       {formatDateDisplay(selectedDate)}
     </h3>
 
-    <div class="ml-auto flex items-center gap-2">
+    <!-- Right: nav buttons -->
+    <div class="flex items-center gap-2 justify-end">
       <button
         class="btn btn-outline btn-sm"
         onclick={goToToday}
@@ -380,11 +397,11 @@
       >
         Today
       </button>
-      <button class="btn btn-outline btn-error btn-sm" onclick={clearDay} disabled={isLoading}> Clear Day </button>
+      <button class="btn btn-outline btn-error btn-sm" onclick={clearDay} disabled={isLoading}>Clear Day</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeDay(-1)} disabled={isLoading}>&larr;</button>
       <input
         type="date"
-        class="input input-bordered input-sm"
+        class="input input-bordered input-sm w-auto"
         value={selectedDate}
         onchange={onDateChange}
         disabled={isLoading}
@@ -415,7 +432,6 @@
     contain: strict;
   }
 
-  /* Zero out padding on td to let background divs fill full width/height completely */
   #daily-grid :global(td) {
     padding: 0 !important;
     vertical-align: stretch;

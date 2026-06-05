@@ -1,14 +1,30 @@
 <script>
+  import { onDestroy, onMount, tick } from 'svelte'
   import { Grid, h } from 'gridjs'
   import 'gridjs/dist/theme/mermaid.css'
-  import { onDestroy, onMount } from 'svelte'
-  import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
+  import { pb } from '../../../lib/Pocketbase.svelte'
 
+  // --- State Runes ---
   let selectedDate = $state(getTodayDate())
+  let todayHoliday = $state(null)
   let isLoading = $state(false)
-  let grid = null
+  let gridInstance = $state(null)
 
+  // Cached data (load once)
+  let cachedTimeslots = $state([])
+  let cachedStudents = $state([])
+  let cachedHolidays = $state([])
+  let isStaticDataLoaded = $state(false)
+
+  // Real-time subscriptions
+  let unsubSchedule = null
+  let refreshTimeout = null
+
+  // Debounce helper
+  let navigationInProgress = false
+
+  // --- Helper Functions ---
   function getTodayDate() {
     return new Date().toISOString().split('T')[0]
   }
@@ -17,85 +33,216 @@
     const d = new Date(dateStr)
     return d.toLocaleDateString('en-US', {
       weekday: 'long',
+      year: 'numeric',
       month: 'long',
       day: 'numeric',
-      year: 'numeric',
     })
   }
 
   const changeDay = async (days) => {
-    const wrapper = document.querySelector('#studentDailyGrid .gridjs-wrapper')
+    if (isLoading || navigationInProgress) return
+
+    navigationInProgress = true
+
+    const wrapper = document.querySelector('#student-grid .gridjs-wrapper')
     const savedScrollTop = wrapper?.scrollTop || 0
     const savedScrollLeft = wrapper?.scrollLeft || 0
 
     const d = new Date(selectedDate)
     d.setDate(d.getDate() + days)
     selectedDate = d.toISOString().split('T')[0]
-    await load(savedScrollTop, savedScrollLeft)
+
+    await loadStudentSchedule(savedScrollTop, savedScrollLeft)
+    navigationInProgress = false
   }
 
   const onDateChange = async (e) => {
-    const wrapper = document.querySelector('#studentDailyGrid .gridjs-wrapper')
+    if (isLoading || navigationInProgress) return
+
+    navigationInProgress = true
+
+    const wrapper = document.querySelector('#student-grid .gridjs-wrapper')
     const savedScrollTop = wrapper?.scrollTop || 0
     const savedScrollLeft = wrapper?.scrollLeft || 0
 
     selectedDate = e.target.value
-    await load(savedScrollTop, savedScrollLeft)
+    await loadStudentSchedule(savedScrollTop, savedScrollLeft)
+    navigationInProgress = false
   }
 
   const goToToday = async () => {
-    const wrapper = document.querySelector('#studentDailyGrid .gridjs-wrapper')
+    if (isLoading || navigationInProgress || selectedDate === getTodayDate()) return
+
+    navigationInProgress = true
+
+    const wrapper = document.querySelector('#student-grid .gridjs-wrapper')
     const savedScrollTop = wrapper?.scrollTop || 0
     const savedScrollLeft = wrapper?.scrollLeft || 0
 
     selectedDate = getTodayDate()
-    await load(savedScrollTop, savedScrollLeft)
+    await loadStudentSchedule(savedScrollTop, savedScrollLeft)
+    navigationInProgress = false
   }
 
   const formatCell = (cell) => {
-    if (!cell?.length) return h('span', { class: 'text-neutral-400' }, '—')
+    if (!cell?.length) {
+      return h('div', { class: 'w-full h-full min-h-[55px] flex items-center justify-center text-gray-400' }, '—')
+    }
+
     return h(
       'div',
-      { class: 'text-xs' },
+      { class: 'flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full' },
       cell.map((item) =>
         h(
           'div',
-          { class: 'flex flex-col gap-1 p-1 items-center text-center' },
+          { class: 'flex flex-col gap-1 w-full' },
           [
-            h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-200 mb-1 pb-1 w-full' }, [
-              h('div', {}, item.subject?.name || ''),
+            h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full text-center' }, [
+              h('div', {}, item.subject?.name || 'No Subject'),
+              h('div', { class: 'text-[10px] uppercase mt-1 text-neutral-500' }, item.teacher?.name || 'No Teacher'),
+            ]),
+            item.room &&
               h(
                 'div',
-                { class: 'text-[10px] uppercase mt-1 tracking-wider text-neutral-700' },
-                item.teacher?.name || ''
+                { class: 'flex justify-center' },
+                h('span', { class: 'badge badge-ghost badge-xs whitespace-nowrap' }, item.room.name)
               ),
-            ]),
-            item.room && h('span', { class: 'badge badge-ghost badge-xs scale-90' }, item.room.name),
           ].filter(Boolean)
         )
       )
     )
   }
 
-  async function load(savedScrollTop = null, savedScrollLeft = null) {
-    if (isLoading) return
-    isLoading = true
-    try {
-      const dateFilter = `start <= "${selectedDate} 23:59:59" && end >= "${selectedDate} 00:00:00"`
+  // Update the column formatters to center text vertically
+  const columns = [
+    {
+      name: 'Student',
+      width: '180px',
+      formatter: (cell) => {
+        const hasNewBadge = cell.status === 'new'
+        return h(
+          'div',
+          { class: 'w-full h-full p-2 flex flex-col items-center justify-center text-center min-h-[65px]' },
+          [
+            h('span', { class: 'font-bold text-neutral-700' }, cell.value),
+            hasNewBadge && h('span', { class: 'badge badge-success badge-xs mt-1' }, 'New'),
+          ].filter(Boolean)
+        )
+      },
+    },
+    {
+      name: 'English Name',
+      width: '140px',
+      formatter: (cell) =>
+        h(
+          'div',
+          {
+            class:
+              'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center min-h-[65px]',
+          },
+          cell.value
+        ),
+    },
+    {
+      name: 'Course',
+      width: '120px',
+      formatter: (cell) =>
+        h(
+          'div',
+          {
+            class:
+              'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center min-h-[65px]',
+          },
+          cell.value
+        ),
+    },
+    {
+      name: 'Level',
+      width: '120px',
+      formatter: (cell) =>
+        h(
+          'div',
+          {
+            class:
+              'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center min-h-[65px]',
+          },
+          cell.value
+        ),
+    },
+    {
+      name: 'Group Name',
+      width: '120px',
+      formatter: (cell) =>
+        h(
+          'div',
+          {
+            class:
+              'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center min-h-[65px]',
+          },
+          cell.value
+        ),
+    },
+    ...cachedTimeslots.map((ts) => ({
+      id: ts.id,
+      width: '180px',
+      name: h('div', { class: 'flex flex-col items-center gap-0.5' }, [h('span', null, `${ts.start} - ${ts.end}`)]),
+      formatter: formatCell,
+    })),
+  ]
 
-      const [timeslots, students, schedules] = await Promise.all([
+  async function loadStaticData() {
+    if (isStaticDataLoaded) return
+
+    try {
+      const [timeslots, students, holidays] = await Promise.all([
         pb.collection('timeslot').getFullList({ sort: 'start' }),
         pb.collection('student').getFullList({
           filter: 'status != "graduated"',
-          fields: 'id,name,englishName,course,level,status,created',
+          fields: 'id,name,englishName,course,level,groupName,status,created',
         }),
-        pb.collection('schedule').getFullList({
-          filter: dateFilter,
-          expand: 'teacher,student,subject,room,timeslot',
-        }),
+        pb.collection('holiday').getFullList({ fields: 'id,name,date' }),
       ])
 
+      cachedTimeslots = timeslots
+      cachedStudents = students
+      cachedHolidays = holidays
+      isStaticDataLoaded = true
+    } catch (err) {
+      console.error('Failed to load static data:', err)
+      toast.error('Failed to load student data')
+    }
+  }
+
+  async function loadStudentSchedule(savedScrollTop = null, savedScrollLeft = null) {
+    if (isLoading) return
+
+    isLoading = true
+    try {
+      // Check if selected date is a holiday
+      const foundHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate)
+      todayHoliday = foundHoliday || null
+
+      const startDateStr = `${selectedDate} 00:00:00`
+      const endDateStr = `${selectedDate} 23:59:59`
+
+      // Fetch only schedules for the selected day (no expand on student to reduce payload)
+      let schedules = await pb.collection('schedule').getFullList({
+        filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
+        expand: 'teacher,student,subject,room,timeslot',
+      })
+
+      // Filter schedules based on holiday logic
+      if (todayHoliday) {
+        schedules = schedules.filter((s) => {
+          const recStart = s.start?.split(' ')[0]
+          const recEnd = s.end?.split(' ')[0]
+          return recStart === selectedDate && recEnd === selectedDate
+        })
+      }
+
+      // Build schedule map efficiently
       const scheduleMap = new Map()
+
       for (const s of schedules) {
         const timeslotId = s.expand?.timeslot?.id
         if (!timeslotId) continue
@@ -113,134 +260,216 @@
             : []
 
         for (const student of studentList) {
-          if (!scheduleMap.has(student.id)) scheduleMap.set(student.id, new Map())
-          const slots = scheduleMap.get(student.id)
-          if (!slots.has(timeslotId)) slots.set(timeslotId, entry)
+          if (!scheduleMap.has(student.id)) {
+            scheduleMap.set(student.id, new Map())
+          }
+          const studentSlots = scheduleMap.get(student.id)
+          if (!studentSlots.has(timeslotId)) {
+            studentSlots.set(timeslotId, [])
+          }
+          studentSlots.get(timeslotId).push(entry)
         }
       }
 
-      const data = students
-        .sort((a, b) => {
-          const diff = (a.status === 'new' ? 1 : 0) - (b.status === 'new' ? 1 : 0)
-          return diff !== 0 ? diff : new Date(a.created) - new Date(b.created)
-        })
-        .map((student) => {
-          const slots = scheduleMap.get(student.id) || new Map()
-          return [
-            { value: student.name, status: student.status },
-            { value: student.englishName || '' },
-            { value: student.course || '' },
-            { value: student.level || '' },
-            ...timeslots.map((ts) => {
-              const s = slots.get(ts.id)
-              return s ? [s] : []
-            }),
-          ]
-        })
+      // Sort students (new at bottom, oldest first)
+      const students = [...cachedStudents].sort((a, b) => {
+        const aIsNew = a.status === 'new' ? 1 : 0
+        const bIsNew = b.status === 'new' ? 1 : 0
+        if (aIsNew !== bIsNew) return aIsNew - bIsNew
+        return new Date(a.created) - new Date(b.created)
+      })
+
+      // Build grid data
+      const data = students.map((student) => {
+        const studentSlots = scheduleMap.get(student.id) || new Map()
+
+        const row = [
+          { value: student.name, status: student.status },
+          { value: student.englishName || '' },
+          { value: student.course || '' },
+          { value: student.level || '' },
+          { value: student.groupName || '' },
+        ]
+
+        for (const ts of cachedTimeslots) {
+          const schedules = studentSlots.get(ts.id) || []
+          row.push(schedules)
+        }
+        return row
+      })
 
       const columns = [
         {
           name: 'Student',
           width: '180px',
-          formatter: (cell) =>
-            h(
+          formatter: (cell) => {
+            const hasNewBadge = cell.status === 'new'
+            return h(
               'div',
-              { class: 'flex flex-col items-center text-center text-neutral-700 font-bold' },
+              { class: 'w-full h-full p-2 flex flex-col items-center text-center' },
               [
-                h('span', {}, cell.value),
-                cell.status === 'new' && h('span', { class: 'badge badge-soft badge-success badge-xs mt-1' }, 'New'),
+                h('span', { class: 'font-bold text-neutral-700' }, cell.value),
+                hasNewBadge && h('span', { class: 'badge badge-success badge-xs mt-1' }, 'New'),
               ].filter(Boolean)
-            ),
+            )
+          },
         },
         {
           name: 'English Name',
           width: '140px',
-          formatter: (cell) => h('div', { class: 'text-center text-neutral-700 font-bold' }, cell.value),
+          formatter: (cell) =>
+            h(
+              'div',
+              {
+                class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center',
+              },
+              cell.value
+            ),
         },
         {
           name: 'Course',
           width: '120px',
-          formatter: (cell) => h('div', { class: 'text-center text-neutral-700 font-bold' }, cell.value),
+          formatter: (cell) =>
+            h(
+              'div',
+              {
+                class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center',
+              },
+              cell.value
+            ),
         },
         {
           name: 'Level',
           width: '120px',
-          formatter: (cell) => h('div', { class: 'text-center text-neutral-700 font-bold' }, cell.value),
+          formatter: (cell) =>
+            h(
+              'div',
+              {
+                class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center',
+              },
+              cell.value
+            ),
         },
-        ...timeslots.map((t) => ({
-          name: `${t.start} - ${t.end}`,
+        {
+          name: 'Group Name',
+          width: '120px',
+          formatter: (cell) =>
+            h(
+              'div',
+              {
+                class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center',
+              },
+              cell.value
+            ),
+        },
+        ...cachedTimeslots.map((ts) => ({
+          id: ts.id,
           width: '180px',
+          name: h('div', { class: 'flex flex-col items-center gap-0.5' }, [h('span', null, `${ts.start} - ${ts.end}`)]),
           formatter: formatCell,
         })),
       ]
 
-      if (grid) {
-        if (savedScrollTop === null) {
-          const wrapper = document.querySelector('#studentDailyGrid .gridjs-wrapper')
-          savedScrollTop = wrapper?.scrollTop || 0
-          savedScrollLeft = wrapper?.scrollLeft || 0
+      await tick()
+
+      if (gridInstance) {
+        // Only update config, don't recreate
+        gridInstance.updateConfig({ columns, data }).forceRender()
+
+        // Restore scroll position
+        if (savedScrollTop !== null) {
+          requestAnimationFrame(() => {
+            const wrapper = document.querySelector('#student-grid .gridjs-wrapper')
+            if (wrapper) {
+              wrapper.scrollTop = savedScrollTop
+              wrapper.scrollLeft = savedScrollLeft || 0
+            }
+          })
         }
-
-        grid.updateConfig({ data, columns }).forceRender()
-
-        requestAnimationFrame(() => {
-          const wrapper = document.querySelector('#studentDailyGrid .gridjs-wrapper')
-          if (wrapper) {
-            wrapper.scrollTop = savedScrollTop
-            wrapper.scrollLeft = savedScrollLeft
-          }
-        })
       } else {
-        grid = new Grid({
+        // Initial render only
+        gridInstance = new Grid({
           columns,
           data,
+          height: '600px',
           search: false,
           sort: false,
           pagination: false,
-          className: { table: 'w-full border text-xs !border-collapse', th: 'text-center' },
-          style: { table: { 'border-collapse': 'collapse', 'table-layout': 'fixed' } },
-        }).render(document.getElementById('studentDailyGrid'))
+          className: {
+            table: 'w-full border text-xs !border-collapse',
+            th: 'text-center',
+            td: 'text-center',
+          },
+          style: { table: { 'table-layout': 'fixed' } },
+        }).render(document.getElementById('student-grid'))
       }
     } catch (err) {
-      console.error(err)
-      toast.error('Failed to load schedule')
+      console.error('Failed to load student schedule:', err)
+      toast.error('Failed to load student schedule')
     } finally {
       isLoading = false
     }
   }
 
-  let unsubSchedule = null // declare outside
+  // Debounced refresh for real-time updates
+  async function refreshWithScroll() {
+    if (refreshTimeout) clearTimeout(refreshTimeout)
+
+    refreshTimeout = setTimeout(async () => {
+      const wrapper = document.querySelector('#student-grid .gridjs-wrapper')
+      const savedScrollTop = wrapper?.scrollTop || 0
+      const savedScrollLeft = wrapper?.scrollLeft || 0
+      await loadStudentSchedule(savedScrollTop, savedScrollLeft)
+      refreshTimeout = null
+    }, 100)
+  }
 
   onMount(async () => {
-    await load()
+    await loadStaticData()
+    await loadStudentSchedule()
 
-    unsubSchedule = await pb.collection('schedule').subscribe('*', async () => {
-      const wrapper = document.querySelector('#studentDailyGrid .gridjs-wrapper')
-      const top = wrapper?.scrollTop || 0
-      const left = wrapper?.scrollLeft || 0
-      await load(top, left)
+    // Subscribe to schedule changes with debounce
+    unsubSchedule = await pb.collection('schedule').subscribe('*', () => {
+      refreshWithScroll()
     })
   })
 
   onDestroy(() => {
+    if (refreshTimeout) clearTimeout(refreshTimeout)
     unsubSchedule?.()
-    grid?.destroy()
-    grid = null
+    if (gridInstance) {
+      gridInstance.destroy()
+      gridInstance = null
+    }
   })
 </script>
 
-<div class="p-6 bg-base-100">
+<div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
-    <h2 class="text-center flex-1">Student View Table (MTM + GRP)</h2>
+    <h2 class="text-center flex-1">Student Daily View</h2>
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
-  <div class="mb-2 flex flex-wrap items-center justify-between relative">
-    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
+  <div class="mb-2 grid grid-cols-3 items-center">
+    <!-- Left: holiday badge -->
+    <div class="flex items-center">
+      {#if todayHoliday}
+        <span
+          class="flex items-center gap-2 text-yellow-700 border border-yellow-300 bg-yellow-50 rounded-lg px-3 py-1"
+        >
+          <span class="text-lg">🎉</span>
+          <span class="text-sm font-semibold">{todayHoliday.name}</span>
+        </span>
+      {/if}
+    </div>
+
+    <!-- Center: date -->
+    <h3 class="text-xl font-semibold text-center">
       {formatDateDisplay(selectedDate)}
     </h3>
 
-    <div class="ml-auto flex items-center gap-2">
+    <!-- Right: nav buttons -->
+    <div class="flex items-center gap-2 justify-end">
       <button
         class="btn btn-outline btn-sm"
         onclick={goToToday}
@@ -251,7 +480,7 @@
       <button class="btn btn-outline btn-sm" onclick={() => changeDay(-1)} disabled={isLoading}>&larr;</button>
       <input
         type="date"
-        class="input input-bordered input-sm"
+        class="input input-bordered input-sm w-auto"
         value={selectedDate}
         onchange={onDateChange}
         disabled={isLoading}
@@ -260,85 +489,119 @@
     </div>
   </div>
 
-  <div id="studentDailyGrid" class="border rounded-lg overflow-hidden"></div>
+  <div id="student-grid" class="border rounded-lg"></div>
 </div>
 
 <style>
-  #studentDailyGrid :global(.gridjs-wrapper) {
-    max-height: 600px;
+  :global(html) {
+    scrollbar-gutter: stable;
+  }
+
+  #student-grid :global(.gridjs-wrapper) {
+    max-height: 650px;
     overflow: auto;
+    contain: strict;
   }
 
-  #studentDailyGrid :global(tr) {
-    background-color: #ffffff;
+  /* Fix padding and alignment */
+  #student-grid :global(td) {
+    padding: 0 !important;
+    vertical-align: middle !important;
   }
 
-  #studentDailyGrid :global(th) {
+  #student-grid :global(.gridjs-table td > div) {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 65px;
+  }
+
+  #student-grid :global(th) {
     position: sticky;
     top: 0;
     z-index: 20;
-    box-shadow: inset -1px -1px 0 #ddd;
-    background-color: #484b4f !important;
+    box-shadow: 0 1px 0 #ddd;
+    background-color: #484b4f;
     color: #ffffff;
+    text-align: center;
+    vertical-align: middle;
   }
 
-  #studentDailyGrid :global(td) {
-    background-color: inherit;
-  }
-
-  #studentDailyGrid :global(th:nth-child(1)),
-  #studentDailyGrid :global(td:nth-child(1)) {
+  /* Sticky columns for student info */
+  #student-grid :global(th:nth-child(1)),
+  #student-grid :global(td:nth-child(1)) {
     position: sticky;
     left: 0;
     z-index: 15;
     box-shadow: inset -1px 0 0 #ddd;
-    background-color: inherit;
+    background-color: white;
   }
 
-  #studentDailyGrid :global(th:nth-child(1)) {
+  #student-grid :global(th:nth-child(1)) {
     z-index: 25;
-    background-color: #484b4f !important;
+    background-color: #484b4f;
   }
 
-  #studentDailyGrid :global(th:nth-child(2)),
-  #studentDailyGrid :global(td:nth-child(2)) {
+  #student-grid :global(th:nth-child(2)),
+  #student-grid :global(td:nth-child(2)) {
     position: sticky;
     left: 180px;
     z-index: 10;
     box-shadow: inset -1px 0 0 #ddd;
-    background-color: inherit;
+    background-color: white;
   }
 
-  #studentDailyGrid :global(th:nth-child(2)) {
+  #student-grid :global(th:nth-child(2)) {
     z-index: 25;
-    background-color: #484b4f !important;
+    background-color: #484b4f;
   }
 
-  #studentDailyGrid :global(th:nth-child(3)),
-  #studentDailyGrid :global(td:nth-child(3)) {
+  #student-grid :global(th:nth-child(3)),
+  #student-grid :global(td:nth-child(3)) {
     position: sticky;
     left: 320px;
     z-index: 10;
     box-shadow: inset -1px 0 0 #ddd;
-    background-color: inherit;
+    background-color: white;
   }
 
-  #studentDailyGrid :global(th:nth-child(3)) {
+  #student-grid :global(th:nth-child(3)) {
     z-index: 25;
-    background-color: #484b4f !important;
+    background-color: #484b4f;
   }
 
-  #studentDailyGrid :global(th:nth-child(4)),
-  #studentDailyGrid :global(td:nth-child(4)) {
+  #student-grid :global(th:nth-child(4)),
+  #student-grid :global(td:nth-child(4)) {
     position: sticky;
     left: 440px;
     z-index: 10;
     box-shadow: inset -1px 0 0 #ddd;
-    background-color: inherit;
+    background-color: white;
   }
 
-  #studentDailyGrid :global(th:nth-child(4)) {
+  #student-grid :global(th:nth-child(4)) {
     z-index: 25;
-    background-color: #484b4f !important;
+    background-color: #484b4f;
+  }
+
+  #student-grid :global(th:nth-child(5)),
+  #student-grid :global(td:nth-child(5)) {
+    position: sticky;
+    left: 560px;
+    z-index: 10;
+    box-shadow: inset -1px 0 0 #ddd;
+    background-color: white;
+  }
+
+  #student-grid :global(th:nth-child(5)) {
+    z-index: 25;
+    background-color: #484b4f;
+  }
+
+  /* Hover effect for cells */
+  #student-grid :global(.gridjs-table td:hover > div) {
+    background-color: #d1fae5 !important;
+    transition: background-color 0.2s ease;
+    cursor: pointer;
   }
 </style>

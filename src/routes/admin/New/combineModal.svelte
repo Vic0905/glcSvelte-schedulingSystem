@@ -173,28 +173,42 @@
         expand: 'room,teacher',
       })
 
-      // Exclude the records we're currently editing
+      // Fetch holidays to know which dates to ignore spanning records
+      const holidayRecords = await pb.collection('holiday').getFullList({ fields: 'date' })
+      const holidaySet = new Set(holidayRecords.map((h) => h.date?.split(' ')[0]))
+
+      // Filter out records that span a holiday on the booking date
+      const nonHolidayRecords = records.filter((s) => {
+        const recStart = s.start?.split(' ')[0]
+        const recEnd = s.end?.split(' ')[0]
+        // If this record spans across a holiday that falls on our booking date range,
+        // and our booking is purely on that holiday date — skip it
+        for (const hDate of holidaySet) {
+          if (hDate >= recStart && hDate <= recEnd && hDate >= stu.startDate && hDate <= stu.endDate) {
+            return false
+          }
+        }
+        return true
+      })
+
       const others =
         form.mode === 'edit'
-          ? records.filter(
+          ? nonHolidayRecords.filter(
               (s) =>
                 s.room !== originalState.roomId ||
                 s.timeslot !== originalState.timeslotId ||
                 s.start.split(' ')[0] !== originalState.startDate
             )
-          : records
+          : nonHolidayRecords
 
-      // Teacher already booked elsewhere
       const teacherBusy = others.find((s) => s.teacher === form.teacher.id)
       if (teacherBusy)
         throw new Error(`${form.teacher.name} is busy in ${teacherBusy.expand?.room?.name || 'another room'}.`)
 
-      // Room taken by a different teacher
       const roomTaken = others.find((s) => s.room === form.room.id && s.teacher !== form.teacher.id)
       if (roomTaken)
         throw new Error(`${form.room.name} is occupied by ${roomTaken.expand?.teacher?.name || 'another teacher'}.`)
 
-      // Student already has a class at this time
       const studentBusy = others.find((s) => {
         const sid = typeof s.student === 'object' ? s.student.id : s.student
         return sid === stu.id

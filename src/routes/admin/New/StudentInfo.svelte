@@ -9,7 +9,7 @@
   const STATUS_OPTIONS = ['new', 'old', 'graduated']
   const STATUS_BADGE = { new: 'badge-success', old: 'badge-info', graduated: 'badge-warning' }
   const BULK_DRAFT_KEY = 'student_bulk_draft'
-  const BLANK_FORM = { id: null, name: '', englishName: '', course: '', level: '', status: 'new' }
+  const BLANK_FORM = { id: null, name: '', englishName: '', course: '', level: '', groupName: '', status: 'new' }
 
   // ── State ─────────────────────────────────────────────────────────────────
   let students = $state([])
@@ -97,6 +97,7 @@
       s.name || '-',
       s.course || '-',
       s.level || '-',
+      s.groupName || '-',
       h('span', { className: `badge badge-sm ${STATUS_BADGE[s.status] ?? 'badge-neutral'}` }, s.status ?? 'new'),
       h('div', { className: 'flex gap-2 justify-center' }, [
         h('button', { className: 'btn btn-xs btn-outline btn-info', onclick: () => openEdit(s) }, 'Edit'),
@@ -114,6 +115,7 @@
           { name: 'Name', width: '150px' },
           { name: 'Course', width: '120px' },
           { name: 'Level', width: '80px' },
+          { name: 'Group Name', width: '120px' },
           { name: 'Status', width: '80px' },
           { name: 'Actions', width: '130px', sort: false },
         ],
@@ -201,6 +203,7 @@
         englishName: trimmed,
         course: formData.course.trim(),
         level: formData.level.trim(),
+        groupName: formData.groupName.trim(),
         status: formData.status,
       }
       formData.id
@@ -329,6 +332,7 @@
       englishName: s.englishName || '',
       course: s.course || '',
       level: s.level || '',
+      groupName: s.groupName || '',
       status: s.status || 'new',
     }
     showModal = true
@@ -467,7 +471,7 @@
 
         <div>
           <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide mb-3">Academic Information</p>
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-3 gap-4">
             <div class="form-control">
               <label class="label py-1" for="course"><span class="label-text font-semibold">Course</span></label>
               <input
@@ -486,6 +490,16 @@
                 type="text"
                 class="input input-bordered w-full focus:input-primary"
                 placeholder="e.g. 2"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label py-1" for="groupname"><span class="label-text font-semibold">Group</span></label>
+              <input
+                id="groupname"
+                bind:value={formData.groupName}
+                type="text"
+                class="input input-bordered w-full focus:input-primary"
+                placeholder="e.g. Group A"
               />
             </div>
           </div>

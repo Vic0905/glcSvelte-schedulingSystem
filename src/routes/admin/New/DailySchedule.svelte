@@ -10,6 +10,9 @@
   let todayHoliday = $state(null)
   let combineModal = $state()
   let gridInstance = $state(null)
+  let cachedHolidays = []
+  let cachedTimeslots = []
+  let cachedRooms = []
   // With this:
   function getInitialDate() {
     const hash = window.location.hash // e.g. "#/new/dailyschedule?date=2026-06-03"
@@ -131,48 +134,53 @@
       const startDateStr = `${selectedDate} 00:00:00`
       const endDateStr = `${selectedDate} 23:59:59`
 
-      const [ts, roomList, sched, holidayRecords] = await Promise.all([
-        pb.collection('timeslot').getFullList({ sort: 'start' }),
-        pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher', filter: 'roomType = "mtm"' }),
+      const [ts, roomList, sched] = await Promise.all([
+        cachedTimeslots.length
+          ? Promise.resolve(cachedTimeslots)
+          : pb.collection('timeslot').getFullList({ sort: 'start' }),
+        cachedRooms.length
+          ? Promise.resolve(cachedRooms)
+          : pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher', filter: 'roomType = "mtm"' }),
         pb.collection('schedule').getFullList({
           filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
           expand: 'teacher,student,subject,room,timeslot',
         }),
-        pb.collection('holiday').getFullList({ fields: 'id,name,date' }),
       ])
+
+      if (!cachedTimeslots.length) cachedTimeslots = ts
+      if (!cachedRooms.length) cachedRooms = roomList
+      if (!cachedHolidays.length) {
+        cachedHolidays = await pb.collection('holiday').getFullList({ fields: 'id,name,date' })
+      }
 
       // Check if selected date is a holiday
       // Replace the early-return holiday block with:
-      const foundHoliday = holidayRecords.find((h) => h.date?.split(' ')[0] === selectedDate)
+      const foundHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate)
       todayHoliday = foundHoliday || null
-
-      if (todayHoliday) {
-        toast.info(`${selectedDate} is a holiday: ${todayHoliday.name}. No schedules to display.`)
-        timeslots = []
-        rooms = []
-        if (gridInstance) {
-          gridInstance.destroy()
-          gridInstance = null
-        }
-        // isLoading = false
-        return
-      }
 
       timeslots = ts
       rooms = roomList
 
-      // After (correct) — only drops schedule if selectedDate itself is a holiday
-      // (which is already handled by the early return above, so this filter
-      //  is actually not needed at all — just map directly)
-      const unified = sched.map((s) => ({
-        roomId: s.expand?.room?.id,
-        timeslotId: s.expand?.timeslot?.id,
-        students: s.expand?.student ? [{ id: s.expand.student.id, name: s.expand.student.englishName }] : [],
-        subject: s.expand?.subject,
-        teacher: s.expand?.teacher,
-        start: s.start?.split(' ')[0],
-        end: s.end?.split(' ')[0],
-      }))
+      const unified = sched
+        .filter((s) => {
+          // If it's a holiday, only show records that are exactly on this single day
+          // (i.e., special holiday bookings), not spanning records
+          if (todayHoliday) {
+            const recStart = s.start?.split(' ')[0]
+            const recEnd = s.end?.split(' ')[0]
+            return recStart === selectedDate && recEnd === selectedDate
+          }
+          return true
+        })
+        .map((s) => ({
+          roomId: s.expand?.room?.id,
+          timeslotId: s.expand?.timeslot?.id,
+          students: s.expand?.student ? [{ id: s.expand.student.id, name: s.expand.student.englishName }] : [],
+          subject: s.expand?.subject,
+          teacher: s.expand?.teacher,
+          start: s.start?.split(' ')[0],
+          end: s.end?.split(' ')[0],
+        }))
 
       const scheduleMap = new Map()
       for (const s of unified) {
@@ -250,7 +258,7 @@
         }),
       ]
 
-      await tick() // Wait for DOM to update before manipulating the grid
+      await tick() // Ensure DOM is updated before manipulating the grid
 
       if (gridInstance) {
         if (savedScrollTop === null) {
@@ -422,12 +430,26 @@
     {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
   </div>
 
-  <div class="mb-2 flex flex-wrap items-center justify-between relative">
-    <h3 class="absolute left-1/2 -translate-x-1/2 text-xl font-semibold">
+  <div class="mb-2 grid grid-cols-3 items-center">
+    <!-- Left: holiday badge -->
+    <div class="flex items-center">
+      {#if todayHoliday}
+        <span
+          class="flex items-center gap-2 text-yellow-700 border border-yellow-300 bg-yellow-50 rounded-lg px-3 py-1"
+        >
+          <span class="text-lg">🎉</span>
+          <span class="text-sm font-semibold">{todayHoliday.name}</span>
+        </span>
+      {/if}
+    </div>
+
+    <!-- Center: date -->
+    <h3 class="text-xl font-semibold text-center">
       {formatDateDisplay(selectedDate)}
     </h3>
 
-    <div class="ml-auto flex items-center gap-2">
+    <!-- Right: nav buttons -->
+    <div class="flex items-center gap-2 justify-end">
       <button
         class="btn btn-outline btn-sm"
         onclick={goToToday}
@@ -435,11 +457,11 @@
       >
         Today
       </button>
-      <button class="btn btn-outline btn-error btn-sm" onclick={clearDay} disabled={isLoading}> Clear Day </button>
+      <button class="btn btn-outline btn-error btn-sm" onclick={clearDay} disabled={isLoading}>Clear Day</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeDay(-1)} disabled={isLoading}>&larr;</button>
       <input
         type="date"
-        class="input input-bordered input-sm"
+        class="input input-bordered input-sm w-auto"
         value={selectedDate}
         onchange={onDateChange}
         disabled={isLoading}
@@ -448,17 +470,7 @@
     </div>
   </div>
 
-  {#if todayHoliday}
-    <div class="border rounded-lg flex items-center justify-center py-16">
-      <div class="text-center">
-        <div class="text-4xl mb-3">🎉</div>
-        <h3 class="text-xl font-bold text-neutral-700">{todayHoliday.name}</h3>
-        <p class="text-sm text-neutral-400 mt-1">No classes scheduled for {formatDateDisplay(selectedDate)}</p>
-      </div>
-    </div>
-  {:else}
-    <div id="daily-grid" class="border rounded-lg"></div>
-  {/if}
+  <div id="daily-grid" class="border rounded-lg"></div>
 </div>
 
 <CombineModal bind:this={combineModal} onrefresh={refreshWithScroll} />
