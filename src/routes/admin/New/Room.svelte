@@ -19,11 +19,23 @@
     roomType: 'mtm',
     maxStudents: 0,
     selectedTeacherId: '',
+    status: 'enabled', // Add status to form data
   })
 
   $effect(() => {
     if (formData.roomType === 'mtm') {
       formData.maxStudents = 1
+    }
+  })
+
+  // Watch for status changes to handle teacher removal
+  $effect(() => {
+    // If status changes to 'disabled' and there's a teacher assigned
+    if (formData.status === 'disabled' && formData.selectedTeacherId) {
+      // Show confirmation toast
+      toast.warning('Teacher will be removed when disabling this room', {
+        duration: 3000,
+      })
     }
   })
 
@@ -77,7 +89,7 @@
 
   function checkTeacherOccupancy(teacherId) {
     if (!teacherId) return null
-    const assigned = rooms.find((r) => r.teacher === teacherId && r.id !== formData.id)
+    const assigned = rooms.find((r) => r.teacher === teacherId && r.id !== formData.id && r.status === 'enabled')
     return assigned ? assigned.name : null
   }
 
@@ -89,18 +101,26 @@
     const nameExists = rooms.find((r) => r.name.toLowerCase() === trimmedName.toLowerCase() && r.id !== formData.id)
     if (nameExists) return toast.error(`A room named "${trimmedName}" already exists!`)
 
-    // 2. Check Teacher Occupancy
-    const occupiedByName = checkTeacherOccupancy(formData.selectedTeacherId)
-    if (occupiedByName) return toast.error(`Teacher already assigned to ${occupiedByName}`)
+    // Prepare payload
+    let payload = {
+      name: trimmedName,
+      roomType: formData.roomType,
+      maxStudents: formData.maxStudents,
+      status: formData.status,
+    }
+
+    // Handle teacher assignment based on room status
+    if (formData.status === 'disabled') {
+      // If room is disabled, always set teacher to null
+      payload.teacher = null
+    } else {
+      // Only check teacher occupancy for enabled rooms
+      const occupiedByName = checkTeacherOccupancy(formData.selectedTeacherId)
+      if (occupiedByName) return toast.error(`Teacher already assigned to ${occupiedByName}`)
+      payload.teacher = formData.selectedTeacherId || null
+    }
 
     try {
-      const payload = {
-        name: trimmedName,
-        roomType: formData.roomType,
-        maxStudents: formData.maxStudents,
-        teacher: formData.selectedTeacherId || null,
-      }
-
       if (formData.id) {
         await pb.collection('roomType').update(formData.id, payload)
         toast.success('Room updated')
@@ -112,7 +132,7 @@
       closeModal()
       await loadInitialData()
     } catch (err) {
-      // 3. Handle Database Rejection (if the local check missed something)
+      // Handle Database Rejection
       if (err.status === 400) {
         toast.error('Save failed: This room name is already in use.')
       } else {
@@ -128,13 +148,21 @@
       roomType: room.roomType,
       maxStudents: room.maxStudents,
       selectedTeacherId: room.teacher || '',
+      status: room.status || 'enabled', // Add status with fallback
     }
     showModal = true
   }
 
   function closeModal() {
     showModal = false
-    formData = { id: null, name: '', roomType: 'mtm', maxStudents: 0, selectedTeacherId: '' }
+    formData = {
+      id: null,
+      name: '',
+      roomType: 'mtm',
+      maxStudents: 0,
+      selectedTeacherId: '',
+      status: 'enabled',
+    }
   }
 
   async function deleteRoom(id) {
@@ -153,7 +181,7 @@
   $effect(() => {
     if (gridElement && !gridInstance) {
       gridInstance = new Grid({
-        columns: ['Room Name', 'Type', 'Capacity', 'Teacher', { name: 'Actions', sort: false }],
+        columns: ['Room Name', 'Type', 'Capacity', 'Teacher', 'Status', { name: 'Actions', sort: false }],
         data: [], // Start empty
         search: true,
         pagination: { limit: 10 },
@@ -184,11 +212,18 @@
             : assignedTeacher.name
           : 'Unassigned'
 
+        // Status badge with appropriate styling
+        const statusBadge =
+          r.status === 'disabled'
+            ? h('span', { className: 'badge badge-error badge-sm' }, 'Disabled')
+            : h('span', { className: 'badge badge-success badge-sm' }, 'Enabled')
+
         return [
           r.name,
           r.roomType?.toUpperCase(),
           r.maxStudents,
           teacherName,
+          statusBadge,
           h('div', { className: 'flex gap-2 justify-center' }, [
             h(
               'button',
@@ -292,6 +327,26 @@
           </div>
         </div>
 
+        <!-- Status Selection -->
+        <div class="form-control w-full">
+          <label class="label py-1" for="room-status">
+            <span class="label-text font-semibold text-base-content">Room Status</span>
+          </label>
+          <select
+            id="room-status"
+            bind:value={formData.status}
+            class="select select-bordered w-full focus:select-primary"
+          >
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled</option>
+          </select>
+          {#if formData.status === 'disabled' && formData.selectedTeacherId}
+            <label class="label">
+              <span class="label-text-alt text-warning">⚠️ Teacher will be removed when saving</span>
+            </label>
+          {/if}
+        </div>
+
         <!-- Assigned Teacher Input -->
         <div class="form-control w-full">
           <label class="label py-1" for="teacher">
@@ -301,12 +356,18 @@
             id="teacher"
             bind:value={formData.selectedTeacherId}
             class="select select-bordered w-full focus:select-primary"
+            disabled={formData.status === 'disabled'}
           >
             <option value="">Unassigned</option>
             {#each teachers as t}
               <option value={t.id}>{t.name}</option>
             {/each}
           </select>
+          {#if formData.status === 'disabled'}
+            <label class="label">
+              <span class="label-text-alt text-error">Teacher assignments are disabled for inactive rooms</span>
+            </label>
+          {/if}
         </div>
       </div>
 

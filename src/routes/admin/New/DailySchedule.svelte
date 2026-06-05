@@ -324,93 +324,6 @@
     const savedScrollLeft = wrapper?.scrollLeft || 0
     await loadSchedules(savedScrollTop, savedScrollLeft)
   }
-  const clearDay = async () => {
-    if (!confirm(`Clear all schedules for ${formatDateDisplay(selectedDate)}? This cannot be undone.`)) return
-
-    if (isLoading) return
-    isLoading = true
-
-    try {
-      const startDateStr = `${selectedDate} 00:00:00`
-      const endDateStr = `${selectedDate} 23:59:59`
-
-      // Fetch all schedule records that overlap this day
-      const records = await pb.collection('schedule').getFullList({
-        filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
-        fields: 'id,start,end,timeslot,room,teacher,subject,student',
-      })
-
-      if (records.length === 0) {
-        toast.info('No schedules to clear for this day.')
-        isLoading = false
-        return
-      }
-
-      const batch = pb.createBatch()
-
-      for (const rec of records) {
-        const recStart = rec.start.split(' ')[0]
-        const recEnd = rec.end.split(' ')[0]
-        const isSingleDay = recStart === recEnd
-
-        if (isSingleDay || (recStart === selectedDate && recEnd === selectedDate)) {
-          // Case 1: single-day record — just delete
-          batch.collection('schedule').delete(rec.id)
-        } else if (recStart === selectedDate) {
-          // Case 2: selected day is the start — push start forward by 1
-          const nextDay = new Date(selectedDate)
-          nextDay.setDate(nextDay.getDate() + 1)
-          const newStart = nextDay.toISOString().split('T')[0]
-          batch.collection('schedule').update(rec.id, {
-            start: `${newStart} 00:00:00.000Z`,
-          })
-        } else if (recEnd === selectedDate) {
-          // Case 3: selected day is the end — pull end back by 1
-          const prevDay = new Date(selectedDate)
-          prevDay.setDate(prevDay.getDate() - 1)
-          const newEnd = prevDay.toISOString().split('T')[0]
-          batch.collection('schedule').update(rec.id, {
-            end: `${newEnd} 00:00:00.000Z`,
-          })
-        } else {
-          // Case 4: selected day is in the middle — split into two records
-          const prevDay = new Date(selectedDate)
-          prevDay.setDate(prevDay.getDate() - 1)
-          const newEnd = prevDay.toISOString().split('T')[0]
-
-          const nextDay = new Date(selectedDate)
-          nextDay.setDate(nextDay.getDate() + 1)
-          const newStart = nextDay.toISOString().split('T')[0]
-
-          // Update original to be the "before" segment
-          batch.collection('schedule').update(rec.id, {
-            end: `${newEnd} 00:00:00.000Z`,
-          })
-
-          // Create the "after" segment
-          batch.collection('schedule').create({
-            timeslot: rec.timeslot,
-            room: rec.room,
-            teacher: rec.teacher,
-            subject: rec.subject,
-            student: rec.student,
-            start: `${newStart} 00:00:00.000Z`,
-            end: `${recEnd} 00:00:00.000Z`,
-          })
-        }
-      }
-
-      await batch.send()
-      toast.success(`Cleared ${records.length} schedule record(s) for ${selectedDate}`)
-      isLoading = false
-      await refreshWithScroll()
-    } catch (err) {
-      console.error(err)
-      toast.error('Failed to clear schedules for this day')
-    } finally {
-      isLoading = false
-    }
-  }
 
   onMount(() => {
     loadSchedules()
@@ -457,7 +370,6 @@
       >
         Today
       </button>
-      <button class="btn btn-outline btn-error btn-sm" onclick={clearDay} disabled={isLoading}>Clear Day</button>
       <button class="btn btn-outline btn-sm" onclick={() => changeDay(-1)} disabled={isLoading}>&larr;</button>
       <input
         type="date"

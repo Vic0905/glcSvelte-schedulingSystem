@@ -36,8 +36,10 @@
       .split('\n')
       .map((line) => {
         const delimiter = line.includes('\t') ? '\t' : ','
-        const [name = '', englishName = '', course = '', level = ''] = line.split(delimiter).map((s) => s.trim())
-        return { englishName, name, course, level }
+        const [name = '', englishName = '', course = '', level = '', groupName = ''] = line
+          .split(delimiter)
+          .map((s) => s.trim())
+        return { englishName, name, course, level, groupName }
       })
       .filter(
         (row, i, arr) =>
@@ -545,7 +547,7 @@
       <p class="text-sm text-base-content/50 mb-2">One student per line. Duplicates are skipped automatically.</p>
       <div class="alert alert-info py-2 px-3 mb-4 text-xs">
         Paste from <strong>Google Sheets</strong> or type manually with commas. Column order:
-        <code class="font-mono font-bold mx-1">Name · EnglishName · Course · Level</code>
+        <code class="font-mono font-bold mx-1">Name · EnglishName · Course · Level · Group</code>
         — only <strong>English Name</strong> is required.
       </div>
 
@@ -572,7 +574,7 @@
           ></textarea>
         </div>
 
-        <div class="form-control">
+        <!-- <div class="form-control">
           <label class="label py-1" for="bulk-status">
             <span class="label-text font-semibold">Default Status</span>
             <span class="label-text-alt text-base-content/50">Applied to all</span>
@@ -584,33 +586,50 @@
           >
             {#each STATUS_OPTIONS as opt}<option value={opt}>{capitalize(opt)}</option>{/each}
           </select>
-        </div>
+        </div> -->
 
-        {#if bulkPreview.length > 0}
+        {#if true}
           <div class="bg-base-200 rounded-lg p-3">
             <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide mb-2">Preview</p>
             <div class="overflow-x-auto max-h-48 overflow-y-auto">
-              <table class="table table-xs w-full">
-                <thead><tr><th>Name</th><th>English Name</th><th>Course</th><th>Level</th><th>Status</th></tr></thead>
-                <tbody>
-                  {#each bulkPreview as row}
-                    {@const isDupe = students.some(
-                      (s) => s.englishName?.toLowerCase() === row.englishName.toLowerCase()
-                    )}
-                    <tr class={isDupe ? 'opacity-40' : ''}>
-                      <td class="text-base-content/70">{row.name || '—'}</td>
-                      <td class={isDupe ? 'line-through' : 'font-medium'}>{row.englishName}</td>
-                      <td class="text-base-content/70">{row.course || '—'}</td>
-                      <td class="text-base-content/70">{row.level || '—'}</td>
-                      <td>
-                        {#if isDupe}<span class="badge badge-xs badge-warning">duplicate</span>
-                        {:else}<span class="badge badge-xs {STATUS_BADGE[bulkDefaultStatus]}">{bulkDefaultStatus}</span
-                          >{/if}
-                      </td>
+              {#if bulkPreview.length > 0}
+                <table class="table table-xs w-full">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>English Name</th>
+                      <th>Course</th>
+                      <th>Level</th>
+                      <th>Group</th>
+                      <th>Status</th>
                     </tr>
-                  {/each}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {#each bulkPreview as row}
+                      {@const isDupe = students.some(
+                        (s) => s.englishName?.toLowerCase() === row.englishName.toLowerCase()
+                      )}
+                      <tr class={isDupe ? 'opacity-40' : ''}>
+                        <td class="text-base-content/70">{row.name || '—'}</td>
+                        <td class={isDupe ? 'line-through' : 'font-medium'}>{row.englishName}</td>
+                        <td class="text-base-content/70">{row.course || '—'}</td>
+                        <td class="text-base-content/70">{row.level || '—'}</td>
+                        <td class="text-base-content/70">{row.groupName || '—'}</td>
+                        <td>
+                          {#if isDupe}<span class="badge badge-xs badge-warning">duplicate</span>
+                          {:else}<span class="badge badge-xs {STATUS_BADGE[bulkDefaultStatus]}"
+                              >{bulkDefaultStatus}</span
+                            >{/if}
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              {:else}
+                <div class="text-center text-base-content/40 py-8 text-sm">
+                  Enter student data above — preview will appear here
+                </div>
+              {/if}
             </div>
           </div>
         {/if}
