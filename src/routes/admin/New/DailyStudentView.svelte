@@ -351,7 +351,7 @@
             ),
         },
         {
-          name: 'Group Name',
+          name: 'Remarks',
           width: '120px',
           formatter: (cell) =>
             h(

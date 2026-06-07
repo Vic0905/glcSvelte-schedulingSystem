@@ -108,6 +108,9 @@ export const adminRoutes = {
   '/new/dailygroupschedule': wrap({
     asyncComponent: () => import('../routes/admin/New/DailyGroupSchedule.svelte'),
   }),
+  '/new/holidaypicker': wrap({
+    asyncComponent: () => import('../routes/admin/New/HolidayPicker.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),

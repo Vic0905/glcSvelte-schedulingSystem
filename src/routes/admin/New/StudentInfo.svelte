@@ -4,12 +4,31 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import Papa from 'papaparse'
 
   // ── Constants ─────────────────────────────────────────────────────────────
-  const STATUS_OPTIONS = ['new', 'old', 'graduated']
-  const STATUS_BADGE = { new: 'badge-success', old: 'badge-info', graduated: 'badge-warning' }
+  const STATUS_OPTIONS = ['new', 'old', 'graduated', 'changed', 'extended']
+  const STATUS_BADGE = {
+    new: 'badge-success',
+    old: 'badge-info',
+    graduated: 'badge-warning',
+    extended: 'badge-secondary',
+    changed: 'badge-error',
+  }
   const BULK_DRAFT_KEY = 'student_bulk_draft'
-  const BLANK_FORM = { id: null, name: '', englishName: '', course: '', level: '', groupName: '', status: 'new' }
+  const BLANK_FORM = {
+    id: null,
+    name: '',
+    englishName: '',
+    course: '',
+    level: '',
+    remarks: '',
+    status: 'new',
+    start: '',
+    end: '',
+    isChanged: false,
+    isExtended: false,
+  }
 
   // ── State ─────────────────────────────────────────────────────────────────
   let students = $state([])
@@ -23,12 +42,17 @@
   let bulkRawInput = $state('')
   let bulkDefaultStatus = $state('new')
 
+  // ── Derived for edit mode ──────────────────────────────────────────────────
+  let editMode = $derived(formData.isChanged ? 'changed' : formData.isExtended ? 'extended' : 'normal')
+
   // ── Derived ───────────────────────────────────────────────────────────────
   let stats = $derived({
     total: students.length,
     new: students.filter((s) => s.status === 'new').length,
     old: students.filter((s) => s.status === 'old').length,
     graduated: students.filter((s) => s.status === 'graduated').length,
+    extended: students.filter((s) => s.status === 'extended').length,
+    changed: students.filter((s) => s.status === 'changed').length,
   })
 
   let bulkPreview = $derived(
@@ -36,10 +60,10 @@
       .split('\n')
       .map((line) => {
         const delimiter = line.includes('\t') ? '\t' : ','
-        const [name = '', englishName = '', course = '', level = '', groupName = ''] = line
+        const [name = '', englishName = '', course = '', level = '', remarks = '', start = '', end = ''] = line
           .split(delimiter)
           .map((s) => s.trim())
-        return { englishName, name, course, level, groupName }
+        return { englishName, name, course, level, remarks, start, end }
       })
       .filter(
         (row, i, arr) =>
@@ -67,17 +91,8 @@
       },
       body: JSON.stringify({ requests }),
     })
-
     const text = await res.text()
-
-    // console.log('Batch status:', res.status)
-    // console.log('Batch response:', text)
-    // console.log('Batch size:', requests.length)
-
-    if (!res.ok) {
-      throw new Error(text)
-    }
-
+    if (!res.ok) throw new Error(text)
     return JSON.parse(text)
   }
 
@@ -99,7 +114,9 @@
       s.name || '-',
       s.course || '-',
       s.level || '-',
-      s.groupName || '-',
+      s.remarks || '-',
+      s.start ? s.start.slice(0, 10) : '-',
+      s.end ? s.end.slice(0, 10) : '-',
       h('span', { className: `badge badge-sm ${STATUS_BADGE[s.status] ?? 'badge-neutral'}` }, s.status ?? 'new'),
       h('div', { className: 'flex gap-2 justify-center' }, [
         h('button', { className: 'btn btn-xs btn-outline btn-info', onclick: () => openEdit(s) }, 'Edit'),
@@ -112,19 +129,25 @@
     } else {
       gridInstance = new Grid({
         columns: [
-          { name: 'Select', width: '70px', sort: false },
-          { name: 'English Name', width: '100px' },
-          { name: 'Name', width: '150px' },
-          { name: 'Course', width: '120px' },
-          { name: 'Level', width: '80px' },
-          { name: 'Group Name', width: '120px' },
+          { name: 'Select', width: '50px', sort: false },
+          { name: 'English Name', width: '120px' },
+          { name: 'Name', width: '120px' },
+          { name: 'Course', width: '90px' },
+          { name: 'Level', width: '65px' },
+          { name: 'Remarks', width: '90px' },
+          { name: 'Start', width: '90px' },
+          { name: 'End', width: '90px' },
           { name: 'Status', width: '80px' },
-          { name: 'Actions', width: '130px', sort: false },
+          { name: 'Actions', width: '110px', sort: false },
         ],
         data,
         search: true,
         pagination: { limit: 10 },
         className: { table: 'table w-full', th: 'text-center', td: 'text-center' },
+        style: {
+          th: { 'font-size': '0.7rem' },
+          td: { 'font-size': '0.75rem' },
+        },
       }).render(gridElement)
     }
   }
@@ -195,23 +218,53 @@
   async function saveStudent() {
     const trimmed = formData.englishName.trim()
     if (!trimmed) return toast.error('English Name is required')
-    if (students.some((s) => s.englishName?.toLowerCase() === trimmed.toLowerCase() && s.id !== formData.id))
-      return toast.error(`"${trimmed}" already exists`)
 
     isProcessing = true
     try {
-      const payload = {
-        name: formData.name.trim(),
-        englishName: trimmed,
-        course: formData.course.trim(),
-        level: formData.level.trim(),
-        groupName: formData.groupName.trim(),
-        status: formData.status,
+      if (formData.id && formData.isChanged) {
+        const original = students.find((s) => s.id === formData.id)
+        await pb.collection('student').create({
+          name: original.name,
+          englishName: original.englishName,
+          course: formData.course.trim(),
+          level: original.level,
+          remarks: original.remarks,
+          status: 'changed',
+          start: original.start || null,
+          end: original.end || null,
+        })
+        toast.success('New record created with changed course')
+      } else if (formData.id && formData.isExtended) {
+        const original = students.find((s) => s.id === formData.id)
+        await pb.collection('student').create({
+          name: original.name,
+          englishName: original.englishName,
+          course: formData.course.trim(),
+          level: original.level,
+          remarks: original.remarks,
+          status: 'extended',
+          start: formData.start || null,
+          end: formData.end || null,
+        })
+        toast.success('New record created with extended course and dates')
+      } else {
+        if (students.some((s) => s.englishName?.toLowerCase() === trimmed.toLowerCase() && s.id !== formData.id))
+          return toast.error(`"${trimmed}" already exists`)
+        const payload = {
+          name: formData.name.trim(),
+          englishName: trimmed,
+          course: formData.course.trim(),
+          level: formData.level.trim(),
+          remarks: formData.remarks.trim(),
+          status: formData.status,
+          start: formData.start || null,
+          end: formData.end || null,
+        }
+        formData.id
+          ? await pb.collection('student').update(formData.id, payload)
+          : await pb.collection('student').create(payload)
+        toast.success(formData.id ? 'Student updated' : 'Student added')
       }
-      formData.id
-        ? await pb.collection('student').update(formData.id, payload)
-        : await pb.collection('student').create(payload)
-      toast.success(formData.id ? 'Student updated' : 'Student added')
       closeModal()
       await loadStudents()
     } catch (err) {
@@ -325,8 +378,87 @@
     }
   }
 
-  // ── Modal helpers ─────────────────────────────────────────────────────────
+  // ── CSV ───────────────────────────────────────────────────────────────────
+  function downloadTemplate() {
+    const csv = Papa.unparse({
+      fields: ['English Name', 'Name', 'Course', 'Level', 'Remarks', 'Start', 'End', 'Status'],
+      data: [],
+    })
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'students_template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
+  function triggerCSVImport() {
+    document.getElementById('csv-import-input').click()
+  }
+
+  async function handleCSVImport(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (result) => {
+        const rows = result.data
+          .map((row) => ({
+            englishName: (row['English Name'] || row['englishName'] || '').trim(),
+            name: (row['Name'] || row['name'] || '').trim(),
+            course: (row['Course'] || row['course'] || '').trim(),
+            level: (row['Level'] || row['level'] || '').trim(),
+            remarks: (row['Remarks'] || row['remarks'] || '').trim(),
+            start: (row['Start'] || row['start'] || '').trim() || null,
+            end: (row['End'] || row['end'] || '').trim() || null,
+            status: (row['Status'] || row['status'] || 'new').trim(),
+          }))
+          .filter((r) => r.englishName)
+
+        if (!rows.length) return toast.error('No valid rows found in CSV')
+
+        const existingNames = new Set(students.map((s) => s.englishName?.toLowerCase()))
+        const toCreate = rows.filter((r) => !existingNames.has(r.englishName.toLowerCase()))
+        const skipped = rows.length - toCreate.length
+
+        if (!toCreate.length) {
+          toast.error(`All ${skipped} row(s) already exist`)
+          e.target.value = ''
+          return
+        }
+
+        isProcessing = true
+        try {
+          const results = await batchFetch(
+            toCreate.map((row) => ({
+              method: 'POST',
+              url: '/api/collections/student/records',
+              body: row,
+            }))
+          )
+          const added = results.filter((r) => r.status >= 200 && r.status < 300).length
+          const failed = results.filter((r) => r.status < 200 || r.status >= 300).length
+          toast.success(
+            [added && `${added} imported`, skipped && `${skipped} skipped`, failed && `${failed} failed`]
+              .filter(Boolean)
+              .join(', ')
+          )
+          await loadStudents()
+        } catch {
+          toast.error('CSV import failed')
+        } finally {
+          isProcessing = false
+          e.target.value = ''
+        }
+      },
+      error: () => toast.error('Failed to parse CSV'),
+    })
+  }
+
+  // ── Modal helpers ─────────────────────────────────────────────────────────
   const openEdit = (s) => {
     formData = {
       id: s.id,
@@ -334,8 +466,12 @@
       englishName: s.englishName || '',
       course: s.course || '',
       level: s.level || '',
-      groupName: s.groupName || '',
+      remarks: s.remarks || '',
       status: s.status || 'new',
+      start: s.start ? s.start.slice(0, 10) : '',
+      end: s.end ? s.end.slice(0, 10) : '',
+      isChanged: false,
+      isExtended: false,
     }
     showModal = true
   }
@@ -371,9 +507,14 @@
         <span>New <strong class="text-success">{stats.new}</strong></span>
         <span>Old <strong class="text-info">{stats.old}</strong></span>
         <span>Graduated <strong class="text-warning">{stats.graduated}</strong></span>
+        <span>Extended <strong class="text-secondary">{stats.extended}</strong></span>
+        <span>Changed <strong class="text-error">{stats.changed}</strong></span>
       </div>
     </div>
     <div class="flex gap-2">
+      <input id="csv-import-input" type="file" accept=".csv" class="hidden" onchange={handleCSVImport} />
+      <button class="btn btn-outline shadow-sm" onclick={downloadTemplate}> Download Template </button>
+      <button class="btn btn-outline shadow-sm" onclick={triggerCSVImport} disabled={isProcessing}> Import CSV </button>
       <button class="btn btn-outline shadow-sm relative" onclick={openBulkModal}>
         Add Multiple
         {#if hasDraft}<span
@@ -409,9 +550,19 @@
             onclick={() => bulkUpdateStatus('graduated')}
             disabled={isProcessing}>Mark Graduated</button
           >
-          <button class="btn btn-xs btn-error" onclick={bulkDeleteStudents} disabled={isProcessing}
-            >{isProcessing ? 'Processing…' : 'Delete'}</button
+          <button
+            class="btn btn-xs btn-outline btn-secondary"
+            onclick={() => bulkUpdateStatus('extended')}
+            disabled={isProcessing}>Mark Extended</button
           >
+          <button
+            class="btn btn-xs btn-outline btn-error"
+            onclick={() => bulkUpdateStatus('changed')}
+            disabled={isProcessing}>Mark Changed</button
+          >
+          <button class="btn btn-xs btn-error" onclick={bulkDeleteStudents} disabled={isProcessing}>
+            {isProcessing ? 'Processing…' : 'Delete'}
+          </button>
         </div>
       </div>
     </div>
@@ -437,40 +588,42 @@
       </div>
 
       <div class="flex flex-col gap-5">
+        <!-- Primary Information -->
         <div>
           <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide mb-3">Primary Information</p>
           <div class="grid grid-cols-2 gap-4">
             <div class="form-control">
-              <label class="label py-1" for="english-name"
-                ><span class="label-text font-semibold"
-                  >English Name <span class="opacity-40 font-normal text-xs">(required)</span></span
-                ></label
-              >
+              <label class="label py-1" for="english-name">
+                <span class="label-text font-semibold">
+                  English Name <span class="opacity-40 font-normal text-xs">(required)</span>
+                </span>
+              </label>
               <input
                 id="english-name"
                 bind:value={formData.englishName}
                 type="text"
-                class="input input-bordered w-full focus:input-primary"
-                placeholder="e.g. John"
+                disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
+                class="input input-bordered w-full focus:input-primary disabled:opacity-50"
               />
             </div>
             <div class="form-control">
-              <label class="label py-1" for="student-name"
-                ><span class="label-text font-semibold"
-                  >Name <span class="opacity-40 font-normal text-xs">(optional)</span></span
-                ></label
-              >
+              <label class="label py-1" for="student-name">
+                <span class="label-text font-semibold">
+                  Name <span class="opacity-40 font-normal text-xs">(optional)</span>
+                </span>
+              </label>
               <input
                 id="student-name"
                 bind:value={formData.name}
                 type="text"
-                class="input input-bordered w-full focus:input-primary"
-                placeholder="e.g. Juan Dela Cruz"
+                disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
+                class="input input-bordered w-full focus:input-primary disabled:opacity-50"
               />
             </div>
           </div>
         </div>
 
+        <!-- Academic Information -->
         <div>
           <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide mb-3">Academic Information</p>
           <div class="grid grid-cols-3 gap-4">
@@ -481,7 +634,6 @@
                 bind:value={formData.course}
                 type="text"
                 class="input input-bordered w-full focus:input-primary"
-                placeholder="e.g. BSIT"
               />
             </div>
             <div class="form-control">
@@ -490,40 +642,110 @@
                 id="level"
                 bind:value={formData.level}
                 type="text"
-                class="input input-bordered w-full focus:input-primary"
-                placeholder="e.g. 2"
+                disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
+                class="input input-bordered w-full focus:input-primary disabled:opacity-50"
               />
             </div>
             <div class="form-control">
-              <label class="label py-1" for="groupname"><span class="label-text font-semibold">Group</span></label>
+              <label class="label py-1" for="remarks"><span class="label-text font-semibold">Remarks</span></label>
               <input
-                id="groupname"
-                bind:value={formData.groupName}
+                id="remarks"
+                bind:value={formData.remarks}
                 type="text"
-                class="input input-bordered w-full focus:input-primary"
-                placeholder="e.g. Group A"
+                disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
+                class="input input-bordered w-full focus:input-primary disabled:opacity-50"
               />
             </div>
           </div>
         </div>
 
+        <!-- Status -->
         <div class="form-control">
           <label class="label py-1" for="student-status"><span class="label-text font-semibold">Status</span></label>
           <select
             id="student-status"
             bind:value={formData.status}
-            class="select select-bordered w-full focus:select-primary"
+            disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
+            class="select select-bordered w-full focus:select-primary disabled:opacity-50"
           >
             {#each STATUS_OPTIONS as opt}<option value={opt}>{capitalize(opt)}</option>{/each}
           </select>
+        </div>
+
+        <!-- Edit Mode (only in edit, not add) -->
+        {#if formData.id}
+          <div class="rounded-lg border border-base-300 bg-base-200/50 px-4 py-3 flex flex-col gap-3">
+            <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide">Edit Mode</p>
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm checkbox-error mt-0.5"
+                checked={formData.isChanged}
+                onchange={(e) => {
+                  formData.isChanged = e.target.checked
+                  if (e.target.checked) formData.isExtended = false
+                }}
+              />
+              <div>
+                <p class="font-semibold text-sm">Changed</p>
+                <p class="text-xs text-base-content/50">
+                  Creates a new record with an updated Course. Original is preserved.
+                </p>
+              </div>
+            </label>
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm checkbox-secondary mt-0.5"
+                checked={formData.isExtended}
+                onchange={(e) => {
+                  formData.isExtended = e.target.checked
+                  if (e.target.checked) formData.isChanged = false
+                }}
+              />
+              <div>
+                <p class="font-semibold text-sm">Extended</p>
+                <p class="text-xs text-base-content/50">
+                  Creates a new record with updated Course, Start & End dates. Original is preserved.
+                </p>
+              </div>
+            </label>
+          </div>
+        {/if}
+
+        <!-- Start & End Dates -->
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-control">
+            <label class="label py-1" for="start-date"><span class="label-text font-semibold">Start Date</span></label>
+            <input
+              id="start-date"
+              bind:value={formData.start}
+              type="date"
+              disabled={!!formData.id && formData.isChanged}
+              class="input input-bordered w-full focus:input-primary disabled:opacity-50"
+            />
+          </div>
+          <div class="form-control">
+            <label class="label py-1" for="end-date"><span class="label-text font-semibold">End Date</span></label>
+            <input
+              id="end-date"
+              bind:value={formData.end}
+              type="date"
+              disabled={!!formData.id && formData.isChanged}
+              class="input input-bordered w-full focus:input-primary disabled:opacity-50"
+            />
+          </div>
         </div>
       </div>
 
       <div class="modal-action mt-8 gap-2">
         <button class="btn btn-ghost px-6" onclick={closeModal} disabled={isProcessing}>Cancel</button>
         <button class="btn btn-primary px-6 shadow-sm" onclick={saveStudent} disabled={isProcessing}>
-          {#if isProcessing}<span class="loading loading-spinner loading-sm"></span>
-          {:else}{formData.id ? 'Save Changes' : 'Add Student'}{/if}
+          {#if isProcessing}
+            <span class="loading loading-spinner loading-sm"></span>
+          {:else}
+            {formData.id ? 'Save Changes' : 'Add Student'}
+          {/if}
         </button>
       </div>
     </div>
@@ -547,7 +769,7 @@
       <p class="text-sm text-base-content/50 mb-2">One student per line. Duplicates are skipped automatically.</p>
       <div class="alert alert-info py-2 px-3 mb-4 text-xs">
         Paste from <strong>Google Sheets</strong> or type manually with commas. Column order:
-        <code class="font-mono font-bold mx-1">Name · EnglishName · Course · Level · Group</code>
+        <code class="font-mono font-bold mx-1">Name · EnglishName · Course · Level · Remarks · Start · End</code>
         — only <strong>English Name</strong> is required.
       </div>
 
@@ -557,82 +779,73 @@
             <span class="label-text font-semibold">Student Lines</span>
             <span class="label-text-alt flex gap-2">
               {#if bulkPreview.length}<span class="text-base-content/50">{bulkPreview.length} detected</span>{/if}
-              {#if bulkRawInput.trim()}<button
+              {#if bulkRawInput.trim()}
+                <button
                   class="text-error text-xs underline"
                   onclick={() => {
                     bulkRawInput = ''
                     localStorage.removeItem(BULK_DRAFT_KEY)
                   }}>Clear</button
-                >{/if}
+                >
+              {/if}
             </span>
           </label>
           <textarea
             id="bulk-names"
             bind:value={bulkRawInput}
             class="textarea textarea-bordered w-full h-40 resize-none focus:textarea-primary font-mono text-sm"
-            placeholder="Full name&#9;English name&#9;Course&#9;Level&#9;&#9"
+            placeholder="Full name&#9;English name&#9;Course&#9;Level&#9;Remarks&#9;"
           ></textarea>
         </div>
 
-        <!-- <div class="form-control">
-          <label class="label py-1" for="bulk-status">
-            <span class="label-text font-semibold">Default Status</span>
-            <span class="label-text-alt text-base-content/50">Applied to all</span>
-          </label>
-          <select
-            id="bulk-status"
-            bind:value={bulkDefaultStatus}
-            class="select select-bordered w-full focus:select-primary"
-          >
-            {#each STATUS_OPTIONS as opt}<option value={opt}>{capitalize(opt)}</option>{/each}
-          </select>
-        </div> -->
-
-        {#if true}
-          <div class="bg-base-200 rounded-lg p-3">
-            <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide mb-2">Preview</p>
-            <div class="overflow-x-auto max-h-48 overflow-y-auto">
-              {#if bulkPreview.length > 0}
-                <table class="table table-xs w-full">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>English Name</th>
-                      <th>Course</th>
-                      <th>Level</th>
-                      <th>Group</th>
-                      <th>Status</th>
+        <div class="bg-base-200 rounded-lg p-3">
+          <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide mb-2">Preview</p>
+          <div class="overflow-x-auto max-h-48 overflow-y-auto">
+            {#if bulkPreview.length > 0}
+              <table class="table table-xs w-full">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>English Name</th>
+                    <th>Course</th>
+                    <th>Level</th>
+                    <th>Remarks</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each bulkPreview as row}
+                    {@const isDupe = students.some(
+                      (s) => s.englishName?.toLowerCase() === row.englishName.toLowerCase()
+                    )}
+                    <tr class={isDupe ? 'opacity-40' : ''}>
+                      <td class="text-base-content/70">{row.name || '—'}</td>
+                      <td class={isDupe ? 'line-through' : 'font-medium'}>{row.englishName}</td>
+                      <td class="text-base-content/70">{row.course || '—'}</td>
+                      <td class="text-base-content/70">{row.level || '—'}</td>
+                      <td class="text-base-content/70">{row.remarks || '—'}</td>
+                      <td class="text-base-content/70">{row.start || '—'}</td>
+                      <td class="text-base-content/70">{row.end || '—'}</td>
+                      <td>
+                        {#if isDupe}
+                          <span class="badge badge-xs badge-warning">duplicate</span>
+                        {:else}
+                          <span class="badge badge-xs {STATUS_BADGE[bulkDefaultStatus]}">{bulkDefaultStatus}</span>
+                        {/if}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {#each bulkPreview as row}
-                      {@const isDupe = students.some(
-                        (s) => s.englishName?.toLowerCase() === row.englishName.toLowerCase()
-                      )}
-                      <tr class={isDupe ? 'opacity-40' : ''}>
-                        <td class="text-base-content/70">{row.name || '—'}</td>
-                        <td class={isDupe ? 'line-through' : 'font-medium'}>{row.englishName}</td>
-                        <td class="text-base-content/70">{row.course || '—'}</td>
-                        <td class="text-base-content/70">{row.level || '—'}</td>
-                        <td class="text-base-content/70">{row.groupName || '—'}</td>
-                        <td>
-                          {#if isDupe}<span class="badge badge-xs badge-warning">duplicate</span>
-                          {:else}<span class="badge badge-xs {STATUS_BADGE[bulkDefaultStatus]}"
-                              >{bulkDefaultStatus}</span
-                            >{/if}
-                        </td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              {:else}
-                <div class="text-center text-base-content/40 py-8 text-sm">
-                  Enter student data above — preview will appear here
-                </div>
-              {/if}
-            </div>
+                  {/each}
+                </tbody>
+              </table>
+            {:else}
+              <div class="text-center text-base-content/40 py-8 text-sm">
+                Enter student data above — preview will appear here
+              </div>
+            {/if}
           </div>
-        {/if}
+        </div>
       </div>
 
       <div class="modal-action mt-8 gap-2">
@@ -642,7 +855,8 @@
           onclick={saveBulkStudents}
           disabled={!bulkPreview.length || isProcessing}
         >
-          {#if isProcessing}<span class="loading loading-spinner loading-sm"></span>
+          {#if isProcessing}
+            <span class="loading loading-spinner loading-sm"></span>
           {:else}
             {@const toAdd = bulkPreview.filter(
               (row) => !students.some((s) => s.englishName?.toLowerCase() === row.englishName.toLowerCase())

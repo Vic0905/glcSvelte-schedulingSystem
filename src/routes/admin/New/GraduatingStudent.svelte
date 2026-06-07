@@ -22,10 +22,7 @@
     const end = new Date(start)
     end.setDate(start.getDate() + 3)
 
-    const opts = {
-      month: 'long',
-      day: 'numeric',
-    }
+    const opts = { month: 'long', day: 'numeric' }
 
     return `${start.toLocaleDateString('en-US', opts)} - ${end.toLocaleDateString('en-US', {
       ...opts,
@@ -46,74 +43,38 @@
       const startDateStr = `${weekStart} 00:00:00`
       const endDateStr = `${endD.toISOString().split('T')[0]} 23:59:59`
 
-      const schedules = await pb.collection('schedule').getFullList({
+      const students = await pb.collection('student').getFullList({
         filter: `end >= "${startDateStr}" && end <= "${endDateStr}"`,
-        expand: 'student,teacher,subject,room',
         sort: 'end',
       })
 
-      const graduatingStudents = [
-        ...new Map(
-          schedules.map((s) => [
-            s.student,
-            {
-              studentName: s.expand?.student?.englishName || '-',
-              teacher: s.expand?.teacher?.name || '-',
-              subject: s.expand?.subject?.name || '-',
-              room: s.expand?.room?.name || '-',
-              graduationDate: s.end,
-            },
-          ])
-        ).values(),
-      ]
-
-      const data = graduatingStudents.map((s) => [
-        s.studentName,
-        s.teacher,
-        s.subject,
-        s.room,
-        new Date(s.graduationDate).toLocaleDateString(),
+      const data = students.map((s) => [
+        s.englishName || '-',
+        s.course || '-',
+        s.level || '-',
+        s.status || '-',
+        s.remarks || '-',
+        new Date(s.end).toLocaleDateString(),
       ])
 
       const columns = [
-        {
-          name: 'Student',
-          width: '250px',
-        },
-        {
-          name: 'Teacher',
-          width: '180px',
-        },
-        {
-          name: 'Subject',
-          width: '180px',
-        },
-        {
-          name: 'Room',
-          width: '120px',
-        },
-        {
-          name: 'Graduation Date',
-          width: '150px',
-        },
+        { name: 'Student', width: '220px' },
+        { name: 'Course', width: '180px' },
+        { name: 'Level', width: '120px' },
+        { name: 'Status', width: '120px' },
+        { name: 'Remarks', width: '180px' },
+        { name: 'Graduation Date', width: '150px' },
       ]
 
       if (gridInstance) {
-        gridInstance
-          .updateConfig({
-            columns,
-            data,
-          })
-          .forceRender()
+        gridInstance.updateConfig({ columns, data }).forceRender()
       } else {
         gridInstance = new Grid({
           columns,
           data,
           search: true,
           sort: true,
-          pagination: {
-            limit: 20,
-          },
+          pagination: { limit: 20 },
           className: {
             table: 'w-full border text-sm',
             th: 'text-center',
@@ -133,13 +94,11 @@
     const d = new Date(weekStart)
     d.setDate(d.getDate() + weeks * 7)
     weekStart = getWeekStart(d)
-
     await loadGraduatingStudents()
   }
 
   onMount(() => {
     loadGraduatingStudents()
-
     return () => {
       if (gridInstance) {
         gridInstance.destroy()
@@ -165,7 +124,6 @@
 
     <div class="ml-auto flex items-center gap-2">
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(-1)}> ← Previous Week </button>
-
       <button class="btn btn-outline btn-sm" onclick={() => changeWeek(1)}> Next Week → </button>
     </div>
   </div>
