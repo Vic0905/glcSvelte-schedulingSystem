@@ -43,7 +43,7 @@
       .filter((s) => {
         if (filterChanged) return s.status === 'changed'
         if (filterExtended) return s.status === 'extended'
-        return true
+        return s.status !== 'changed' && s.status !== 'extended' // ← default excludes both
       })
       .filter((s) => s.englishName?.toLowerCase().includes(searchQuery.toLowerCase()))
       .sort((a, b) => {
