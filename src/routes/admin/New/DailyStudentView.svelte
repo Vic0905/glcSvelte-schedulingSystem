@@ -113,83 +113,6 @@
     )
   }
 
-  // Update the column formatters to center text vertically
-  const columns = [
-    {
-      name: 'Student',
-      width: '180px',
-      formatter: (cell) => {
-        const hasNewBadge = cell.status === 'new'
-        return h(
-          'div',
-          { class: 'w-full h-full p-2 flex flex-col items-center justify-center text-center min-h-[65px]' },
-          [
-            h('span', { class: 'font-bold text-neutral-700' }, cell.value),
-            hasNewBadge && h('span', { class: 'badge badge-success badge-xs mt-1' }, 'New'),
-          ].filter(Boolean)
-        )
-      },
-    },
-    {
-      name: 'English Name',
-      width: '140px',
-      formatter: (cell) =>
-        h(
-          'div',
-          {
-            class:
-              'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center min-h-[65px]',
-          },
-          cell.value
-        ),
-    },
-    {
-      name: 'Course',
-      width: '120px',
-      formatter: (cell) =>
-        h(
-          'div',
-          {
-            class:
-              'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center min-h-[65px]',
-          },
-          cell.value
-        ),
-    },
-    {
-      name: 'Level',
-      width: '120px',
-      formatter: (cell) =>
-        h(
-          'div',
-          {
-            class:
-              'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center min-h-[65px]',
-          },
-          cell.value
-        ),
-    },
-    {
-      name: 'Group Name',
-      width: '120px',
-      formatter: (cell) =>
-        h(
-          'div',
-          {
-            class:
-              'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center min-h-[65px]',
-          },
-          cell.value
-        ),
-    },
-    ...cachedTimeslots.map((ts) => ({
-      id: ts.id,
-      width: '180px',
-      name: h('div', { class: 'flex flex-col items-center gap-0.5' }, [h('span', null, `${ts.start} - ${ts.end}`)]),
-      formatter: formatCell,
-    })),
-  ]
-
   async function loadStaticData() {
     if (isStaticDataLoaded) return
 
@@ -218,20 +141,17 @@
 
     isLoading = true
     try {
-      // Check if selected date is a holiday
       const foundHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate)
       todayHoliday = foundHoliday || null
 
       const startDateStr = `${selectedDate} 00:00:00`
       const endDateStr = `${selectedDate} 23:59:59`
 
-      // Fetch only schedules for the selected day (no expand on student to reduce payload)
       let schedules = await pb.collection('schedule').getFullList({
         filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
         expand: 'teacher,student,subject,room,timeslot',
       })
 
-      // Filter schedules based on holiday logic
       if (todayHoliday) {
         schedules = schedules.filter((s) => {
           const recStart = s.start?.split(' ')[0]
@@ -240,7 +160,6 @@
         })
       }
 
-      // Build schedule map efficiently
       const scheduleMap = new Map()
 
       for (const s of schedules) {
@@ -271,7 +190,6 @@
         }
       }
 
-      // Sort students (new at bottom, oldest first)
       const students = [...cachedStudents].sort((a, b) => {
         const aIsNew = a.status === 'new' ? 1 : 0
         const bIsNew = b.status === 'new' ? 1 : 0
@@ -279,7 +197,6 @@
         return new Date(a.created) - new Date(b.created)
       })
 
-      // Build grid data
       const data = students.map((student) => {
         const studentSlots = scheduleMap.get(student.id) || new Map()
 
@@ -303,13 +220,18 @@
           name: 'Student',
           width: '180px',
           formatter: (cell) => {
-            const hasNewBadge = cell.status === 'new'
+            const statusBadges = {
+              new: { class: 'badge-success', label: 'New' },
+              extended: { class: 'badge-secondary', label: 'Extended' },
+              changed: { class: 'badge-warning', label: 'Changed' },
+            }
+            const badge = statusBadges[cell.status]
             return h(
               'div',
-              { class: 'w-full h-full p-2 flex flex-col items-center text-center' },
+              { class: 'w-full h-full p-2 flex flex-col items-center justify-center text-center min-h-[65px]' },
               [
                 h('span', { class: 'font-bold text-neutral-700' }, cell.value),
-                hasNewBadge && h('span', { class: 'badge badge-success badge-xs mt-1' }, 'New'),
+                badge && h('span', { class: `badge ${badge.class} badge-xs mt-1` }, badge.label),
               ].filter(Boolean)
             )
           },
@@ -373,10 +295,8 @@
       await tick()
 
       if (gridInstance) {
-        // Only update config, don't recreate
         gridInstance.updateConfig({ columns, data }).forceRender()
 
-        // Restore scroll position
         if (savedScrollTop !== null) {
           requestAnimationFrame(() => {
             const wrapper = document.querySelector('#student-grid .gridjs-wrapper')
@@ -387,7 +307,6 @@
           })
         }
       } else {
-        // Initial render only
         gridInstance = new Grid({
           columns,
           data,
@@ -411,7 +330,6 @@
     }
   }
 
-  // Debounced refresh for real-time updates
   async function refreshWithScroll() {
     if (refreshTimeout) clearTimeout(refreshTimeout)
 
@@ -428,7 +346,6 @@
     await loadStaticData()
     await loadStudentSchedule()
 
-    // Subscribe to schedule changes with debounce
     unsubSchedule = await pb.collection('schedule').subscribe('*', () => {
       refreshWithScroll()
     })
