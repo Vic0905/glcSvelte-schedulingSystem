@@ -160,7 +160,7 @@
     try {
       let records = await pb.collection('student').getFullList({ sort: '-created' })
       const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      const toPromote = records.filter((s) => s.status === 'new' && new Date(s.created) < cutoff)
+      const toPromote = records.filter((s) => s.status === 'new' && s.start && new Date(s.start) < cutoff)
 
       if (toPromote.length) {
         await Promise.allSettled(toPromote.map(({ id }) => pb.collection('student').update(id, { status: 'old' })))
