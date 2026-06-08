@@ -4,19 +4,23 @@
 
   let { onrefresh } = $props()
 
-  // ─── Modal State ──────────
+  // ═══════════════════════════════════
+  // STATE
+  // ═══════════════════════════════════
+
+  // Modal
   let show = $state(false)
   let loading = $state(false)
   let showDeleteConfirm = $state(false)
 
-  // ─── Dropdown Data ──────────
+  // Dropdown data
   let subjects = $state([])
   let students = $state([])
   let teachers = $state([])
   let rooms = $state([])
   let timeslots = $state([])
 
-  // ─── Form ──────────
+  // Form
   let form = $state({
     mode: 'create',
     id: null,
@@ -28,54 +32,60 @@
     endDate: null,
   })
 
-  // The original timeslot/room/date so we can find & replace records in edit mode
   let originalState = $state({ timeslotId: null, roomId: null, startDate: null })
 
-  // ─── Students ──────────
-  // Each entry: { id, startDate, endDate }
+  // Students
   let searchQuery = $state('')
   let selectedStudents = $state([])
   let filterChanged = $state(false)
   let filterExtended = $state(false)
+  let skipDates = $state({})
 
-  let filteredStudents = $derived(
-    students
-      .filter((s) => {
-        if (filterChanged) return s.status === 'changed'
-        if (filterExtended) return s.status === 'extended'
-        return s.status !== 'changed' && s.status !== 'extended' // ← default excludes both
-      })
-      .filter((s) => s.englishName?.toLowerCase().includes(searchQuery.toLowerCase()))
+  // ═══════════════════════════════════
+  // DERIVED
+  // ═══════════════════════════════════
+
+  let maxCapacity = $derived(form.room?.maxStudents || 0)
+  let currentCount = $derived(selectedStudents.length)
+  let isOverCapacity = $derived(maxCapacity > 0 && currentCount > maxCapacity)
+
+  let filteredStudents = $derived.by(() => {
+    const query = searchQuery.toLowerCase()
+    let filtered = students
+
+    if (filterChanged) {
+      filtered = filtered.filter((s) => s.status === 'changed')
+    } else if (filterExtended) {
+      filtered = filtered.filter((s) => s.status === 'extended')
+    } else {
+      filtered = filtered.filter((s) => s.status !== 'changed' && s.status !== 'extended')
+    }
+
+    return filtered
+      .filter((s) => s.englishName?.toLowerCase().includes(query))
       .sort((a, b) => {
         const aSelected = selectedStudents.some((x) => x.id === a.id)
         const bSelected = selectedStudents.some((x) => x.id === b.id)
         return bSelected - aSelected
       })
-  )
+  })
 
-  function toggleStatusFilter(filter) {
-    if (filter === 'changed') {
-      filterChanged = !filterChanged
-      if (filterChanged) filterExtended = false
-    } else {
-      filterExtended = !filterExtended
-      if (filterExtended) filterChanged = false
-    }
-  }
-
-  // ─── Derived ──────────
-  let maxCapacity = $derived(form.room?.maxStudents || 0)
-  let currentCount = $derived(selectedStudents.length)
-  let isOverCapacity = $derived(maxCapacity > 0 && currentCount > maxCapacity)
-
-  // ─── Data Loading ──────────
+  // ═══════════════════════════════════
+  // API HELPERS
+  // ═══════════════════════════════════
 
   async function loadDropdowns() {
     try {
       const [subj, stu, teach, room, ts] = await Promise.all([
         pb.collection('subject').getFullList({ sort: 'name' }),
-        pb.collection('student').getFullList({ sort: 'englishName', filter: 'status != "graduated"' }),
-        pb.collection('teacher').getFullList({ sort: 'name', filter: 'status != "disabled"' }),
+        pb.collection('student').getFullList({
+          sort: 'englishName',
+          filter: 'status != "graduated"',
+        }),
+        pb.collection('teacher').getFullList({
+          sort: 'name',
+          filter: 'status != "disabled"',
+        }),
         pb.collection('roomType').getFullList({ sort: 'name' }),
         pb.collection('timeslot').getFullList({ sort: 'start' }),
       ])
@@ -84,25 +94,31 @@
       teachers = teach
       rooms = room
       timeslots = ts
-    } catch (e) {
+    } catch {
       toast.error('Failed to load dropdown options')
     }
   }
 
-  // ─── Open / Close ──────────
+  function findById(list, id) {
+    return list.find((item) => item.id === id) || null
+  }
+
+  // ═══════════════════════════════════
+  // MODAL LIFECYCLE
+  // ═══════════════════════════════════
 
   export async function open(data) {
-    if (subjects.length === 0) await loadDropdowns()
+    if (!subjects.length) await loadDropdowns()
 
     const existing = data.schedule || data.schedules?.[0]
 
     form = {
       mode: data.mode,
       id: existing?.id || null,
-      subject: subjects.find((s) => s.id === (existing?.subject?.id || data.room?.expand?.subject?.id)) || null,
-      teacher: teachers.find((t) => t.id === (existing?.teacher?.id || data.teacher?.id)) || null,
-      room: rooms.find((r) => r.id === (existing?.roomId || data.room?.id)),
-      timeslot: timeslots.find((t) => t.id === (existing?.timeslotId || data.timeslot?.id)),
+      subject: findById(subjects, existing?.subject?.id || data.room?.expand?.subject?.id),
+      teacher: findById(teachers, existing?.teacher?.id || data.teacher?.id),
+      room: findById(rooms, existing?.roomId || data.room?.id),
+      timeslot: findById(timeslots, existing?.timeslotId || data.timeslot?.id),
       startDate: data.startDate,
       endDate: data.endDate,
     }
@@ -119,6 +135,19 @@
     show = true
   }
 
+  function close() {
+    show = false
+    loading = false
+    showDeleteConfirm = false
+    selectedStudents = []
+    searchQuery = ''
+    skipDates = {}
+  }
+
+  // ═══════════════════════════════════
+  // STUDENT EXTRACTION
+  // ═══════════════════════════════════
+
   function extractStudentsFromSchedules(schedules, data) {
     return schedules.flatMap((s) => {
       const startDate = s.start?.split(' ')[0] || data.startDate
@@ -134,15 +163,19 @@
     })
   }
 
-  function close() {
-    show = false
-    loading = false
-    showDeleteConfirm = false
-    selectedStudents = []
-    searchQuery = ''
-  }
+  // ═══════════════════════════════════
+  // STUDENT SELECTION
+  // ═══════════════════════════════════
 
-  // ─── Student Selection ──────────
+  function toggleStatusFilter(filter) {
+    if (filter === 'changed') {
+      filterChanged = !filterChanged
+      if (filterChanged) filterExtended = false
+    } else {
+      filterExtended = !filterExtended
+      if (filterExtended) filterChanged = false
+    }
+  }
 
   function toggleStudent(id) {
     const alreadySelected = selectedStudents.find((s) => s.id === id)
@@ -164,24 +197,92 @@
     selectedStudents = selectedStudents.map((s) => (s.id === id ? { ...s, [field]: value } : s))
   }
 
-  // ─── Validation ──────────
+  // ═══════════════════════════════════
+  // VALIDATION
+  // ═══════════════════════════════════
 
   function validateForm() {
-    if (!form.subject || !form.teacher || !form.room || !form.timeslot) return 'Please fill all required fields'
-    if (selectedStudents.length === 0) return 'Select at least one student'
+    if (!form.subject || !form.teacher || !form.room || !form.timeslot) {
+      return 'Please fill all required fields'
+    }
+    if (selectedStudents.length === 0) {
+      return 'Select at least one student'
+    }
 
     for (const stu of selectedStudents) {
       const name = students.find((s) => s.id === stu.id)?.englishName || 'A student'
-      if (!stu.startDate || !stu.endDate) return `${name} is missing a start or end date`
-      if (stu.endDate < stu.startDate) return `${name}'s end date is before their start date`
+      if (!stu.startDate || !stu.endDate) {
+        return `${name} is missing a start or end date`
+      }
+      if (stu.endDate < stu.startDate) {
+        return `${name}'s end date is before their start date`
+      }
     }
 
     return null
   }
 
-  // ─── Conflict Check ──────────
+  // ═══════════════════════════════════
+  // CONFLICT DETECTION
+  // ═══════════════════════════════════
+
+  async function fetchHolidaySet() {
+    const holidays = await pb.collection('holiday').getFullList({ fields: 'date' })
+    return new Set(holidays.map((h) => h.date?.split(' ')[0]))
+  }
+
+  function isHolidaySpan(record, holidaySet, studentDates) {
+    const recStart = record.start?.split(' ')[0]
+    const recEnd = record.end?.split(' ')[0]
+
+    for (const hDate of holidaySet) {
+      if (hDate >= recStart && hDate <= recEnd && hDate >= studentDates.start && hDate <= studentDates.end) {
+        return true
+      }
+    }
+    return false
+  }
+
+  function filterConflictRecords(records, holidaySet, studentDates) {
+    return records.filter((record) => !isHolidaySpan(record, holidaySet, studentDates))
+  }
+
+  function filterEditModeRecords(records) {
+    if (form.mode !== 'edit') return records
+
+    return records.filter(
+      (s) =>
+        s.room !== originalState.roomId ||
+        s.timeslot !== originalState.timeslotId ||
+        s.start.split(' ')[0] !== originalState.startDate
+    )
+  }
+
+  function checkConflictTypes(records) {
+    const teacherBusy = records.find((s) => s.teacher === form.teacher.id)
+    if (teacherBusy) {
+      throw new Error(`${form.teacher.name} is busy in ${teacherBusy.expand?.room?.name || 'another room'}.`)
+    }
+
+    const roomTaken = records.find((s) => s.room === form.room.id && s.teacher !== form.teacher.id)
+    if (roomTaken) {
+      throw new Error(`${form.room.name} is occupied by ${roomTaken.expand?.teacher?.name || 'another teacher'}.`)
+    }
+
+    const studentBusy = records.find((s) => {
+      const sid = typeof s.student === 'object' ? s.student.id : s.student
+      return selectedStudents.some((stu) => stu.id === sid)
+    })
+    if (studentBusy) {
+      const name =
+        students.find((s) => s.id === studentBusy.student?.id || studentBusy.student)?.englishName || 'Student'
+      throw new Error(`${name} already has a class in ${studentBusy.expand?.room?.name}.`)
+    }
+  }
 
   async function checkConflicts() {
+    const holidaySet = await fetchHolidaySet()
+
     for (const stu of selectedStudents) {
       const startStr = `${stu.startDate} 00:00:00.000Z`
       const endStr = `${stu.endDate} 00:00:00.000Z`
@@ -191,54 +292,34 @@
         expand: 'room,teacher',
       })
 
-      // Fetch holidays to know which dates to ignore spanning records
-      const holidayRecords = await pb.collection('holiday').getFullList({ fields: 'date' })
-      const holidaySet = new Set(holidayRecords.map((h) => h.date?.split(' ')[0]))
-
-      // Filter out records that span a holiday on the booking date
-      const nonHolidayRecords = records.filter((s) => {
-        const recStart = s.start?.split(' ')[0]
-        const recEnd = s.end?.split(' ')[0]
-        // If this record spans across a holiday that falls on our booking date range,
-        // and our booking is purely on that holiday date — skip it
-        for (const hDate of holidaySet) {
-          if (hDate >= recStart && hDate <= recEnd && hDate >= stu.startDate && hDate <= stu.endDate) {
-            return false
-          }
-        }
-        return true
+      const filteredRecords = filterConflictRecords(records, holidaySet, {
+        start: stu.startDate,
+        end: stu.endDate,
       })
 
-      const others =
-        form.mode === 'edit'
-          ? nonHolidayRecords.filter(
-              (s) =>
-                s.room !== originalState.roomId ||
-                s.timeslot !== originalState.timeslotId ||
-                s.start.split(' ')[0] !== originalState.startDate
-            )
-          : nonHolidayRecords
-
-      const teacherBusy = others.find((s) => s.teacher === form.teacher.id)
-      if (teacherBusy)
-        throw new Error(`${form.teacher.name} is busy in ${teacherBusy.expand?.room?.name || 'another room'}.`)
-
-      const roomTaken = others.find((s) => s.room === form.room.id && s.teacher !== form.teacher.id)
-      if (roomTaken)
-        throw new Error(`${form.room.name} is occupied by ${roomTaken.expand?.teacher?.name || 'another teacher'}.`)
-
-      const studentBusy = others.find((s) => {
-        const sid = typeof s.student === 'object' ? s.student.id : s.student
-        return sid === stu.id
-      })
-      if (studentBusy) {
-        const name = students.find((s) => s.id === stu.id)?.englishName || 'Student'
-        throw new Error(`${name} already has a class in ${studentBusy.expand?.room?.name}.`)
-      }
+      const others = filterEditModeRecords(filteredRecords)
+      checkConflictTypes(others)
     }
   }
 
-  // ─── Save ──────────
+  // ═══════════════════════════════════
+  // SAVE
+  // ═══════════════════════════════════
+
+  async function deleteExistingRecords() {
+    if (form.mode !== 'edit') return
+
+    const records = await pb.collection('schedule').getFullList({
+      filter: [
+        `timeslot = "${originalState.timeslotId}"`,
+        `room = "${originalState.roomId}"`,
+        `start = "${originalState.startDate} 00:00:00.000Z"`,
+      ].join(' && '),
+      fields: 'id',
+    })
+
+    return records.map((rec) => rec.id)
+  }
 
   async function save() {
     const error = validateForm()
@@ -250,16 +331,11 @@
 
       const batch = pb.createBatch()
 
-      // In edit mode, delete existing records first
       if (form.mode === 'edit') {
-        const toDelete = await pb.collection('schedule').getFullList({
-          filter: `timeslot = "${originalState.timeslotId}" && room = "${originalState.roomId}" && start = "${originalState.startDate} 00:00:00.000Z"`,
-          fields: 'id',
-        })
-        toDelete.forEach((rec) => batch.collection('schedule').delete(rec.id))
+        const idsToDelete = await deleteExistingRecords()
+        idsToDelete.forEach((id) => batch.collection('schedule').delete(id))
       }
 
-      // Create one record per student
       selectedStudents.forEach(({ id: studentId, startDate, endDate }) => {
         batch.collection('schedule').create({
           timeslot: form.timeslot.id,
@@ -283,19 +359,35 @@
     }
   }
 
-  // ─── Remove Student For One Day ──────────
+  // ═══════════════════════════════════
+  // SKIP DAY
+  // ═══════════════════════════════════
+
+  function getNextDay(dateStr) {
+    const date = new Date(dateStr)
+    date.setDate(date.getDate() + 1)
+    return date.toISOString().split('T')[0]
+  }
+
+  function getPreviousDay(dateStr) {
+    const date = new Date(dateStr)
+    date.setDate(date.getDate() - 1)
+    return date.toISOString().split('T')[0]
+  }
 
   async function removeStudentForDay(studentId, targetDate) {
-    const startDateStr = `${targetDate} 00:00:00`
-    const endDateStr = `${targetDate} 23:59:59`
-
-    // Only fetch records matching this exact timeslot + room + student
     const records = await pb.collection('schedule').getFullList({
-      filter: `timeslot = "${form.timeslot.id}" && room = "${form.room.id}" && student = "${studentId}" && start <= "${endDateStr}" && end >= "${startDateStr}"`,
+      filter: [
+        `timeslot = "${form.timeslot.id}"`,
+        `room = "${form.room.id}"`,
+        `student = "${studentId}"`,
+        `start <= "${targetDate} 23:59:59"`,
+        `end >= "${targetDate} 00:00:00"`,
+      ].join(' && '),
       fields: 'id,start,end,timeslot,room,teacher,subject,student',
     })
 
-    if (records.length === 0) {
+    if (!records.length) {
       toast.info('No schedule record found for this student on that day.')
       return
     }
@@ -306,32 +398,23 @@
       const recStart = rec.start.split(' ')[0]
       const recEnd = rec.end.split(' ')[0]
 
-      if (recStart === recEnd || (recStart === targetDate && recEnd === targetDate)) {
-        // Single-day — delete entirely
+      if (recStart === recEnd) {
+        // Single day record - delete entirely
         batch.collection('schedule').delete(rec.id)
       } else if (recStart === targetDate) {
-        // Target is the start — push forward
-        const nextDay = new Date(targetDate)
-        nextDay.setDate(nextDay.getDate() + 1)
+        // Remove from start - push forward
         batch.collection('schedule').update(rec.id, {
-          start: `${nextDay.toISOString().split('T')[0]} 00:00:00.000Z`,
+          start: `${getNextDay(targetDate)} 00:00:00.000Z`,
         })
       } else if (recEnd === targetDate) {
-        // Target is the end — pull back
-        const prevDay = new Date(targetDate)
-        prevDay.setDate(prevDay.getDate() - 1)
+        // Remove from end - pull back
         batch.collection('schedule').update(rec.id, {
-          end: `${prevDay.toISOString().split('T')[0]} 00:00:00.000Z`,
+          end: `${getPreviousDay(targetDate)} 00:00:00.000Z`,
         })
       } else {
-        // Target is in the middle — split into two
-        const prevDay = new Date(targetDate)
-        prevDay.setDate(prevDay.getDate() - 1)
-        const nextDay = new Date(targetDate)
-        nextDay.setDate(nextDay.getDate() + 1)
-
+        // Remove from middle - split into two
         batch.collection('schedule').update(rec.id, {
-          end: `${prevDay.toISOString().split('T')[0]} 00:00:00.000Z`,
+          end: `${getPreviousDay(targetDate)} 00:00:00.000Z`,
         })
         batch.collection('schedule').create({
           timeslot: rec.timeslot,
@@ -339,7 +422,7 @@
           teacher: rec.teacher,
           subject: rec.subject,
           student: rec.student,
-          start: `${nextDay.toISOString().split('T')[0]} 00:00:00.000Z`,
+          start: `${getNextDay(targetDate)} 00:00:00.000Z`,
           end: `${recEnd} 00:00:00.000Z`,
         })
       }
@@ -347,9 +430,6 @@
 
     await batch.send()
   }
-
-  // ─── Skip Day State ──────────
-  let skipDates = $state({}) // { [studentId]: 'YYYY-MM-DD' }
 
   async function handleSkipDay(studentId) {
     const targetDate = skipDates[studentId]
@@ -368,20 +448,26 @@
     }
   }
 
-  // ─── Delete ────────
+  // ═══════════════════════════════════
+  // DELETE
+  // ═══════════════════════════════════
 
   async function deleteSchedule() {
     loading = true
     try {
-      const toDelete = await pb.collection('schedule').getFullList({
-        filter: `timeslot = "${originalState.timeslotId}" && room = "${originalState.roomId}" && start = "${originalState.startDate} 00:00:00.000Z"`,
+      const records = await pb.collection('schedule').getFullList({
+        filter: [
+          `timeslot = "${originalState.timeslotId}"`,
+          `room = "${originalState.roomId}"`,
+          `start = "${originalState.startDate} 00:00:00.000Z"`,
+        ].join(' && '),
         fields: 'id',
       })
 
-      if (toDelete.length === 0) return toast.error('No matching schedule records found')
+      if (!records.length) return toast.error('No matching schedule records found')
 
       const batch = pb.createBatch()
-      toDelete.forEach((rec) => batch.collection('schedule').delete(rec.id))
+      records.forEach((rec) => batch.collection('schedule').delete(rec.id))
       await batch.send()
 
       toast.success('Schedule deleted')
@@ -399,40 +485,20 @@
 {#if show}
   <dialog class="modal modal-open">
     <div class="modal-box max-w-4xl border border-base-300 shadow-2xl">
+      <!-- Header -->
       <header class="mb-6 text-center">
         <h3 class="text-xl font-bold">
           {form.mode === 'edit' ? 'Edit' : 'Create'}
           {maxCapacity > 1 ? 'Group' : 'MTM'} Schedule
         </h3>
-        <p class="text-xs opacity-60 uppercase tracking-widest">{form.startDate} — {form.endDate}</p>
+        <p class="text-xs opacity-60 uppercase tracking-widest">
+          {form.startDate} — {form.endDate}
+        </p>
       </header>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <!-- Left: Schedule Fields -->
+        <!-- Left Column: Schedule Fields -->
         <div class="space-y-4">
-          <!-- <div class="grid grid-cols-2 gap-2">
-            <div class="form-control">
-              <label class="label text-xs font-bold" for="start">Default Start</label>
-              <input
-                id="start"
-                type="date"
-                bind:value={form.startDate}
-                class="input input-bordered input-sm w-full"
-                disabled={form.mode === 'edit'}
-              />
-            </div>
-            <div class="form-control">
-              <label class="label text-xs font-bold" for="end">Default End</label>
-              <input
-                id="end"
-                type="date"
-                bind:value={form.endDate}
-                class="input input-bordered input-sm w-full"
-                disabled={form.mode === 'edit'}
-              />
-            </div>
-          </div> -->
-
           <div class="form-control">
             <label class="label text-xs font-bold" for="subject">Subject</label>
             <select id="subject" bind:value={form.subject} class="select select-bordered select-sm w-full">
@@ -473,12 +539,12 @@
           </div>
         </div>
 
-        <!-- Right: Student Selection -->
+        <!-- Right Column: Student Selection -->
         <div class="flex flex-col">
           <div class="flex justify-between items-center mb-2">
             <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="text-xs font-bold uppercase">Students</label>
-            <span class="badge {isOverCapacity ? 'badge-error' : 'badge-ghost'} badge-sm transition-colors">
+            <span class="badge {isOverCapacity ? 'badge-error' : 'badge-ghost'} badge-sm">
               {currentCount} / {maxCapacity || '∞'}
             </span>
           </div>
@@ -497,6 +563,7 @@
               Extended
             </button>
           </div>
+
           <input
             type="text"
             placeholder="Search students..."
@@ -510,7 +577,7 @@
               {@const isSelected = !!entry}
 
               <div class="mb-1 rounded-md {isSelected ? 'bg-base-300/60' : ''}">
-                <label class="flex items-center gap-3 p-2 hover:bg-base-300 rounded-md cursor-pointer transition-all">
+                <label class="flex items-center gap-3 p-2 hover:bg-base-300 rounded-md cursor-pointer">
                   <input
                     type="checkbox"
                     class="checkbox checkbox-primary checkbox-sm"
@@ -576,7 +643,7 @@
       <!-- Delete Confirmation -->
       {#if showDeleteConfirm}
         <div class="alert alert-soft alert-error mt-6 flex items-center justify-between gap-4">
-          <span class="text-sm font-medium">Delete all records for this schedule? This cannot be undone.</span>
+          <span class="text-sm font-medium"> Delete all records for this schedule? This cannot be undone. </span>
           <div class="flex gap-2 shrink-0">
             <button class="btn btn-sm btn-ghost" onclick={() => (showDeleteConfirm = false)} disabled={loading}>
               Cancel
@@ -604,7 +671,7 @@
           </button>
         {/if}
 
-        <button class="btn btn-soft btn-ghost" onclick={close} disabled={loading}>Cancel</button>
+        <button class="btn btn-soft btn-ghost" onclick={close} disabled={loading}> Cancel </button>
         <button class="btn btn-soft btn-info min-w-[140px]" onclick={save} disabled={loading || isOverCapacity}>
           {#if loading}
             <span class="loading loading-spinner"></span>
@@ -614,6 +681,7 @@
         </button>
       </div>
     </div>
+
     <div class="modal-backdrop bg-black/40" role="presentation" onclick={close}></div>
   </dialog>
 {/if}
