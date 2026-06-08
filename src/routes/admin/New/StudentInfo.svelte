@@ -99,6 +99,13 @@
   // ── Grid ──────────────────────────────────────────────────────────────────
   function renderGrid(records) {
     if (!gridElement) return
+
+    if (gridInstance) {
+      gridInstance.destroy()
+      gridInstance = null
+      gridElement.innerHTML = ''
+    }
+
     const data = records.map((s) => [
       h('input', {
         type: 'checkbox',
@@ -124,32 +131,28 @@
       ]),
     ])
 
-    if (gridInstance) {
-      gridInstance.updateConfig({ data }).forceRender()
-    } else {
-      gridInstance = new Grid({
-        columns: [
-          { name: 'Select', width: '50px', sort: false },
-          { name: 'English Name', width: '120px' },
-          { name: 'Name', width: '120px' },
-          { name: 'Course', width: '90px' },
-          { name: 'Level', width: '65px' },
-          { name: 'Remarks', width: '90px' },
-          { name: 'Start', width: '90px' },
-          { name: 'End', width: '90px' },
-          { name: 'Status', width: '80px' },
-          { name: 'Actions', width: '110px', sort: false },
-        ],
-        data,
-        search: true,
-        pagination: { limit: 10 },
-        className: { table: 'table w-full', th: 'text-center', td: 'text-center' },
-        style: {
-          th: { 'font-size': '0.7rem' },
-          td: { 'font-size': '0.75rem' },
-        },
-      }).render(gridElement)
-    }
+    gridInstance = new Grid({
+      columns: [
+        { name: 'Select', width: '50px', sort: false },
+        { name: 'English Name', width: '120px' },
+        { name: 'Name', width: '120px' },
+        { name: 'Course', width: '90px' },
+        { name: 'Level', width: '65px' },
+        { name: 'Remarks', width: '90px' },
+        { name: 'Start', width: '90px' },
+        { name: 'End', width: '90px' },
+        { name: 'Status', width: '80px' },
+        { name: 'Actions', width: '110px', sort: false },
+      ],
+      data,
+      search: true,
+      pagination: { limit: 10 },
+      className: { table: 'table w-full', th: 'text-center', td: 'text-center' },
+      style: {
+        th: { 'font-size': '0.7rem' },
+        td: { 'font-size': '0.75rem' },
+      },
+    }).render(gridElement)
   }
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -248,7 +251,7 @@
         })
         toast.success('New record created with extended course and dates')
       } else {
-        if (students.some((s) => s.englishName?.toLowerCase() === trimmed.toLowerCase() && s.id !== formData.id))
+        if (!formData.id && students.some((s) => s.englishName?.toLowerCase() === trimmed.toLowerCase()))
           return toast.error(`"${trimmed}" already exists`)
         const payload = {
           name: formData.name.trim(),
