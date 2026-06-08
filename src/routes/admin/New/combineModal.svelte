@@ -33,10 +33,18 @@
 
   // ─── Students ──────────
   // Each entry: { id, startDate, endDate }
-  let selectedStudents = $state([])
   let searchQuery = $state('')
+  let selectedStudents = $state([])
+  let filterChanged = $state(false)
+  let filterExtended = $state(false)
+
   let filteredStudents = $derived(
     students
+      .filter((s) => {
+        if (filterChanged) return s.status === 'changed'
+        if (filterExtended) return s.status === 'extended'
+        return true
+      })
       .filter((s) => s.englishName?.toLowerCase().includes(searchQuery.toLowerCase()))
       .sort((a, b) => {
         const aSelected = selectedStudents.some((x) => x.id === a.id)
@@ -44,6 +52,16 @@
         return bSelected - aSelected
       })
   )
+
+  function toggleStatusFilter(filter) {
+    if (filter === 'changed') {
+      filterChanged = !filterChanged
+      if (filterChanged) filterExtended = false
+    } else {
+      filterExtended = !filterExtended
+      if (filterExtended) filterChanged = false
+    }
+  }
 
   // ─── Derived ──────────
   let maxCapacity = $derived(form.room?.maxStudents || 0)
@@ -465,6 +483,20 @@
             </span>
           </div>
 
+          <div class="flex gap-2 mb-2">
+            <button
+              class="btn btn-xs {filterChanged ? 'btn-warning' : 'btn-ghost'}"
+              onclick={() => toggleStatusFilter('changed')}
+            >
+              Changed
+            </button>
+            <button
+              class="btn btn-xs {filterExtended ? 'btn-info' : 'btn-ghost'}"
+              onclick={() => toggleStatusFilter('extended')}
+            >
+              Extended
+            </button>
+          </div>
           <input
             type="text"
             placeholder="Search students..."
