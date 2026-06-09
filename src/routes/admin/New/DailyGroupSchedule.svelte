@@ -5,6 +5,7 @@
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
   import CombineModal from './combineModal.svelte'
+  import CopyModal from './copyModal.svelte'
 
   // ─────────────────────────────────────────────
   // SECTION 1: Non-reactive module-level state
@@ -19,6 +20,7 @@
   // ─────────────────────────────────────────────
   // SECTION 2: Reactive state (template reads these)
   // ─────────────────────────────────────────────
+  let copyModal = $state()
   let combineModal = $state()
   let selectedDate = $state(getInitialDate())
   let todayHoliday = $state(null)
@@ -420,6 +422,9 @@
 
     <!-- Right: navigation controls -->
     <div class="flex items-center gap-2 justify-end">
+      <button class="btn btn-outline btn-sm" onclick={() => copyModal.open()} disabled={isLoading}>
+        Copy Schedule
+      </button>
       <button
         class="btn btn-outline btn-sm"
         onclick={goToToday}
@@ -444,6 +449,7 @@
 </div>
 
 <CombineModal bind:this={combineModal} onrefresh={refreshWithScroll} />
+<CopyModal bind:this={copyModal} sourceDate={selectedDate} onrefresh={refreshWithScroll} />
 
 <!-- ─────────────────────────────────────────── -->
 <!-- STYLES                                      -->

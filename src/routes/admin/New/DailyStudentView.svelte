@@ -223,6 +223,7 @@
             const statusBadges = {
               new: { class: 'badge-success', label: 'New' },
               extended: { class: 'badge-secondary', label: 'Extended' },
+
               changed: { class: 'badge-warning', label: 'Changed' },
             }
             const badge = statusBadges[cell.status]
