@@ -551,13 +551,13 @@
 
           <div class="flex gap-2 mb-2">
             <button
-              class="btn btn-xs {filterChanged ? 'btn-warning' : 'btn-ghost'}"
+              class="btn btn-xs {filterChanged ? 'btn-error' : 'btn-ghost'}"
               onclick={() => toggleStatusFilter('changed')}
             >
               Changed
             </button>
             <button
-              class="btn btn-xs {filterExtended ? 'btn-info' : 'btn-ghost'}"
+              class="btn btn-xs {filterExtended ? 'btn-secondary' : 'btn-ghost'}"
               onclick={() => toggleStatusFilter('extended')}
             >
               Extended
@@ -588,6 +588,11 @@
                   <span class="text-sm {isSelected ? 'font-bold text-primary' : ''}">
                     {s.englishName}
                   </span>
+                  {#if s.status === 'changed'}
+                    <span class="badge badge-error badge-xs">changed</span>
+                  {:else if s.status === 'extended'}
+                    <span class="badge badge-secondary badge-xs">extended</span>
+                  {/if}
                 </label>
 
                 {#if isSelected}

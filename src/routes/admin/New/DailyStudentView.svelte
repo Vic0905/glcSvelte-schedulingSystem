@@ -162,6 +162,9 @@
 
       const scheduleMap = new Map()
 
+      // Collect student records actually referenced by today's schedules
+      const scheduledStudentMap = new Map()
+
       for (const s of schedules) {
         const timeslotId = s.expand?.timeslot?.id
         if (!timeslotId) continue
@@ -179,6 +182,11 @@
             : []
 
         for (const student of studentList) {
+          // Track which student record is tied to a schedule on this date
+          if (!scheduledStudentMap.has(student.id)) {
+            scheduledStudentMap.set(student.id, student)
+          }
+
           if (!scheduleMap.has(student.id)) {
             scheduleMap.set(student.id, new Map())
           }
@@ -190,7 +198,39 @@
         }
       }
 
-      const students = [...cachedStudents].sort((a, b) => {
+      // Build deduplicated student list per date:
+      // - Students with a schedule on this date use the record from the schedule expand
+      // - Students with no schedule use the latest cached record per englishName
+      // - Never show two records with the same englishName
+      const seenNames = new Set()
+      const resolvedStudents = []
+
+      // First pass: students with schedules today take priority
+      for (const [, student] of scheduledStudentMap) {
+        const key = student.englishName?.toLowerCase()
+        if (!key || seenNames.has(key)) continue
+        seenNames.add(key)
+        resolvedStudents.push(student)
+      }
+
+      // Second pass: remaining students from cache (no schedule today)
+      // Use latest record per englishName for students not yet seen
+      const latestByName = new Map()
+      for (const s of cachedStudents) {
+        const key = s.englishName?.toLowerCase()
+        if (!key) continue
+        if (!latestByName.has(key) || new Date(s.created) > new Date(latestByName.get(key).created)) {
+          latestByName.set(key, s)
+        }
+      }
+
+      for (const [key, student] of latestByName) {
+        if (seenNames.has(key)) continue
+        seenNames.add(key)
+        resolvedStudents.push(student)
+      }
+
+      const students = resolvedStudents.sort((a, b) => {
         const aIsNew = a.status === 'new' ? 1 : 0
         const bIsNew = b.status === 'new' ? 1 : 0
         if (aIsNew !== bIsNew) return aIsNew - bIsNew
@@ -221,10 +261,9 @@
           width: '180px',
           formatter: (cell) => {
             const statusBadges = {
-              new: { class: 'badge-success', label: 'New' },
-              extended: { class: 'badge-secondary', label: 'Extended' },
-
-              changed: { class: 'badge-warning', label: 'Changed' },
+              new: { class: 'badge-success badge', label: 'New' },
+              extended: { class: 'badge-secondary badge', label: 'Extended' },
+              changed: { class: 'badge-error badge', label: 'Changed' },
             }
             const badge = statusBadges[cell.status]
             return h(

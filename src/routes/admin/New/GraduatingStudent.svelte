@@ -11,8 +11,14 @@
 
   function getWeekStart(date) {
     const d = new Date(date)
-    const day = d.getDay()
-    const diff = day < 2 ? day + 5 : day - 2
+    const day = d.getDay() // Sunday = 0, Monday = 1, ..., Saturday = 6
+
+    // Calculate days to subtract to get to Monday
+    // If Sunday (0), go back 6 days to Monday
+    // If Monday (1), go back 0 days
+    // If Tuesday (2), go back 1 day, etc.
+    const diff = day === 0 ? 6 : day - 1
+
     d.setDate(d.getDate() - diff)
     return d.toISOString().split('T')[0]
   }
@@ -20,7 +26,7 @@
   function getWeekRangeDisplay(startDate) {
     const start = new Date(startDate)
     const end = new Date(start)
-    end.setDate(start.getDate() + 3)
+    end.setDate(start.getDate() + 4) // Monday + 4 days = Friday
 
     const opts = { month: 'long', day: 'numeric' }
 
@@ -38,7 +44,7 @@
     try {
       const startD = new Date(weekStart)
       const endD = new Date(startD)
-      endD.setDate(startD.getDate() + 3)
+      endD.setDate(startD.getDate() + 4)
 
       const startDateStr = `${weekStart} 00:00:00`
       const endDateStr = `${endD.toISOString().split('T')[0]} 23:59:59`
@@ -50,19 +56,21 @@
 
       const data = students.map((s) => [
         s.englishName || '-',
+        s.name || '-',
         s.course || '-',
         s.level || '-',
-        s.status || '-',
         s.remarks || '-',
+        s.status || '-',
         new Date(s.end).toLocaleDateString(),
       ])
 
       const columns = [
-        { name: 'Student', width: '220px' },
+        { name: 'English Name', width: '220px' },
+        { name: 'Name', width: '220px' },
         { name: 'Course', width: '180px' },
         { name: 'Level', width: '120px' },
-        { name: 'Status', width: '120px' },
         { name: 'Remarks', width: '180px' },
+        { name: 'Status', width: '120px' },
         { name: 'Graduation Date', width: '150px' },
       ]
 
