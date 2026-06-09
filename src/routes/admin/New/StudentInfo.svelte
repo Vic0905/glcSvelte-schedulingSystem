@@ -241,7 +241,7 @@
           level: original.level,
           remarks: original.remarks,
           status: 'changed',
-          start: original.start || null,
+          start: formData.start || null,
           end: original.end || null,
         })
         toast.success('New record created with changed course')
@@ -732,7 +732,7 @@
               id="start-date"
               bind:value={formData.start}
               type="date"
-              disabled={!!formData.id && formData.isChanged}
+              disabled={false}
               class="input input-bordered w-full focus:input-primary disabled:opacity-50"
             />
           </div>

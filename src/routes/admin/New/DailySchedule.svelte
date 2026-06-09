@@ -523,8 +523,10 @@
   <!-- Grid container — gridjs renders into this div -->
   <div id="daily-grid" class="border rounded-lg"></div>
 </div>
+{#key selectedDate}
+  <CombineModal bind:this={combineModal} onrefresh={refreshWithScroll} {selectedDate} />
+{/key}
 
-<CombineModal bind:this={combineModal} onrefresh={refreshWithScroll} />
 <CopyModal bind:this={copyModal} sourceDate={selectedDate} onrefresh={refreshWithScroll} />
 
 <!-- ─────────────────────────────────────────── -->

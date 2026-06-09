@@ -2,7 +2,7 @@
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  let { onrefresh } = $props()
+  let { onrefresh, selectedDate = new Date().toISOString().split('T')[0] } = $props()
 
   // ═══════════════════════════════════
   // STATE
@@ -51,15 +51,16 @@
 
   let filteredStudents = $derived.by(() => {
     const query = searchQuery.toLowerCase()
-    let filtered = students
 
-    if (filterChanged) {
-      filtered = filtered.filter((s) => s.status === 'changed')
-    } else if (filterExtended) {
-      filtered = filtered.filter((s) => s.status === 'extended')
-    } else {
-      filtered = filtered.filter((s) => s.status !== 'changed' && s.status !== 'extended')
+    // Deduplicate: keep only the latest-starting record per name
+    const latest = new Map()
+    for (const s of students) {
+      const existing = latest.get(s.englishName)
+      if (!existing || s.start > existing.start) {
+        latest.set(s.englishName, s)
+      }
     }
+    let filtered = [...latest.values()]
 
     return filtered
       .filter((s) => s.englishName?.toLowerCase().includes(query))
@@ -80,7 +81,7 @@
         pb.collection('subject').getFullList({ sort: 'name' }),
         pb.collection('student').getFullList({
           sort: 'englishName',
-          filter: 'status != "graduated"',
+          filter: `status != "graduated" && start <= "${selectedDate} 23:59:59" && end >= "${selectedDate} 00:00:00"`,
         }),
         pb.collection('teacher').getFullList({
           sort: 'name',
@@ -108,7 +109,12 @@
   // ═══════════════════════════════════
 
   export async function open(data) {
-    if (!subjects.length) await loadDropdowns()
+    show = true
+    if (!subjects.length) {
+      loading = true
+      await loadDropdowns()
+      loading = false
+    }
 
     const existing = data.schedule || data.schedules?.[0]
 
@@ -132,7 +138,6 @@
     selectedStudents = data.mode === 'edit' && data.schedules ? extractStudentsFromSchedules(data.schedules, data) : []
 
     showDeleteConfirm = false
-    show = true
   }
 
   function close() {
@@ -167,15 +172,15 @@
   // STUDENT SELECTION
   // ═══════════════════════════════════
 
-  function toggleStatusFilter(filter) {
-    if (filter === 'changed') {
-      filterChanged = !filterChanged
-      if (filterChanged) filterExtended = false
-    } else {
-      filterExtended = !filterExtended
-      if (filterExtended) filterChanged = false
-    }
-  }
+  // function toggleStatusFilter(filter) {
+  //   if (filter === 'changed') {
+  //     filterChanged = !filterChanged
+  //     if (filterChanged) filterExtended = false
+  //   } else {
+  //     filterExtended = !filterExtended
+  //     if (filterExtended) filterChanged = false
+  //   }
+  // }
 
   function toggleStudent(id) {
     const alreadySelected = selectedStudents.find((s) => s.id === id)
@@ -549,7 +554,7 @@
             </span>
           </div>
 
-          <div class="flex gap-2 mb-2">
+          <!-- <div class="flex gap-2 mb-2">
             <button
               class="btn btn-xs {filterChanged ? 'btn-error' : 'btn-ghost'}"
               onclick={() => toggleStatusFilter('changed')}
@@ -562,7 +567,7 @@
             >
               Extended
             </button>
-          </div>
+          </div> -->
 
           <input
             type="text"

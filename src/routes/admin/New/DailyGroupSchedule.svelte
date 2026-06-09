@@ -448,7 +448,9 @@
   <div id="daily-grid" class="border rounded-lg"></div>
 </div>
 
-<CombineModal bind:this={combineModal} onrefresh={refreshWithScroll} />
+{#key selectedDate}
+  <CombineModal bind:this={combineModal} onrefresh={refreshWithScroll} {selectedDate} />
+{/key}
 <CopyModal bind:this={copyModal} sourceDate={selectedDate} onrefresh={refreshWithScroll} />
 
 <!-- ─────────────────────────────────────────── -->
