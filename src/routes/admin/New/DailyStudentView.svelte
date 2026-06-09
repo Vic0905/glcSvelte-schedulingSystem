@@ -334,7 +334,7 @@
 
       await tick()
 
-      if (gridInstance) {
+      if (gridInstance && document.getElementById('student-grid')) {
         gridInstance.updateConfig({ columns, data }).forceRender()
 
         if (savedScrollTop !== null) {

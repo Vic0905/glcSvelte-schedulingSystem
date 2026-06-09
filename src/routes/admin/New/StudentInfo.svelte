@@ -159,13 +159,21 @@
   async function loadStudents() {
     try {
       let records = await pb.collection('student').getFullList({ sort: '-created' })
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
       const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      const toPromote = records.filter((s) => s.status === 'new' && s.start && new Date(s.start) < cutoff)
 
-      if (toPromote.length) {
-        await Promise.allSettled(toPromote.map(({ id }) => pb.collection('student').update(id, { status: 'old' })))
+      const toPromote = records.filter((s) => s.status === 'new' && s.start && new Date(s.start) < cutoff)
+      const toGraduate = records.filter((s) => s.end && new Date(s.end) < today && s.status !== 'graduated')
+
+      if (toPromote.length || toGraduate.length) {
+        await Promise.allSettled([
+          ...toPromote.map(({ id }) => pb.collection('student').update(id, { status: 'old' })),
+          ...toGraduate.map(({ id }) => pb.collection('student').update(id, { status: 'graduated' })),
+        ])
         records = await pb.collection('student').getFullList({ sort: '-created' })
       }
+
       students = records
       await tick()
       renderGrid(students)
