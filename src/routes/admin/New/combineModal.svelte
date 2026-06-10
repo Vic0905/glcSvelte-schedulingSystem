@@ -577,71 +577,79 @@
           />
 
           <div class="border rounded-lg overflow-y-auto bg-base-200/50 p-2 h-72">
-            {#each filteredStudents as s (s.id)}
-              {@const entry = selectedStudents.find((x) => x.id === s.id)}
-              {@const isSelected = !!entry}
-
-              <div class="mb-1 rounded-md {isSelected ? 'bg-base-300/60' : ''}">
-                <label class="flex items-center gap-3 p-2 hover:bg-base-300 rounded-md cursor-pointer">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-primary checkbox-sm"
-                    checked={isSelected}
-                    onchange={() => toggleStudent(s.id)}
-                    disabled={!isSelected && maxCapacity > 0 && currentCount >= maxCapacity}
-                  />
-                  <span class="text-sm {isSelected ? 'font-bold text-primary' : ''}">
-                    {s.englishName}
-                  </span>
-                  {#if s.status === 'changed'}
-                    <span class="badge badge-error badge-xs">changed</span>
-                  {:else if s.status === 'extended'}
-                    <span class="badge badge-secondary badge-xs">extended</span>
-                  {/if}
-                </label>
-
-                {#if isSelected}
-                  <div class="grid grid-cols-[1fr_1fr_auto] gap-1 px-2 pb-2 items-end">
-                    <div class="form-control">
-                      <label class="label py-0 text-[10px] opacity-60" for="stu-start-{s.id}">Start</label>
-                      <input
-                        id="stu-start-{s.id}"
-                        type="date"
-                        class="input input-bordered input-xs w-full"
-                        value={entry.startDate}
-                        onchange={(e) => updateStudentDate(s.id, 'startDate', e.target.value)}
-                      />
-                    </div>
-                    <div class="form-control">
-                      <label class="label py-0 text-[10px] opacity-60" for="stu-end-{s.id}">End</label>
-                      <input
-                        id="stu-end-{s.id}"
-                        type="date"
-                        class="input input-bordered input-xs w-full"
-                        value={entry.endDate}
-                        onchange={(e) => updateStudentDate(s.id, 'endDate', e.target.value)}
-                      />
-                    </div>
-
-                    {#if form.mode === 'edit'}
-                      <div class="form-control">
-                        <label class="label py-0 text-[10px] opacity-60">Skip Day</label>
-                        <input type="date" class="input input-bordered input-xs w-full" bind:value={skipDates[s.id]} />
-                      </div>
-                      <button
-                        class="btn btn-xs btn-warning btn-soft"
-                        disabled={!skipDates[s.id] || loading}
-                        onclick={() => handleSkipDay(s.id)}
-                      >
-                        Remove Day
-                      </button>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
+            {#if loading}
+              <p class="text-xs opacity-50 p-4 text-center">Loading...</p>
             {:else}
-              <p class="text-xs opacity-50 p-4 text-center">No students match your search.</p>
-            {/each}
+              {#each filteredStudents as s (s.id)}
+                {@const entry = selectedStudents.find((x) => x.id === s.id)}
+                {@const isSelected = !!entry}
+
+                <div class="mb-1 rounded-md {isSelected ? 'bg-base-300/60' : ''}">
+                  <label class="flex items-center gap-3 p-2 hover:bg-base-300 rounded-md cursor-pointer">
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-primary checkbox-sm"
+                      checked={isSelected}
+                      onchange={() => toggleStudent(s.id)}
+                      disabled={!isSelected && maxCapacity > 0 && currentCount >= maxCapacity}
+                    />
+                    <span class="text-sm {isSelected ? 'font-bold text-primary' : ''}">
+                      {s.englishName}
+                    </span>
+                    {#if s.status === 'changed'}
+                      <span class="badge badge-error badge-xs">changed</span>
+                    {:else if s.status === 'extended'}
+                      <span class="badge badge-secondary badge-xs">extended</span>
+                    {/if}
+                  </label>
+
+                  {#if isSelected}
+                    <div class="grid grid-cols-[1fr_1fr_auto] gap-1 px-2 pb-2 items-end">
+                      <div class="form-control">
+                        <label class="label py-0 text-[10px] opacity-60" for="stu-start-{s.id}">Start</label>
+                        <input
+                          id="stu-start-{s.id}"
+                          type="date"
+                          class="input input-bordered input-xs w-full"
+                          value={entry.startDate}
+                          onchange={(e) => updateStudentDate(s.id, 'startDate', e.target.value)}
+                        />
+                      </div>
+                      <div class="form-control">
+                        <label class="label py-0 text-[10px] opacity-60" for="stu-end-{s.id}">End</label>
+                        <input
+                          id="stu-end-{s.id}"
+                          type="date"
+                          class="input input-bordered input-xs w-full"
+                          value={entry.endDate}
+                          onchange={(e) => updateStudentDate(s.id, 'endDate', e.target.value)}
+                        />
+                      </div>
+
+                      {#if form.mode === 'edit'}
+                        <div class="form-control">
+                          <label class="label py-0 text-[10px] opacity-60">Skip Day</label>
+                          <input
+                            type="date"
+                            class="input input-bordered input-xs w-full"
+                            bind:value={skipDates[s.id]}
+                          />
+                        </div>
+                        <button
+                          class="btn btn-xs btn-warning btn-soft"
+                          disabled={!skipDates[s.id] || loading}
+                          onclick={() => handleSkipDay(s.id)}
+                        >
+                          Remove Day
+                        </button>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              {:else}
+                <p class="text-xs opacity-50 p-4 text-center">No students match your search.</p>
+              {/each}
+            {/if}
           </div>
 
           {#if isOverCapacity}

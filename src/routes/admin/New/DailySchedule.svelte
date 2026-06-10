@@ -9,19 +9,16 @@
 
   // ─────────────────────────────────────────────
   // SECTION 1: Non-reactive module-level state
-  // Only gridjs controls rendering, not Svelte reactivity,
-  // so these do NOT need $state.
   // ─────────────────────────────────────────────
   let gridInstance = null
   let refreshTimer = null
 
-  // Caches — fetched once, never re-fetched unless explicitly cleared
   let cachedTimeslots = []
   let cachedRooms = []
   let cachedHolidays = []
 
   // ─────────────────────────────────────────────
-  // SECTION 2: Reactive state (template reads these)
+  // SECTION 2: Reactive state
   // ─────────────────────────────────────────────
   let combineModal = $state()
   let copyModal = $state()
@@ -31,11 +28,8 @@
 
   // ─────────────────────────────────────────────
   // SECTION 3: Pure helper functions
-  // No side effects, no external dependencies.
-  // Easy to unit test in isolation.
   // ─────────────────────────────────────────────
 
-  /** Reads ?date= from the hash query string, falls back to today */
   function getInitialDate() {
     const hash = window.location.hash
     const queryString = hash.includes('?') ? hash.split('?')[1] : ''
@@ -64,8 +58,38 @@
   }
 
   /**
-   * Returns a Tailwind bg+text class pair based on room name.
-   * G rooms → always white. A rooms → alternating gray bands.
+   * Per-building styling config: prefix, alternating band ranges,
+   * and Tailwind classes for banded vs base rooms.
+   */
+  const BUILDING_CONFIG = {
+    main: {
+      prefix: 'A',
+      bandColor: 'bg-neutral-300 text-neutral-800',
+      baseColor: 'bg-white text-neutral-800',
+      bands: [
+        [1, 5],
+        [19, 33],
+        [50, 64],
+        [74, 83],
+        [93, 101],
+        [110, 125],
+        [142, 157],
+      ],
+    },
+    annex2: {
+      prefix: 'B',
+      bandColor: 'bg-white text-neutral-800',
+      baseColor: 'bg-neutral-200/90 text-neutral-800',
+      bands: [
+        [1, 10],
+        [30, 50],
+      ],
+    },
+  }
+
+  /**
+   * Returns a Tailwind bg+text class pair based on room name and BUILDING_CONFIG.
+   * G rooms → always white.
    */
   function getBgClass(roomName) {
     if (!roomName) return ''
@@ -73,27 +97,32 @@
 
     if (upper.startsWith('G')) return 'bg-white text-neutral-800'
 
-    const num = parseInt(upper.replace(/\D/g, ''), 10)
-    if (isNaN(num)) return ''
+    for (const config of Object.values(BUILDING_CONFIG)) {
+      if (!upper.startsWith(config.prefix)) continue
 
-    // Gray bands represent rooms on the same floor/wing as their teacher.
-    // Update these ranges when room assignments change.
-    const GRAY_ROOM_RANGES = [
-      [1, 5],
-      [19, 33],
-      [50, 64],
-      [74, 83],
-      [93, 101],
-      [110, 125],
-      [142, 157],
-    ]
+      const num = parseInt(upper.replace(/\D/g, ''), 10)
+      if (isNaN(num)) return config.baseColor
 
-    const isGray = GRAY_ROOM_RANGES.some(([min, max]) => num >= min && num <= max)
+      const inBand = config.bands.some(([min, max]) => num >= min && num <= max)
+      return inBand ? config.bandColor : config.baseColor
+    }
 
-    return isGray ? 'bg-neutral-200/90 text-neutral-800' : 'bg-white text-neutral-800'
+    return ''
   }
 
-  /** Saves the current scroll position of the grid wrapper */
+  /**
+   * Returns the building section for a room name:
+   * 'main' for A-prefixed rooms (Main Building, A001-A157),
+   * 'annex2' for B-prefixed rooms (Annex 2, B01-B98), null otherwise.
+   */
+  function getBuildingSection(roomName) {
+    if (!roomName) return null
+    const upper = roomName.toUpperCase()
+    if (upper.startsWith('A')) return 'main'
+    if (upper.startsWith('B')) return 'annex2'
+    return null
+  }
+
   function saveScroll() {
     const wrapper = document.querySelector('#daily-grid .gridjs-wrapper')
     return {
@@ -102,7 +131,6 @@
     }
   }
 
-  /** Restores scroll position on the next animation frame */
   function restoreScroll(scroll) {
     if (!scroll) return
     requestAnimationFrame(() => {
@@ -116,14 +144,19 @@
 
   // ─────────────────────────────────────────────
   // SECTION 4: Grid cell formatters
-  // Kept separate so formatCell doesn't bloat buildGridConfig.
   // ─────────────────────────────────────────────
 
-  function formatTeacherCell(value, bgClass) {
+  function formatTeacherCell(value, bgClass, isSeparator) {
+    if (isSeparator) {
+      return h('div', { class: `w-full h-full p-1 ${bgClass}` })
+    }
     return h('div', { class: `w-full h-full p-2 flex items-center justify-center text-center ${bgClass}` }, value)
   }
 
-  function formatRoomCell(value, bgClass) {
+  function formatRoomCell(value, bgClass, isSeparator) {
+    if (isSeparator) {
+      return h('div', { class: `w-full h-full p-1 ${bgClass}` })
+    }
     return h(
       'div',
       { class: `w-full h-full p-2 flex items-center justify-center font-semibold text-center ${bgClass}` },
@@ -133,6 +166,13 @@
 
   function formatScheduleCell(cell) {
     const bgClass = cell?.bgClass || ''
+
+    if (cell?.isSeparator) {
+      if (cell.isLabelCell) {
+        return h('div', { class: `w-full h-full p-4 flex  font-bold text-neutral-700 ${bgClass}` }, 'ANNEX 2')
+      }
+      return h('div', { class: `w-full h-full p-1 ${bgClass}` })
+    }
 
     if (!cell?.schedules?.length) {
       return h(
@@ -163,18 +203,12 @@
 
   // ─────────────────────────────────────────────
   // SECTION 5: Data transformation
-  // Pure functions: input → output, no side effects.
   // ─────────────────────────────────────────────
 
-  /**
-   * Normalizes raw PocketBase schedule records into a flat shape,
-   * optionally filtering to single-day records on holidays.
-   */
   function normalizeSchedules(rawSchedules, date, holiday) {
     return rawSchedules
       .filter((s) => {
         if (!holiday) return true
-        // On holidays, only show schedules that are exactly this one day
         return s.start?.split(' ')[0] === date && s.end?.split(' ')[0] === date
       })
       .map((s) => ({
@@ -188,10 +222,6 @@
       }))
   }
 
-  /**
-   * Groups normalized schedules into a Map keyed by "roomId-timeslotId"
-   * for O(1) lookup when building grid rows.
-   */
   function buildScheduleMap(normalizedSchedules) {
     const map = new Map()
     for (const s of normalizedSchedules) {
@@ -203,54 +233,84 @@
   }
 
   /**
-   * Counts empty rooms per timeslot for the "N Available" header badge.
+   * Counts empty rooms per timeslot, split by building section.
+   * Returns Map<timeslotId, { main: number, annex2: number }>
+   * - main: Main Building rooms (A001-A157)
+   * - annex2: Annex 2 rooms (B01-B98)
    */
-  function buildEmptyCountMap(timeslots, rooms, scheduleMap) {
+  function buildEmptyCountMapBySection(timeslots, rooms, scheduleMap) {
     const map = new Map()
     for (const ts of timeslots) {
-      let count = 0
+      let main = 0
+      let annex2 = 0
       for (const room of rooms) {
-        if (!(scheduleMap.get(`${room.id}-${ts.id}`) || []).length) count++
+        const hasSchedule = (scheduleMap.get(`${room.id}-${ts.id}`) || []).length
+        if (hasSchedule) continue
+
+        const section = getBuildingSection(room.name)
+        if (section === 'main') main++
+        else if (section === 'annex2') annex2++
       }
-      map.set(ts.id, count)
+      map.set(ts.id, { main, annex2 })
     }
     return map
   }
 
   // ─────────────────────────────────────────────
   // SECTION 6: Grid config builder
-  // Constructs the columns + data arrays that gridjs needs.
-  // Separated from rendering so it can be called without touching the DOM.
   // ─────────────────────────────────────────────
 
   function buildGridConfig(rooms, timeslots, scheduleMap, emptyCountMap) {
+    const middleIndex = Math.floor(timeslots.length / 2)
+
     const columns = [
       {
         name: 'Teacher',
         width: '120px',
-        formatter: (c, row) => formatTeacherCell(c.value, row.cells[0].data.bgClass),
+        formatter: (c, row) => formatTeacherCell(c.value, row.cells[0].data.bgClass, row.cells[0].data.isSeparator),
       },
       {
         name: 'Room',
         width: '120px',
-        formatter: (c, row) => formatRoomCell(c.value, row.cells[1].data.bgClass),
+        formatter: (c, row) => formatRoomCell(c.value, row.cells[1].data.bgClass, row.cells[1].data.isSeparator),
       },
-      ...timeslots.map((t) => ({
-        id: t.id,
-        width: '180px',
-        name: h('div', { class: 'flex flex-col items-center gap-0.5' }, [
-          h('span', null, `${t.start} - ${t.end}`),
-          h(
-            'span',
-            { class: 'text-[10px] font-bold badge badge-success badge-xs' },
-            `${emptyCountMap.get(t.id) || 0} Available`
-          ),
-        ]),
-        formatter: formatScheduleCell,
-      })),
+      ...timeslots.map((t) => {
+        const counts = emptyCountMap.get(t.id) || { main: 0, annex2: 0 }
+        return {
+          id: t.id,
+          width: '180px',
+          name: h('div', { class: 'flex flex-col items-center gap-0.5' }, [
+            h('span', null, `${t.start} - ${t.end}`),
+            h('div', { class: 'flex gap-1' }, [
+              h('span', { class: 'text-[10px] font-bold badge badge-success badge-xs' }, `Main: ${counts.main}`),
+              h('span', { class: 'text-[10px] font-bold badge badge-info badge-xs' }, `Annex 2: ${counts.annex2}`),
+            ]),
+          ]),
+          formatter: formatScheduleCell,
+        }
+      }),
     ]
 
-    const data = rooms.map((room) => {
+    const data = []
+    let annexInserted = false
+
+    for (const room of rooms) {
+      // Insert separator row before the first Annex 2 (B-prefixed) room
+      if (!annexInserted && getBuildingSection(room.name) === 'annex2') {
+        const separatorRow = [
+          { value: '', disabled: true, bgClass: 'bg-neutral-300', isSeparator: true },
+          { value: '', disabled: true, bgClass: 'bg-neutral-300', isSeparator: true },
+          ...timeslots.map((_, i) => ({
+            label: 'Separator',
+            isSeparator: true,
+            isLabelCell: i === middleIndex,
+            bgClass: 'bg-neutral-300',
+          })),
+        ]
+        data.push(separatorRow)
+        annexInserted = true
+      }
+
       const bgClass = getBgClass(room.name)
       const teacher = room.expand?.teacher
 
@@ -270,16 +330,14 @@
         })
       }
 
-      return row
-    })
+      data.push(row)
+    }
 
     return { columns, data }
   }
 
   // ─────────────────────────────────────────────
   // SECTION 7: Grid renderer
-  // Handles first-time init vs subsequent updates.
-  // cellClick is registered once on init and never re-registered.
   // ─────────────────────────────────────────────
 
   async function renderGrid(columns, data, scroll) {
@@ -301,10 +359,9 @@
         style: { table: { 'table-layout': 'fixed' } },
       }).render(document.getElementById('daily-grid'))
 
-      // cellClick registered ONCE here — never re-registered on updates
       gridInstance.on('cellClick', (_e, cell) => {
         const data = cell.data
-        if (data.disabled) return
+        if (data.disabled || data.isSeparator) return
 
         const isCreate = data.label === 'Empty'
         const firstSched = data.schedules?.[0]
@@ -324,8 +381,6 @@
 
   // ─────────────────────────────────────────────
   // SECTION 8: Data fetching
-  // All PocketBase calls in one place.
-  // Uses caches for timeslots, rooms, and holidays.
   // ─────────────────────────────────────────────
 
   async function fetchHolidays() {
@@ -362,12 +417,9 @@
 
   // ─────────────────────────────────────────────
   // SECTION 9: Main load orchestrator
-  // Ties fetching → transforming → rendering together.
-  // All other actions call this.
   // ─────────────────────────────────────────────
 
   async function loadSchedules(scroll = null) {
-    // If already loading, debounce instead of silently dropping
     if (isLoading) {
       clearTimeout(refreshTimer)
       refreshTimer = setTimeout(() => loadSchedules(scroll), 300)
@@ -383,7 +435,7 @@
 
       const normalized = normalizeSchedules(schedules, selectedDate, holiday)
       const scheduleMap = buildScheduleMap(normalized)
-      const emptyCountMap = buildEmptyCountMap(timeslots, rooms, scheduleMap)
+      const emptyCountMap = buildEmptyCountMapBySection(timeslots, rooms, scheduleMap)
       const { columns, data } = buildGridConfig(rooms, timeslots, scheduleMap, emptyCountMap)
 
       await renderGrid(columns, data, scroll)
@@ -397,8 +449,6 @@
 
   // ─────────────────────────────────────────────
   // SECTION 10: User action handlers
-  // All thin wrappers — they just update selectedDate
-  // and delegate to loadSchedules.
   // ─────────────────────────────────────────────
 
   async function changeDay(days) {
@@ -425,8 +475,6 @@
 
   // ─────────────────────────────────────────────
   // SECTION 11: Realtime subscription
-  // Debounced so rapid back-to-back saves = 1 reload.
-  // Only triggers if the changed record overlaps the viewed date.
   // ─────────────────────────────────────────────
 
   function handleRealtimeEvent(e) {
@@ -444,7 +492,7 @@
   // ─────────────────────────────────────────────
 
   onMount(() => {
-    let unsub = null // holds the unsubscribe fn once resolved
+    let unsub = null
 
     fetchHolidays().catch((err) => console.warn('Failed to load holidays:', err))
     loadSchedules()
@@ -459,7 +507,7 @@
       gridInstance?.destroy()
       gridInstance = null
       clearTimeout(refreshTimer)
-      // unsub?.() // now synchronously calls it if resolved, safely skips if not
+      // unsub?.()
     }
   })
 </script>

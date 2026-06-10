@@ -63,7 +63,7 @@
         const [name = '', englishName = '', course = '', level = '', remarks = '', start = '', end = ''] = line
           .split(delimiter)
           .map((s) => s.trim())
-        return { englishName, name, course, level, remarks, start, end }
+        return { englishName, name, course, level, remarks, start: parseDateToISO(start), end: parseDateToISO(end) }
       })
       .filter(
         (row, i, arr) =>
@@ -81,6 +81,15 @@
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getId = (rel) => (!rel ? null : Array.isArray(rel) ? rel[0] : typeof rel === 'object' ? rel.id : rel)
   const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+
+  function parseDateToISO(str) {
+    if (!str) return null
+    const match = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+    if (!match) return str
+    let [, month, day, year] = match
+    if (year.length === 2) year = '20' + year
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
 
   async function batchFetch(requests) {
     const res = await fetch(`${pb.baseUrl}/api/batch`, {
@@ -346,30 +355,6 @@
     renderGrid(students)
   }
 
-  async function bulkUpdateStatus(newStatus) {
-    if (!selectedStudents.size) return toast.error('No students selected')
-    if (!confirm(`Mark ${selectedStudents.size} student(s) as ${capitalize(newStatus)}?`)) return
-    isProcessing = true
-    try {
-      const results = await batchFetch(
-        Array.from(selectedStudents).map((id) => ({
-          method: 'PATCH',
-          url: `/api/collections/student/records/${id}`,
-          body: { status: newStatus },
-        }))
-      )
-      const ok = results.filter((r) => r.status >= 200 && r.status < 300).length
-      const fail = results.filter((r) => r.status < 200 || r.status >= 300).length
-      toast.success(`${ok} updated to ${capitalize(newStatus)}${fail ? `, ${fail} failed` : ''}`)
-      selectedStudents = new Set()
-      await loadStudents()
-    } catch {
-      toast.error('Bulk update failed')
-    } finally {
-      isProcessing = false
-    }
-  }
-
   async function bulkDeleteStudents() {
     if (!selectedStudents.size) return toast.error('No students selected')
     if (!confirm(`Delete ${selectedStudents.size} student(s)? This will archive their schedules.`)) return
@@ -417,16 +402,22 @@
       skipEmptyLines: true,
       complete: async (result) => {
         const rows = result.data
-          .map((row) => ({
-            englishName: (row['English Name'] || row['englishName'] || '').trim(),
-            name: (row['Name'] || row['name'] || '').trim(),
-            course: (row['Course'] || row['course'] || '').trim(),
-            level: (row['Level'] || row['level'] || '').trim(),
-            remarks: (row['Remarks'] || row['remarks'] || '').trim(),
-            start: (row['Start'] || row['start'] || '').trim() || null,
-            end: (row['End'] || row['end'] || '').trim() || null,
-            status: (row['Status'] || row['status'] || 'new').trim(),
-          }))
+          .map((row) => {
+            const normalized = {}
+            for (const key in row) {
+              normalized[key.trim().toLowerCase()] = row[key]
+            }
+            return {
+              englishName: (normalized['english name'] || normalized['englishname'] || '').trim(),
+              name: (normalized['name'] || '').trim(),
+              course: (normalized['course'] || '').trim(),
+              level: (normalized['level'] || '').trim(),
+              remarks: (normalized['remarks'] || '').trim(),
+              start: parseDateToISO((normalized['start'] || '').trim()),
+              end: parseDateToISO((normalized['end'] || '').trim()),
+              status: (normalized['status'] || 'new').trim(),
+            }
+          })
           .filter((r) => r.englishName)
 
         if (!rows.length) return toast.error('No valid rows found in CSV')
@@ -508,7 +499,7 @@
   onMount(loadStudents)
 </script>
 
-<main class="p-8 max-w-7xl mx-auto space-y-6">
+<main class="p-8 max-w-[90rem] mx-auto space-y-6">
   <!-- Header -->
   <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
     <div>
@@ -546,31 +537,6 @@
           <button class="btn btn-xs btn-ghost" onclick={selectAll}>Select All</button>
           <button class="btn btn-xs btn-ghost" onclick={clearSelection}>Clear</button>
           <div class="divider divider-horizontal my-0 mx-1"></div>
-          <button
-            class="btn btn-xs btn-outline btn-success"
-            onclick={() => bulkUpdateStatus('new')}
-            disabled={isProcessing}>Mark New</button
-          >
-          <button
-            class="btn btn-xs btn-outline btn-info"
-            onclick={() => bulkUpdateStatus('old')}
-            disabled={isProcessing}>Mark Old</button
-          >
-          <button
-            class="btn btn-xs btn-outline btn-warning"
-            onclick={() => bulkUpdateStatus('graduated')}
-            disabled={isProcessing}>Mark Graduated</button
-          >
-          <button
-            class="btn btn-xs btn-outline btn-secondary"
-            onclick={() => bulkUpdateStatus('extended')}
-            disabled={isProcessing}>Mark Extended</button
-          >
-          <button
-            class="btn btn-xs btn-outline btn-error"
-            onclick={() => bulkUpdateStatus('changed')}
-            disabled={isProcessing}>Mark Changed</button
-          >
           <button class="btn btn-xs btn-error" onclick={bulkDeleteStudents} disabled={isProcessing}>
             {isProcessing ? 'Processing…' : 'Delete'}
           </button>
@@ -671,7 +637,7 @@
         </div>
 
         <!-- Status -->
-        <div class="form-control">
+        <!-- <div class="form-control">
           <label class="label py-1" for="student-status"><span class="label-text font-semibold">Status</span></label>
           <select
             id="student-status"
@@ -681,7 +647,7 @@
           >
             {#each STATUS_OPTIONS as opt}<option value={opt}>{capitalize(opt)}</option>{/each}
           </select>
-        </div>
+        </div> -->
 
         <!-- Edit Mode (only in edit, not add) -->
         {#if formData.id}
@@ -698,7 +664,7 @@
                 }}
               />
               <div>
-                <p class="font-semibold text-sm">Changed</p>
+                <p class="font-semibold text-sm">Change</p>
                 <p class="text-xs text-base-content/50">
                   Creates a new record with an updated Course. Original is preserved.
                 </p>
@@ -715,7 +681,7 @@
                 }}
               />
               <div>
-                <p class="font-semibold text-sm">Extended</p>
+                <p class="font-semibold text-sm">Extend</p>
                 <p class="text-xs text-base-content/50">
                   Creates a new record with updated Course, Start & End dates. Original is preserved.
                 </p>

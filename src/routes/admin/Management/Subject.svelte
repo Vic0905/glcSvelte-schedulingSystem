@@ -150,7 +150,7 @@
   onMount(loadInitialData)
 </script>
 
-<main class="p-8 max-w-6xl mx-auto space-y-8">
+<main class="p-8 max-w-[90rem] mx-auto space-y-6">
   <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
     <div>
       <h1 class="text-3xl font-extrabold tracking-tight text-base-content">Subject Information</h1>
