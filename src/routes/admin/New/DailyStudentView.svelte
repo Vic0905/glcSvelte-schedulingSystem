@@ -117,17 +117,12 @@
     if (isStaticDataLoaded) return
 
     try {
-      const [timeslots, students, holidays] = await Promise.all([
+      const [timeslots, holidays] = await Promise.all([
         pb.collection('timeslot').getFullList({ sort: 'start' }),
-        pb.collection('student').getFullList({
-          filter: 'status != "graduated"',
-          fields: 'id,name,englishName,course,level,groupName,status,created',
-        }),
         pb.collection('holiday').getFullList({ fields: 'id,name,date' }),
       ])
 
       cachedTimeslots = timeslots
-      cachedStudents = students
       cachedHolidays = holidays
       isStaticDataLoaded = true
     } catch (err) {
@@ -146,6 +141,12 @@
 
       const startDateStr = `${selectedDate} 00:00:00`
       const endDateStr = `${selectedDate} 23:59:59`
+
+      // Fetch students active on selected date (same filter as modal)
+      cachedStudents = await pb.collection('student').getFullList({
+        filter: `status != "graduated" && start <= "${endDateStr}" && end >= "${startDateStr}"`,
+        fields: 'id,name,englishName,course,level,groupName,status,start,created',
+      })
 
       let schedules = await pb.collection('schedule').getFullList({
         filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
