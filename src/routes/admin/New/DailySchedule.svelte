@@ -171,7 +171,7 @@
       if (cell.isLabelCell) {
         return h('div', { class: `w-full h-full p-4 flex  font-bold text-neutral-700 ${bgClass}` }, 'ANNEX 2')
       }
-      return h('div', { class: `w-full h-full p-1 ${bgClass}` })
+      return h('div', { class: `w-full h-full p-10 ${bgClass}` })
     }
 
     if (!cell?.schedules?.length) {
@@ -298,13 +298,13 @@
       // Insert separator row before the first Annex 2 (B-prefixed) room
       if (!annexInserted && getBuildingSection(room.name) === 'annex2') {
         const separatorRow = [
-          { value: '', disabled: true, bgClass: 'bg-neutral-300', isSeparator: true },
-          { value: '', disabled: true, bgClass: 'bg-neutral-300', isSeparator: true },
+          { value: '', disabled: true, bgClass: 'bg-neutral-500', isSeparator: true },
+          { value: '', disabled: true, bgClass: 'bg-neutral-500', isSeparator: true },
           ...timeslots.map((_, i) => ({
             label: 'Separator',
             isSeparator: true,
-            isLabelCell: i === middleIndex,
-            bgClass: 'bg-neutral-300',
+            isLabelCell: i === 0,
+            bgClass: 'bg-neutral-500',
           })),
         ]
         data.push(separatorRow)
