@@ -253,3 +253,15 @@ export const teacherRoutes = {
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),
 }
+
+export const studentRoutes = {
+  '/': wrap({
+    asyncComponent: () => import('../routes/admin/Dashboard/StudentDash.svelte'),
+  }),
+  '/new/studenttable': wrap({
+    asyncComponent: () => import('../routes/admin/New/StudentTable.svelte'),
+  }),
+  '*': wrap({
+    asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
+  }),
+}

@@ -88,6 +88,9 @@
               {#if current.user.role === 'teacher'}
                 <span class="badge badge-primary badge-sm">Teacher</span>
               {/if}
+              {#if current.user.role === 'student'}
+                <span class="badge badge-primary badge-sm">Student</span>
+              {/if}
               <div class="avatar mt-2">
                 <div class="w-18 rounded-full ring ring-primary ring-offset-base-100 ring-offset-4">
                   {#if current.user.avatar}

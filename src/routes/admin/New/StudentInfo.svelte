@@ -105,6 +105,50 @@
     return JSON.parse(text)
   }
 
+  // ── ADDED: User account helper ─────────────────────────────────────────────
+  async function createStudentUser(englishName) {
+    const trimmedName = englishName.trim()
+
+    // Check if a user already exists for this student name
+    try {
+      const existing = await pb.collection('users').getFirstListItem(`firstName="${trimmedName}"`)
+      return existing.id
+    } catch {
+      // not found, continue to create
+    }
+
+    const base = trimmedName.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (!base) return null
+    let username = base
+    let suffix = 1
+    while (true) {
+      try {
+        await pb.collection('users').getFirstListItem(`username="${username}"`)
+        username = `${base}${suffix++}`
+      } catch {
+        break
+      }
+    }
+
+    try {
+      const user = await pb.collection('users').create({
+        username,
+        email: `${username}@student.local`,
+        emailVisibility: true,
+        password: '00000000',
+        passwordConfirm: '00000000',
+        firstName: trimmedName,
+        role: 'student',
+      })
+      return user.id
+    } catch (err) {
+      console.error('Failed to create user for', englishName, err)
+      toast.error(`User creation failed: ${err?.response?.message || err.message}`)
+      if (err?.response?.data) console.error(JSON.stringify(err.response.data))
+      return null
+    }
+  }
+
   // ── Grid ──────────────────────────────────────────────────────────────────
   function renderGrid(records) {
     if (!gridElement) return
@@ -252,6 +296,7 @@
           status: 'changed',
           start: formData.start || null,
           end: original.end || null,
+          user: original.user,
         })
         toast.success('New record created with changed course')
       } else if (formData.id && formData.isExtended) {
@@ -265,6 +310,7 @@
           status: 'extended',
           start: formData.start || null,
           end: formData.end || null,
+          user: original.user,
         })
         toast.success('New record created with extended course and dates')
       } else {
@@ -280,9 +326,13 @@
           start: formData.start || null,
           end: formData.end || null,
         }
-        formData.id
-          ? await pb.collection('student').update(formData.id, payload)
-          : await pb.collection('student').create(payload)
+        if (formData.id) {
+          await pb.collection('student').update(formData.id, payload)
+        } else {
+          const newStudent = await pb.collection('student').create(payload)
+          const userId = await createStudentUser(trimmed)
+          if (userId) await pb.collection('student').update(newStudent.id, { user: userId })
+        }
         toast.success(formData.id ? 'Student updated' : 'Student added')
       }
       closeModal()
@@ -330,6 +380,19 @@
       )
       const added = results.filter((r) => r.status >= 200 && r.status < 300).length
       const failed = results.filter((r) => r.status < 200 || r.status >= 300).length
+
+      // ── ADDED: create a user account for each successfully created student
+      const successful = toCreate
+        .map((row, i) => ({ row, result: results[i] }))
+        .filter(({ result }) => result.status >= 200 && result.status < 300)
+
+      await Promise.allSettled(
+        successful.map(async ({ row, result }) => {
+          const userId = await createStudentUser(row.englishName)
+          if (userId) await pb.collection('student').update(result.body.id, { user: userId })
+        })
+      )
+
       toast.success(
         [added && `${added} added`, skipped && `${skipped} skipped`, failed && `${failed} failed`]
           .filter(Boolean)
@@ -443,6 +506,19 @@
           )
           const added = results.filter((r) => r.status >= 200 && r.status < 300).length
           const failed = results.filter((r) => r.status < 200 || r.status >= 300).length
+
+          // ── ADDED: create a user account for each successfully created student
+          const successful = toCreate
+            .map((row, i) => ({ row, result: results[i] }))
+            .filter(({ result }) => result.status >= 200 && result.status < 300)
+
+          await Promise.allSettled(
+            successful.map(async ({ row, result }) => {
+              const userId = await createStudentUser(row.englishName)
+              if (userId) await pb.collection('student').update(result.body.id, { user: userId })
+            })
+          )
+
           toast.success(
             [added && `${added} imported`, skipped && `${skipped} skipped`, failed && `${failed} failed`]
               .filter(Boolean)

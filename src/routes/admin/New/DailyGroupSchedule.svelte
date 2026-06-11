@@ -18,10 +18,10 @@
   let cachedHolidays = []
 
   // ─────────────────────────────────────────────
-  // SECTION 2: Reactive state (template reads these)
+  // SECTION 2: Reactive state
   // ─────────────────────────────────────────────
-  let copyModal = $state()
   let combineModal = $state()
+  let copyModal = $state()
   let selectedDate = $state(getInitialDate())
   let todayHoliday = $state(null)
   let isLoading = $state(false)
@@ -57,6 +57,61 @@
     return d.toISOString().split('T')[0]
   }
 
+  /**
+   * Per-building styling config: prefix, alternating band ranges,
+   * and Tailwind classes for banded vs base rooms.
+   */
+  const BUILDING_CONFIG = {
+    main: {
+      prefix: 'G',
+      bandColor: 'bg-neutral-300 text-neutral-800',
+      baseColor: 'bg-white text-neutral-800',
+      bands: [[12, 18]],
+    },
+    annex2: {
+      prefix: 'H',
+      bandColor: 'bg-white text-neutral-800',
+      baseColor: 'bg-neutral-200/90 text-neutral-800',
+      bands: [
+        [1, 10],
+        [30, 50],
+      ],
+    },
+  }
+
+  /**
+   * Returns a Tailwind bg+text class pair based on room name and BUILDING_CONFIG.
+   */
+  function getBgClass(roomName) {
+    if (!roomName) return ''
+    const upper = roomName.toUpperCase()
+
+    for (const config of Object.values(BUILDING_CONFIG)) {
+      if (!upper.startsWith(config.prefix)) continue
+
+      const num = parseInt(upper.replace(/\D/g, ''), 10)
+      if (isNaN(num)) return config.baseColor
+
+      const inBand = config.bands.some(([min, max]) => num >= min && num <= max)
+      return inBand ? config.bandColor : config.baseColor
+    }
+
+    return ''
+  }
+
+  /**
+   * Returns the building section for a room name:
+   * 'main' for G-prefixed rooms (Main Building),
+   * 'annex2' for H-prefixed rooms (Annex 2), null otherwise.
+   */
+  function getBuildingSection(roomName) {
+    if (!roomName) return null
+    const upper = roomName.toUpperCase()
+    if (upper.startsWith('G')) return 'main'
+    if (upper.startsWith('H')) return 'annex2'
+    return null
+  }
+
   function saveScroll() {
     const wrapper = document.querySelector('#daily-grid .gridjs-wrapper')
     return {
@@ -78,20 +133,44 @@
 
   // ─────────────────────────────────────────────
   // SECTION 4: Grid cell formatters
-  // GRP has no room color banding, so no bgClass needed.
   // ─────────────────────────────────────────────
 
-  function formatTeacherCell(value) {
-    return h('div', { class: 'w-full h-full p-2 flex items-center justify-center text-center' }, value)
+  function formatTeacherCell(value, bgClass, isSeparator) {
+    if (isSeparator) {
+      return h('div', { class: `w-full h-full p-1 ${bgClass}` })
+    }
+    return h('div', { class: `w-full h-full p-2 flex items-center justify-center text-center ${bgClass}` }, value)
   }
 
-  function formatRoomCell(value) {
-    return h('div', { class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-center' }, value)
+  function formatRoomCell(value, bgClass, isSeparator) {
+    if (isSeparator) {
+      return h('div', { class: `w-full h-full p-1 ${bgClass}` })
+    }
+    return h(
+      'div',
+      { class: `w-full h-full p-2 flex items-center justify-center font-semibold text-center ${bgClass}` },
+      value
+    )
   }
 
   function formatScheduleCell(cell) {
+    const bgClass = cell?.bgClass || ''
+
+    if (cell?.isSeparator) {
+      if (cell.isLabelCell) {
+        return h('div', { class: `w-full h-full flex items-center px-4 ${bgClass}` }, [
+          h('h3', { class: 'text-lg font-bold text-neutral-700' }, 'Annex 2'),
+        ])
+      }
+      return h('div', { class: `w-full h-full p-10 ${bgClass}` })
+    }
+
     if (!cell?.schedules?.length) {
-      return h('div', { class: 'w-full h-full min-h-[55px] flex items-center justify-center text-gray-400' }, '—')
+      return h(
+        'div',
+        { class: `w-full h-full min-h-[55px] flex items-center justify-center text-gray-400 ${bgClass}` },
+        '—'
+      )
     }
 
     const { schedules } = cell
@@ -100,7 +179,7 @@
     const teacherName = first.teacher?.name || 'No Teacher'
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
 
-    return h('div', { class: 'flex flex-col gap-1 p-2 items-center text-center w-full h-full' }, [
+    return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ${bgClass}` }, [
       h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full' }, [
         h('div', {}, subjectName),
         h('div', { class: 'text-[10px] uppercase mt-1 text-neutral-500' }, teacherName),
@@ -144,14 +223,26 @@
     return map
   }
 
-  function buildEmptyCountMap(timeslots, rooms, scheduleMap) {
+  /**
+   * Counts empty rooms per timeslot, split by building section.
+   * Returns Map<timeslotId, { main: number, annex2: number }>
+   * - main: Main Building rooms (G-prefixed)
+   * - annex2: Annex 2 rooms (H-prefixed)
+   */
+  function buildEmptyCountMapBySection(timeslots, rooms, scheduleMap) {
     const map = new Map()
     for (const ts of timeslots) {
-      let count = 0
+      let main = 0
+      let annex2 = 0
       for (const room of rooms) {
-        if (!(scheduleMap.get(`${room.id}-${ts.id}`) || []).length) count++
+        const hasSchedule = (scheduleMap.get(`${room.id}-${ts.id}`) || []).length
+        if (hasSchedule) continue
+
+        const section = getBuildingSection(room.name)
+        if (section === 'main') main++
+        else if (section === 'annex2') annex2++
       }
-      map.set(ts.id, count)
+      map.set(ts.id, { main, annex2 })
     }
     return map
   }
@@ -165,34 +256,56 @@
       {
         name: 'Teacher',
         width: '120px',
-        formatter: (c) => formatTeacherCell(c.value),
+        formatter: (c, row) => formatTeacherCell(c.value, row.cells[0].data.bgClass, row.cells[0].data.isSeparator),
       },
       {
         name: 'Room',
         width: '120px',
-        formatter: (c) => formatRoomCell(c.value),
+        formatter: (c, row) => formatRoomCell(c.value, row.cells[1].data.bgClass, row.cells[1].data.isSeparator),
       },
-      ...timeslots.map((t) => ({
-        id: t.id,
-        width: '180px',
-        name: h('div', { class: 'flex flex-col items-center gap-0.5' }, [
-          h('span', null, `${t.start} - ${t.end}`),
-          h(
-            'span',
-            { class: 'text-[10px] font-bold badge badge-success badge-xs' },
-            `${emptyCountMap.get(t.id) || 0} Available`
-          ),
-        ]),
-        formatter: formatScheduleCell,
-      })),
+      ...timeslots.map((t) => {
+        const counts = emptyCountMap.get(t.id) || { main: 0, annex2: 0 }
+        return {
+          id: t.id,
+          width: '180px',
+          name: h('div', { class: 'flex flex-col items-center gap-0.5' }, [
+            h('span', null, `${t.start} - ${t.end}`),
+            h('div', { class: 'flex gap-1' }, [
+              h('span', { class: 'text-[10px] font-bold badge badge-success badge-xs' }, `Main: ${counts.main}`),
+              h('span', { class: 'text-[10px] font-bold badge badge-info badge-xs' }, `Annex 2: ${counts.annex2}`),
+            ]),
+          ]),
+          formatter: formatScheduleCell,
+        }
+      }),
     ]
 
-    const data = rooms.map((room) => {
+    const data = []
+    let annexInserted = false
+
+    for (const room of rooms) {
+      // Insert separator row before the first Annex 2 (H-prefixed) room
+      if (!annexInserted && getBuildingSection(room.name) === 'annex2') {
+        const separatorRow = [
+          { value: '', disabled: true, bgClass: 'bg-neutral-500', isSeparator: true },
+          { value: '', disabled: true, bgClass: 'bg-neutral-500', isSeparator: true },
+          ...timeslots.map((_, i) => ({
+            label: 'Separator',
+            isSeparator: true,
+            isLabelCell: i === 0,
+            bgClass: 'bg-neutral-500',
+          })),
+        ]
+        data.push(separatorRow)
+        annexInserted = true
+      }
+
+      const bgClass = getBgClass(room.name)
       const teacher = room.expand?.teacher
 
       const row = [
-        { value: teacher?.name || '-', disabled: true },
-        { value: room.name, disabled: true },
+        { value: teacher?.name || '-', disabled: true, bgClass },
+        { value: room.name, disabled: true, bgClass },
       ]
 
       for (const ts of timeslots) {
@@ -202,18 +315,18 @@
           schedules,
           room,
           timeslot: ts,
+          bgClass,
         })
       }
 
-      return row
-    })
+      data.push(row)
+    }
 
     return { columns, data }
   }
 
   // ─────────────────────────────────────────────
   // SECTION 7: Grid renderer
-  // cellClick registered ONCE on init, never re-registered.
   // ─────────────────────────────────────────────
 
   async function renderGrid(columns, data, scroll) {
@@ -226,7 +339,7 @@
       gridInstance = new Grid({
         columns,
         data,
-        height: '600px',
+        height: 'calc(100vh - 220px)',
         className: {
           table: 'w-full border text-xs !border-collapse',
           th: 'text-center',
@@ -237,7 +350,7 @@
 
       gridInstance.on('cellClick', (_e, cell) => {
         const data = cell.data
-        if (data.disabled) return
+        if (data.disabled || data.isSeparator) return
 
         const isCreate = data.label === 'Empty'
         const firstSched = data.schedules?.[0]
@@ -277,7 +390,7 @@
         : pb.collection('roomType').getFullList({
             sort: 'name',
             expand: 'teacher',
-            filter: 'roomType = "grp"', // ← GRP filter
+            filter: 'roomType = "grp"',
           }),
       pb.collection('schedule').getFullList({
         filter: `start <= "${endDateStr}" && end >= "${startDateStr}"`,
@@ -311,7 +424,7 @@
 
       const normalized = normalizeSchedules(schedules, selectedDate, holiday)
       const scheduleMap = buildScheduleMap(normalized)
-      const emptyCountMap = buildEmptyCountMap(timeslots, rooms, scheduleMap)
+      const emptyCountMap = buildEmptyCountMapBySection(timeslots, rooms, scheduleMap)
       const { columns, data } = buildGridConfig(rooms, timeslots, scheduleMap, emptyCountMap)
 
       await renderGrid(columns, data, scroll)
@@ -444,7 +557,7 @@
     </div>
   </div>
 
-  <!-- Grid container -->
+  <!-- Grid container — gridjs renders into this div -->
   <div id="daily-grid" class="border rounded-lg"></div>
 </div>
 
@@ -462,23 +575,27 @@
     scrollbar-gutter: stable;
   }
 
+  /* Hover highlight on schedule cells */
   #daily-grid :global(.gridjs-table td:hover > div) {
     background-color: #d1fae5 !important;
     transition: background-color 0.2s ease;
     cursor: pointer;
   }
 
+  /* Scrollable grid wrapper */
   #daily-grid :global(.gridjs-wrapper) {
-    max-height: 650px;
+    max-height: calc(100vh - 220px);
     overflow: auto;
     contain: strict;
   }
 
+  /* Let cell background divs fill the full td area */
   #daily-grid :global(td) {
     padding: 0 !important;
     vertical-align: stretch;
   }
 
+  /* Sticky header row */
   #daily-grid :global(th) {
     position: sticky;
     top: 0;
@@ -488,6 +605,7 @@
     color: #ffffff;
   }
 
+  /* Sticky "Teacher" column */
   #daily-grid :global(th:nth-child(1)),
   #daily-grid :global(td:nth-child(1)) {
     position: sticky;
@@ -500,6 +618,7 @@
     z-index: 25;
   }
 
+  /* Sticky "Room" column */
   #daily-grid :global(th:nth-child(2)),
   #daily-grid :global(td:nth-child(2)) {
     position: sticky;

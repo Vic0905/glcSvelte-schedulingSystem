@@ -350,7 +350,7 @@
       gridInstance = new Grid({
         columns,
         data,
-        height: '600px',
+        height: 'calc(100vh - 220px)',
         className: {
           table: 'w-full border text-xs !border-collapse',
           th: 'text-center',
@@ -595,7 +595,7 @@
 
   /* Scrollable grid wrapper */
   #daily-grid :global(.gridjs-wrapper) {
-    max-height: 650px;
+    max-height: calc(100vh - 220px);
     overflow: auto;
     contain: strict;
   }

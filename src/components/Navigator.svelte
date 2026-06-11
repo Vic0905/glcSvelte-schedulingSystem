@@ -175,6 +175,17 @@
       </ul>
     </details>
   </li> -->
+{:else if current.user && current.user.role === 'student'}
+  <!-- student routes -->
+  <li>
+    <details>
+      <summary>Student Table</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <!-- <li><a href="/#/new/dailystudentview">StudentView</a></li> -->
+        <li><a href="/#/new/studenttable">Student Table</a></li>
+      </ul>
+    </details>
+  </li>
 {:else if current.user && current.user.role === 'staff'}
   <!-- staff routes -->
   <li>
