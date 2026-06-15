@@ -147,8 +147,17 @@
   // SECTION 4: Grid cell formatters
   // ─────────────────────────────────────────────
 
-  function formatTeacherCell(value, bgClass, isSeparator) {
+  function formatTeacherCell(value, bgClass, isSeparator, isSectionTitle = false) {
     if (isSeparator) {
+      if (isSectionTitle) {
+        return h(
+          'div',
+          {
+            class: `w-full h-full px-4 py-3 flex items-center font-bold text-lg tracking-wide ${bgClass}`,
+          },
+          value
+        )
+      }
       return h('div', { class: `w-full h-full p-1 ${bgClass}` })
     }
     return h('div', { class: `w-full h-full p-2 flex items-center justify-center text-center ${bgClass}` }, value)
@@ -268,7 +277,13 @@
       {
         name: 'Teacher',
         width: '120px',
-        formatter: (c, row) => formatTeacherCell(c.value, row.cells[0].data.bgClass, row.cells[0].data.isSeparator),
+        formatter: (c, row) =>
+          formatTeacherCell(
+            c.value,
+            row.cells[0].data.bgClass,
+            row.cells[0].data.isSeparator,
+            row.cells[0].data.isSectionTitle
+          ),
       },
       {
         name: 'Room',
@@ -299,13 +314,22 @@
       // Insert separator row before the first Annex 2 (B-prefixed) room
       if (!annexInserted && getBuildingSection(room.name) === 'annex2') {
         const separatorRow = [
-          { value: '', disabled: true, bgClass: 'bg-neutral-500', isSeparator: true },
-          { value: '', disabled: true, bgClass: 'bg-neutral-500', isSeparator: true },
-          ...timeslots.map((_, i) => ({
-            label: 'Separator',
+          {
+            value: 'ANNEX 2 BUILDING',
+            disabled: true,
+            bgClass: 'bg-neutral-700 text-white',
             isSeparator: true,
-            isLabelCell: i === 0,
-            bgClass: 'bg-neutral-500',
+            isSectionTitle: true,
+          },
+          {
+            value: '',
+            disabled: true,
+            bgClass: 'bg-neutral-700',
+            isSeparator: true,
+          },
+          ...timeslots.map(() => ({
+            isSeparator: true,
+            bgClass: 'bg-neutral-700',
           })),
         ]
         data.push(separatorRow)
