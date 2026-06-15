@@ -246,8 +246,8 @@ export const teacherRoutes = {
   '/': wrap({
     asyncComponent: () => import('../routes/admin/Dashboard/TeacherDash.svelte'),
   }),
-  '/current/teacherview': wrap({
-    asyncComponent: () => import('../routes/admin/Current/TeacherView.svelte'),
+  '/new/teachertable': wrap({
+    asyncComponent: () => import('../routes/admin/New/TeacherTable.svelte'),
   }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),

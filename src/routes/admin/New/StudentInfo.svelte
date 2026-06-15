@@ -314,7 +314,7 @@
         })
         toast.success('New record created with extended course and dates')
       } else {
-        if (!formData.id && students.some((s) => s.englishName?.toLowerCase() === trimmed.toLowerCase()))
+        if (!formData.id && students.some((s) => s.englishName?.toUpperCase() === trimmed.toUpperCase()))
           return toast.error(`"${trimmed}" already exists`)
         const payload = {
           name: formData.name.trim(),
@@ -328,6 +328,22 @@
         }
         if (formData.id) {
           await pb.collection('student').update(formData.id, payload)
+
+          const original = students.find((s) => s.id === formData.id)
+          if (original?.user && original.englishName?.toLowerCase() !== trimmed.toLowerCase()) {
+            const newBase = trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '')
+            if (newBase) {
+              try {
+                await pb.collection('users').update(original.user, {
+                  firstName: trimmed,
+                  username: newBase,
+                })
+              } catch (userErr) {
+                console.warn('Could not sync username:', userErr)
+                toast.warning('Student updated but username sync failed — username may already be taken')
+              }
+            }
+          }
         } else {
           const newStudent = await pb.collection('student').create(payload)
           const userId = await createStudentUser(trimmed)

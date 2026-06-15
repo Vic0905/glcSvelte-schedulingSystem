@@ -96,6 +96,7 @@
     const upper = roomName.toUpperCase()
 
     if (upper.startsWith('G')) return 'bg-white text-neutral-800'
+    if (upper.startsWith('ST')) return 'bg-white text-neutral-800'
 
     for (const config of Object.values(BUILDING_CONFIG)) {
       if (!upper.startsWith(config.prefix)) continue
@@ -118,7 +119,7 @@
   function getBuildingSection(roomName) {
     if (!roomName) return null
     const upper = roomName.toUpperCase()
-    if (upper.startsWith('A')) return 'main'
+    if (upper.startsWith('A') || upper.startsWith('ST')) return 'main'
     if (upper.startsWith('B')) return 'annex2'
     return null
   }
@@ -191,7 +192,7 @@
     return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ${bgClass}` }, [
       h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full' }, [
         h('div', {}, subjectName),
-        h('div', { class: 'text-[10px] uppercase mt-1 text-neutral-500' }, teacherName),
+        h('div', { class: 'text-[10px] uppercase mt-1' }, teacherName),
       ]),
       h(
         'div',
@@ -352,7 +353,7 @@
         data,
         height: 'calc(100vh - 220px)',
         className: {
-          table: 'w-full border text-xs !border-collapse',
+          table: 'w-full text-xs ',
           th: 'text-center',
           td: 'text-center',
         },
@@ -410,7 +411,19 @@
     ])
 
     if (!cachedTimeslots.length) cachedTimeslots = timeslots
-    if (!cachedRooms.length) cachedRooms = rooms
+    if (!cachedRooms.length)
+      cachedRooms = rooms.sort((a, b) => {
+        const section = (name) => {
+          const u = name?.toUpperCase() || ''
+          if (u.startsWith('A') || u.startsWith('ST')) return 0
+          if (u.startsWith('B')) return 1
+          return 2
+        }
+        const sA = section(a.name)
+        const sB = section(b.name)
+        if (sA !== sB) return sA - sB
+        return a.name.localeCompare(b.name)
+      })
 
     return { timeslots, rooms, schedules }
   }

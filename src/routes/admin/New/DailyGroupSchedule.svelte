@@ -135,11 +135,30 @@
   // SECTION 4: Grid cell formatters
   // ─────────────────────────────────────────────
 
-  function formatTeacherCell(value, bgClass, isSeparator) {
+  function formatTeacherCell(value, bgClass, isSeparator, isSectionTitle = false) {
     if (isSeparator) {
-      return h('div', { class: `w-full h-full p-1 ${bgClass}` })
+      if (isSectionTitle) {
+        return h(
+          'div',
+          {
+            class: `w-full h-full px-4 py-3 flex items-center font-bold text-lg tracking-wide ${bgClass}`,
+          },
+          value
+        )
+      }
+
+      return h('div', {
+        class: `w-full h-full ${bgClass}`,
+      })
     }
-    return h('div', { class: `w-full h-full p-2 flex items-center justify-center text-center ${bgClass}` }, value)
+
+    return h(
+      'div',
+      {
+        class: `w-full h-full p-2 flex items-center justify-center text-center ${bgClass}`,
+      },
+      value
+    )
   }
 
   function formatRoomCell(value, bgClass, isSeparator) {
@@ -157,12 +176,9 @@
     const bgClass = cell?.bgClass || ''
 
     if (cell?.isSeparator) {
-      if (cell.isLabelCell) {
-        return h('div', { class: `w-full h-full flex items-center px-4 ${bgClass}` }, [
-          h('h3', { class: 'text-lg font-bold text-neutral-700' }, 'Annex 2'),
-        ])
-      }
-      return h('div', { class: `w-full h-full p-10 ${bgClass}` })
+      return h('div', {
+        class: `w-full h-full ${bgClass}`,
+      })
     }
 
     if (!cell?.schedules?.length) {
@@ -182,7 +198,7 @@
     return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ${bgClass}` }, [
       h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full' }, [
         h('div', {}, subjectName),
-        h('div', { class: 'text-[10px] uppercase mt-1 text-neutral-500' }, teacherName),
+        h('div', { class: 'text-[10px] uppercase mt-1' }, teacherName),
       ]),
       h(
         'div',
@@ -256,7 +272,13 @@
       {
         name: 'Teacher',
         width: '120px',
-        formatter: (c, row) => formatTeacherCell(c.value, row.cells[0].data.bgClass, row.cells[0].data.isSeparator),
+        formatter: (c, row) =>
+          formatTeacherCell(
+            c.value,
+            row.cells[0].data.bgClass,
+            row.cells[0].data.isSeparator,
+            row.cells[0].data.isSectionTitle
+          ),
       },
       {
         name: 'Room',
@@ -287,13 +309,22 @@
       // Insert separator row before the first Annex 2 (H-prefixed) room
       if (!annexInserted && getBuildingSection(room.name) === 'annex2') {
         const separatorRow = [
-          { value: '', disabled: true, bgClass: 'bg-neutral-500', isSeparator: true },
-          { value: '', disabled: true, bgClass: 'bg-neutral-500', isSeparator: true },
-          ...timeslots.map((_, i) => ({
-            label: 'Separator',
+          {
+            value: 'ANNEX 2 BUILDING',
+            disabled: true,
+            bgClass: 'bg-neutral-700 text-white',
             isSeparator: true,
-            isLabelCell: i === 0,
-            bgClass: 'bg-neutral-500',
+            isSectionTitle: true,
+          },
+          {
+            value: '',
+            disabled: true,
+            bgClass: 'bg-neutral-700',
+            isSeparator: true,
+          },
+          ...timeslots.map(() => ({
+            isSeparator: true,
+            bgClass: 'bg-neutral-700',
           })),
         ]
         data.push(separatorRow)
@@ -341,7 +372,7 @@
         data,
         height: 'calc(100vh - 220px)',
         className: {
-          table: 'w-full border text-xs !border-collapse',
+          table: 'w-full text-xs',
           th: 'text-center',
           td: 'text-center',
         },

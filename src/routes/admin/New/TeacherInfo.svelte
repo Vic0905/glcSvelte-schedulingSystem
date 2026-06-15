@@ -4,11 +4,15 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import Papa from 'papaparse'
+
+  // ── Constants ─────────────────────────────────────────────────────────────
+  const STATUS_OPTIONS = ['enabled', 'disabled']
+  const STATUS_BADGE = { enabled: 'badge-success', disabled: 'badge-error' }
 
   // ── State ─────────────────────────────────────────────────────────────────
   let teachers = $state([])
   let showModal = $state(false)
-  let showBulkAddModal = $state(false)
   let gridElement = $state(null)
   let gridInstance = null
   let isProcessing = $state(false)
@@ -16,36 +20,69 @@
 
   let formData = $state({ id: null, name: '', status: 'enabled' })
 
-  // Bulk add state
-  const BULK_DRAFT_KEY = 'teacher_bulk_draft'
-  let bulkRawInput = $state('')
-  let bulkDefaultStatus = $state('enabled')
-  let bulkPreview = $derived(
-    bulkRawInput
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .filter((line, i, arr) => arr.indexOf(line) === i) // dedupe within input
-  )
-  let hasDraft = $derived(!!localStorage.getItem(BULK_DRAFT_KEY) && bulkRawInput.trim().length === 0)
-
-  // Persist draft to localStorage on every change, clear when empty
-  $effect(() => {
-    if (bulkRawInput.trim()) {
-      localStorage.setItem(BULK_DRAFT_KEY, bulkRawInput)
-    } else {
-      localStorage.removeItem(BULK_DRAFT_KEY)
-    }
-  })
-
+  // ── Derived ───────────────────────────────────────────────────────────────
   let stats = $derived({
     total: teachers.length,
     enabled: teachers.filter((t) => t.status === 'enabled').length,
     disabled: teachers.filter((t) => t.status === 'disabled').length,
   })
 
-  const STATUS_OPTIONS = ['enabled', 'disabled']
-  const STATUS_BADGE = { enabled: 'badge-success', disabled: 'badge-error' }
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  async function batchFetch(requests) {
+    const res = await fetch(`${pb.baseUrl}/api/batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${pb.authStore.token}`,
+      },
+      body: JSON.stringify({ requests }),
+    })
+    const text = await res.text()
+    if (!res.ok) throw new Error(text)
+    return JSON.parse(text)
+  }
+
+  // ── User account helper ────────────────────────────────────────────────────
+  async function createTeacherUser(name) {
+    const trimmedName = name.trim()
+
+    try {
+      const existing = await pb.collection('users').getFirstListItem(`firstName="${trimmedName}"`)
+      return existing.id
+    } catch {
+      // not found, continue to create
+    }
+
+    const base = trimmedName.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (!base) return null
+    let username = base
+    let suffix = 1
+    while (true) {
+      try {
+        await pb.collection('users').getFirstListItem(`username="${username}"`)
+        username = `${base}${suffix++}`
+      } catch {
+        break
+      }
+    }
+
+    try {
+      const user = await pb.collection('users').create({
+        username,
+        email: `${username}@teacher.local`,
+        emailVisibility: true,
+        password: '00000000',
+        passwordConfirm: '00000000',
+        firstName: trimmedName,
+        role: 'teacher',
+      })
+      return user.id
+    } catch (err) {
+      console.error('Failed to create user for', name, err)
+      toast.error(`User creation failed: ${err?.response?.message || err.message}`)
+      return null
+    }
+  }
 
   // ── Grid ──────────────────────────────────────────────────────────────────
   function buildRows(records) {
@@ -110,9 +147,28 @@
       const payload = { name: trimmed, status: formData.status }
       if (formData.id) {
         await pb.collection('teacher').update(formData.id, payload)
+
+        const original = teachers.find((t) => t.id === formData.id)
+        if (original?.user && original.name?.toLowerCase() !== trimmed.toLowerCase()) {
+          const newBase = trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '')
+          if (newBase) {
+            try {
+              await pb.collection('users').update(original.user, {
+                firstName: trimmed,
+                username: newBase,
+              })
+            } catch (userErr) {
+              console.warn('Could not sync username:', userErr)
+              toast.warning('Teacher updated but username sync failed — username may already be taken')
+            }
+          }
+        }
+
         toast.success('Teacher updated')
       } else {
-        await pb.collection('teacher').create(payload)
+        const newTeacher = await pb.collection('teacher').create(payload)
+        const userId = await createTeacherUser(trimmed)
+        if (userId) await pb.collection('teacher').update(newTeacher.id, { user: userId })
         toast.success('Teacher added')
       }
       closeModal()
@@ -127,7 +183,9 @@
   async function deleteTeacher(id) {
     if (!confirm('Delete this teacher?')) return
     try {
+      const teacher = await pb.collection('teacher').getOne(id)
       await pb.collection('teacher').delete(id)
+      if (teacher.user) await pb.collection('users').delete(teacher.user)
       toast.success('Teacher deleted')
       await loadTeachers()
     } catch {
@@ -135,71 +193,7 @@
     }
   }
 
-  // ── Bulk add ──────────────────────────────────────────────────────────────
-  async function saveBulkTeachers() {
-    if (bulkPreview.length === 0) return toast.error('No names entered')
-
-    isProcessing = true
-    const existingNames = new Set(teachers.map((t) => t.name.toLowerCase()))
-
-    const toCreate = bulkPreview.filter((name) => !existingNames.has(name.toLowerCase()))
-    const skipped = bulkPreview.length - toCreate.length
-
-    if (toCreate.length === 0) {
-      toast.error(`All ${skipped} name(s) are duplicates`)
-      isProcessing = false
-      return
-    }
-
-    try {
-      // PocketBase v0.23+ batch API — single round-trip for all creates
-      const formData = new FormData()
-      formData.append(
-        '@jsonPayload',
-        JSON.stringify({
-          requests: toCreate.map((name) => ({
-            method: 'POST',
-            url: '/api/collections/teacher/records',
-            body: { name, status: bulkDefaultStatus },
-          })),
-        })
-      )
-
-      const res = await fetch(`${pb.baseUrl}/api/batch`, {
-        method: 'POST',
-        headers: { Authorization: pb.authStore.token },
-        body: formData,
-      })
-
-      const json = await res.json()
-
-      // Each item in json is { status, body } — 2xx = success
-      const results = Array.isArray(json) ? json : []
-      const added = results.filter((r) => r.status >= 200 && r.status < 300).length
-      const failed = results.filter((r) => r.status < 200 || r.status >= 300).length
-
-      const parts = [
-        added > 0 && `${added} added`,
-        skipped > 0 && `${skipped} skipped (duplicate)`,
-        failed > 0 && `${failed} failed`,
-      ]
-        .filter(Boolean)
-        .join(', ')
-
-      toast.success(parts)
-      localStorage.removeItem(BULK_DRAFT_KEY)
-      bulkRawInput = ''
-      closeBulkAddModal()
-      await loadTeachers()
-    } catch (err) {
-      console.error(err)
-      toast.error('Batch request failed')
-    } finally {
-      isProcessing = false
-    }
-  }
-
-  // ── Bulk status ───────────────────────────────────────────────────────────
+  // ── Bulk selection ────────────────────────────────────────────────────────
   function toggleSelection(id, checked) {
     const next = new Set(selectedTeachers)
     checked ? next.add(id) : next.delete(id)
@@ -238,6 +232,120 @@
     await loadTeachers()
   }
 
+  async function bulkDeleteTeachers() {
+    if (!selectedTeachers.size) return toast.error('No teachers selected')
+    if (!confirm(`Delete ${selectedTeachers.size} teacher(s)?`)) return
+    isProcessing = true
+    try {
+      const records = await pb.collection('teacher').getFullList({
+        filter: Array.from(selectedTeachers)
+          .map((id) => `id="${id}"`)
+          .join(' || '),
+      })
+      await Promise.all(records.map((t) => pb.collection('teacher').delete(t.id)))
+      await Promise.all(records.filter((t) => t.user).map((t) => pb.collection('users').delete(t.user)))
+      toast.success(`${records.length} teacher(s) deleted`)
+      selectedTeachers = new Set()
+      await loadTeachers()
+    } catch {
+      toast.error('Bulk delete failed')
+    } finally {
+      isProcessing = false
+    }
+  }
+
+  // ── CSV ───────────────────────────────────────────────────────────────────
+  function downloadTemplate() {
+    const csv = Papa.unparse({
+      fields: ['Name', 'Status'],
+      data: [],
+    })
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'teachers_template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function triggerCSVImport() {
+    document.getElementById('csv-import-input').click()
+  }
+
+  async function handleCSVImport(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (result) => {
+        const rows = result.data
+          .map((row) => {
+            const normalized = {}
+            for (const key in row) {
+              normalized[key.trim().toLowerCase()] = row[key]
+            }
+            return {
+              name: (normalized['name'] || '').trim(),
+              status: (normalized['status'] || 'enabled').trim(),
+            }
+          })
+          .filter((r) => r.name)
+
+        if (!rows.length) return toast.error('No valid rows found in CSV')
+
+        const existingNames = new Set(teachers.map((t) => t.name?.toLowerCase()))
+        const toCreate = rows.filter((r) => !existingNames.has(r.name.toLowerCase()))
+        const skipped = rows.length - toCreate.length
+
+        if (!toCreate.length) {
+          toast.error(`All ${skipped} row(s) already exist`)
+          e.target.value = ''
+          return
+        }
+
+        isProcessing = true
+        try {
+          const results = await batchFetch(
+            toCreate.map((row) => ({
+              method: 'POST',
+              url: '/api/collections/teacher/records',
+              body: row,
+            }))
+          )
+          const added = results.filter((r) => r.status >= 200 && r.status < 300).length
+          const failed = results.filter((r) => r.status < 200 || r.status >= 300).length
+
+          const successful = toCreate
+            .map((row, i) => ({ row, result: results[i] }))
+            .filter(({ result }) => result.status >= 200 && result.status < 300)
+
+          await Promise.allSettled(
+            successful.map(async ({ row, result }) => {
+              const userId = await createTeacherUser(row.name)
+              if (userId) await pb.collection('teacher').update(result.body.id, { user: userId })
+            })
+          )
+
+          toast.success(
+            [added && `${added} imported`, skipped && `${skipped} skipped`, failed && `${failed} failed`]
+              .filter(Boolean)
+              .join(', ')
+          )
+          await loadTeachers()
+        } catch {
+          toast.error('CSV import failed')
+        } finally {
+          isProcessing = false
+          e.target.value = ''
+        }
+      },
+      error: () => toast.error('Failed to parse CSV'),
+    })
+  }
+
   // ── Modal helpers ─────────────────────────────────────────────────────────
   function openAdd() {
     formData = { id: null, name: '', status: 'enabled' }
@@ -252,19 +360,6 @@
   function closeModal() {
     showModal = false
     formData = { id: null, name: '', status: 'enabled' }
-  }
-
-  function openBulkAddModal() {
-    // Restore draft if one exists, otherwise start fresh
-    bulkRawInput = localStorage.getItem(BULK_DRAFT_KEY) ?? ''
-    bulkDefaultStatus = 'enabled'
-    showBulkAddModal = true
-  }
-
-  function closeBulkAddModal() {
-    showBulkAddModal = false
-    // Don't clear bulkRawInput — it's already persisted in localStorage
-    // so it will be restored next time the modal opens
   }
 
   // ── Cleanup on destroy ────────────────────────────────────────────────────
@@ -292,12 +387,9 @@
       </div>
     </div>
     <div class="flex gap-2">
-      <button class="btn btn-outline shadow-sm relative" onclick={openBulkAddModal}>
-        Add Multiple
-        {#if hasDraft}
-          <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-warning rounded-full border-2 border-base-100"></span>
-        {/if}
-      </button>
+      <input id="csv-import-input" type="file" accept=".csv" class="hidden" onchange={handleCSVImport} />
+      <button class="btn btn-outline shadow-sm" onclick={downloadTemplate}>Download Template</button>
+      <button class="btn btn-outline shadow-sm" onclick={triggerCSVImport} disabled={isProcessing}>Import CSV</button>
       <button class="btn btn-outline btn-primary shadow-sm" onclick={openAdd}>Add Teacher</button>
     </div>
   </header>
@@ -325,6 +417,11 @@
           >
             {isProcessing ? 'Processing…' : 'Disable'}
           </button>
+
+          <div class="divider divider-horizontal my-0 mx-1"></div>
+          <button class="btn btn-xs btn-error" onclick={bulkDeleteTeachers} disabled={isProcessing}>
+            {isProcessing ? 'Processing…' : 'Delete'}
+          </button>
         </div>
       </div>
     </div>
@@ -338,7 +435,7 @@
   </section>
 </main>
 
-<!-- Single Add / Edit Modal -->
+<!-- Add / Edit Modal -->
 {#if showModal}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -390,117 +487,6 @@
             <span class="loading loading-spinner loading-sm"></span>
           {:else}
             {formData.id ? 'Save Changes' : 'Add Teacher'}
-          {/if}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- Bulk Add Modal -->
-{#if showBulkAddModal}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_interactive_supports_focus -->
-  <div
-    class="modal modal-open bg-black/40"
-    role="dialog"
-    onclick={(e) => e.target === e.currentTarget && closeBulkAddModal()}
-  >
-    <div class="modal-box max-w-lg border border-base-300 p-6">
-      <div class="flex justify-between items-center mb-6">
-        <div>
-          <h3 class="font-bold text-xl text-base-content">Add Multiple Teachers</h3>
-          <p class="text-sm text-base-content/50 mt-0.5">One name per line. Duplicates are skipped automatically.</p>
-          {#if bulkRawInput.trim()}
-            <p class="text-xs text-warning mt-1">● Draft restored — your previous input was saved.</p>
-          {/if}
-        </div>
-        <button class="btn btn-sm btn-circle btn-ghost" onclick={closeBulkAddModal}>✕</button>
-      </div>
-
-      <div class="flex flex-col gap-5">
-        <!-- Textarea -->
-        <div class="form-control w-full">
-          <label class="label py-1" for="bulk-names">
-            <span class="label-text font-semibold text-base-content">Names</span>
-            <span class="label-text-alt flex items-center gap-2">
-              {#if bulkPreview.length > 0}
-                <span class="text-base-content/50"
-                  >{bulkPreview.length} name{bulkPreview.length > 1 ? 's' : ''} detected</span
-                >
-              {/if}
-              {#if bulkRawInput.trim()}
-                <button
-                  class="text-error text-xs underline underline-offset-2"
-                  onclick={() => {
-                    bulkRawInput = ''
-                    localStorage.removeItem(BULK_DRAFT_KEY)
-                  }}>Clear</button
-                >
-              {/if}
-            </span>
-          </label>
-          <textarea
-            id="bulk-names"
-            bind:value={bulkRawInput}
-            class="textarea textarea-bordered w-full h-40 resize-none focus:textarea-primary font-mono text-sm"
-            placeholder="John Smith&#10;Jane Doe&#10;Mike Johnson"
-          ></textarea>
-        </div>
-
-        <!-- Default status -->
-        <div class="form-control w-full">
-          <label class="label py-1" for="bulk-status">
-            <span class="label-text font-semibold text-base-content">Default Status</span>
-            <span class="label-text-alt text-base-content/50">Applied to all teachers</span>
-          </label>
-          <select
-            id="bulk-status"
-            bind:value={bulkDefaultStatus}
-            class="select select-bordered w-full focus:select-primary"
-          >
-            {#each STATUS_OPTIONS as opt}
-              <option value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
-            {/each}
-          </select>
-        </div>
-
-        <!-- Preview list -->
-        {#if bulkPreview.length > 0}
-          <div class="bg-base-200 rounded-lg p-3">
-            <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide mb-2">Preview</p>
-            <ul class="space-y-1 max-h-36 overflow-y-auto pr-1">
-              {#each bulkPreview as name}
-                {@const isDupe = teachers.some((t) => t.name.toLowerCase() === name.toLowerCase())}
-                <li class="flex items-center justify-between text-sm">
-                  <span class={isDupe ? 'line-through text-base-content/40' : ''}>{name}</span>
-                  {#if isDupe}
-                    <span class="badge badge-xs badge-warning">duplicate</span>
-                  {:else}
-                    <span class="badge badge-xs {STATUS_BADGE[bulkDefaultStatus]}">{bulkDefaultStatus}</span>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-      </div>
-
-      <div class="modal-action mt-8 gap-2">
-        <button class="btn btn-ghost px-6" onclick={closeBulkAddModal} disabled={isProcessing}>Cancel</button>
-        <button
-          class="btn btn-primary px-6 shadow-sm"
-          onclick={saveBulkTeachers}
-          disabled={bulkPreview.length === 0 || isProcessing}
-        >
-          {#if isProcessing}
-            <span class="loading loading-spinner loading-sm"></span>
-          {:else}
-            Add {bulkPreview.filter((n) => !teachers.some((t) => t.name.toLowerCase() === n.toLowerCase())).length} Teacher{bulkPreview.filter(
-              (n) => !teachers.some((t) => t.name.toLowerCase() === n.toLowerCase())
-            ).length !== 1
-              ? 's'
-              : ''}
           {/if}
         </button>
       </div>

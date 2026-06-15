@@ -9,17 +9,21 @@
   let selectedDate = $state(new Date().toISOString().split('T')[0])
   let todayHoliday = $state(null)
   let isLoading = $state(false)
-  let students = $state([])
+  let teachers = $state([])
 
   let gridInstance = null
   let profileRowEl
   let unsubSchedule = null
+  let unsubRoomType = null
+  let unsubTeacher = null
   let debounceTimer = null
 
   // Static data (loaded once)
   let cachedTimeslots = []
-  let cachedStudents = []
+  let cachedTeachers = []
   let cachedHolidays = []
+  let cachedRoomTypes = []
+  let teacherRoomMap = new Map()
 
   // --- Helpers ---
   const today = () => new Date().toISOString().split('T')[0]
@@ -31,6 +35,12 @@
       month: 'long',
       day: 'numeric',
     })
+  }
+
+  function getRoomNumber(roomName) {
+    if (!roomName) return Infinity
+    const num = parseInt(roomName.replace(/\D/g, ''), 10)
+    return isNaN(num) ? Infinity : num
   }
 
   function formatScheduleCell(items) {
@@ -45,26 +55,19 @@
       'div',
       { class: 'flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full' },
       items.map((item) =>
-        h(
-          'div',
-          { class: 'flex flex-col gap-1 w-full' },
-          [
-            h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full text-center' }, [
-              h('div', {}, item.subject?.name || 'No Subject'),
-              h(
-                'div',
-                { class: 'text-[10px] uppercase mt-1 text-neutral-500 tracking-wide' },
-                item.teacher?.name || 'No Teacher'
-              ),
-            ]),
-            item.room &&
-              h(
-                'div',
-                { class: 'flex justify-center' },
-                h('span', { class: 'badge badge-ghost badge-xs whitespace-nowrap' }, item.room.name)
-              ),
-          ].filter(Boolean)
-        )
+        h('div', { class: 'flex flex-col gap-1 w-full' }, [
+          h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full text-center' }, [
+            h('div', {}, item.subject?.name || 'No Subject'),
+            h('div', { class: 'text-[10px] uppercase mt-1  tracking-wide' }, item.room?.name || 'No Room'),
+          ]),
+          h(
+            'div',
+            { class: 'flex flex-wrap justify-center gap-1' },
+            (item.students || []).map((s) =>
+              h('span', { class: 'badge badge-ghost badge-xs whitespace-nowrap' }, s.name)
+            )
+          ),
+        ])
       )
     )
   }
@@ -72,19 +75,26 @@
   // --- Data Loading ---
   async function loadStaticData() {
     try {
-      const [timeslots, holidays] = await Promise.all([
+      const [timeslots, roomTypes, allTeachers, holidays] = await Promise.all([
         pb.collection('timeslot').getFullList({ sort: 'start' }),
+        pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher' }),
+        pb.collection('teacher').getFullList({ sort: 'name', fields: 'id,name,status,user' }),
         pb.collection('holiday').getFullList({ fields: 'id,name,date' }),
       ])
       cachedTimeslots = timeslots
+      cachedRoomTypes = roomTypes
+      cachedTeachers = allTeachers
       cachedHolidays = holidays
+      teacherRoomMap = new Map(
+        roomTypes.filter((rt) => rt.expand?.teacher).map((rt) => [rt.expand.teacher.id, rt.name])
+      )
     } catch (err) {
       console.error(err)
       toast.error('Failed to load schedule data')
     }
   }
 
-  async function loadStudentSchedule() {
+  async function loadTeacherSchedule() {
     if (isLoading) return
     isLoading = true
     try {
@@ -94,14 +104,18 @@
 
       todayHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate) ?? null
 
-      // Load students
-      let studentFilter = `status != "graduated" && start <= "${endStr}" && end >= "${startStr}"`
-      if (!isAdmin) studentFilter += ` && user = "${pb.authStore.model?.id}"`
-      cachedStudents = await pb.collection('student').getFullList({ filter: studentFilter })
+      // Determine visible teachers
+      let visibleTeachers
+      if (isAdmin) {
+        visibleTeachers = cachedTeachers.filter((t) => t.status !== 'disabled')
+      } else {
+        visibleTeachers = cachedTeachers.filter((t) => t.user === pb.authStore.model?.id)
+      }
 
       // Load schedules
       let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}"`
-      if (!isAdmin) scheduleFilter += ` && student.user = "${pb.authStore.model?.id}"`
+      if (!isAdmin) scheduleFilter += ` && teacher.user = "${pb.authStore.model?.id}"`
+
       let schedules = await pb.collection('schedule').getFullList({
         filter: scheduleFilter,
         expand: 'teacher,student,subject,room,timeslot',
@@ -114,44 +128,43 @@
         )
       }
 
-      // Build schedule map: studentId → timeslotId → entries[]
+      // Build schedule map: teacherId → timeslotId → entries[]
       const scheduleMap = new Map()
+      const bookedTeacherIds = new Set()
 
       for (const s of schedules) {
+        const teacherId = s.expand?.teacher?.id
         const timeslotId = s.expand?.timeslot?.id
-        if (!timeslotId) continue
-        const entry = { subject: s.expand?.subject, teacher: s.expand?.teacher, room: s.expand?.room }
-        const studentList = Array.isArray(s.expand?.student)
-          ? s.expand.student
-          : s.expand?.student
-            ? [s.expand.student]
-            : []
+        if (!teacherId || !timeslotId) continue
 
-        for (const student of studentList) {
-          if (!scheduleMap.has(student.id)) scheduleMap.set(student.id, new Map())
-          const slots = scheduleMap.get(student.id)
-          if (!slots.has(timeslotId)) slots.set(timeslotId, [])
-          slots.get(timeslotId).push(entry)
-        }
+        bookedTeacherIds.add(teacherId)
+        if (!scheduleMap.has(teacherId)) scheduleMap.set(teacherId, new Map())
+        const slots = scheduleMap.get(teacherId)
+        if (!slots.has(timeslotId)) slots.set(timeslotId, [])
+        slots.get(timeslotId).push({
+          subject: s.expand?.subject,
+          room: s.expand?.room,
+          students: s.expand?.student ? [{ id: s.expand.student.id, name: s.expand.student.englishName }] : [],
+        })
       }
 
-      // Always show all active students for the date, deduplicated by englishName (latest record wins)
-      const latestByName = new Map()
-      for (const s of cachedStudents) {
-        const key = s.englishName?.toLowerCase()
-        if (!key) continue
-        if (!latestByName.has(key) || new Date(s.created) > new Date(latestByName.get(key).created)) {
-          latestByName.set(key, s)
-        }
+      // For admin: also include disabled teachers that have bookings today
+      if (isAdmin) {
+        const disabledWithBookings = cachedTeachers.filter((t) => t.status === 'disabled' && bookedTeacherIds.has(t.id))
+        visibleTeachers = [...visibleTeachers, ...disabledWithBookings]
       }
 
-      students = [...latestByName.values()].sort((a, b) => {
-        const aIsNew = a.status === 'new' ? 1 : 0
-        const bIsNew = b.status === 'new' ? 1 : 0
-        return aIsNew !== bIsNew ? aIsNew - bIsNew : new Date(a.created) - new Date(b.created)
+      // Sort: teachers with rooms first (by room number), then rest alphabetically
+      teachers = visibleTeachers.sort((a, b) => {
+        const aRoom = teacherRoomMap.get(a.id)
+        const bRoom = teacherRoomMap.get(b.id)
+        if (aRoom && bRoom) return getRoomNumber(aRoom) - getRoomNumber(bRoom)
+        if (aRoom && !bRoom) return -1
+        if (!aRoom && bRoom) return 1
+        return a.name.localeCompare(b.name)
       })
 
-      // --- Grid columns & data ---
+      // --- Grid: timeslots as rows, teachers as columns ---
       const columns = [
         {
           name: 'Timeslot',
@@ -160,15 +173,14 @@
             h(
               'div',
               {
-                class:
-                  'w-full h-full p-2 flex items-center justify-center font-bold text-neutral-700 text-center bg-base-200',
+                class: 'w-full h-full p-2 flex items-center justify-center ',
               },
               cell.value
             ),
         },
-        ...students.map((student) => ({
-          id: student.id,
-          width: '160px',
+        ...teachers.map((teacher) => ({
+          id: teacher.id,
+          width: '180px',
           name: h('div', { class: 'flex items-center justify-center' }, 'Class'),
           formatter: (cell) => formatScheduleCell(cell),
         })),
@@ -176,13 +188,28 @@
 
       const data = cachedTimeslots.map((ts) => [
         { value: `${ts.start} - ${ts.end}` },
-        ...students.map((student) => scheduleMap.get(student.id)?.get(ts.id) || []),
+        ...teachers.map((teacher) => scheduleMap.get(teacher.id)?.get(ts.id) || []),
       ])
 
       await tick()
 
-      if (gridInstance && document.getElementById('student-grid')) {
+      if (gridInstance && document.getElementById('teacher-grid')) {
+        const wrapper = document.querySelector('#teacher-grid .gridjs-wrapper')
+        const savedScrollTop = wrapper?.scrollTop || 0
+        const savedScrollLeft = wrapper?.scrollLeft || 0
+
         gridInstance.updateConfig({ columns, data }).forceRender()
+
+        await tick()
+        attachScrollSync()
+
+        requestAnimationFrame(() => {
+          const w = document.querySelector('#teacher-grid .gridjs-wrapper')
+          if (w) {
+            w.scrollTop = savedScrollTop
+            w.scrollLeft = savedScrollLeft
+          }
+        })
       } else {
         gridInstance = new Grid({
           columns,
@@ -193,21 +220,21 @@
           pagination: false,
           className: { table: 'w-full border text-xs !border-collapse', th: 'text-center', td: 'text-center' },
           style: { table: { 'table-layout': 'fixed' } },
-        }).render(document.getElementById('student-grid'))
+        }).render(document.getElementById('teacher-grid'))
 
         await tick()
         attachScrollSync()
       }
     } catch (err) {
       console.error(err)
-      toast.error('Failed to load student schedule')
+      toast.error('Failed to load teacher schedule')
     } finally {
       isLoading = false
     }
   }
 
   function attachScrollSync() {
-    const wrapper = document.querySelector('#student-grid .gridjs-wrapper')
+    const wrapper = document.querySelector('#teacher-grid .gridjs-wrapper')
     if (!wrapper || !profileRowEl) return
     let syncing = false
     wrapper.addEventListener('scroll', () => {
@@ -226,7 +253,7 @@
 
   function debounceRefresh() {
     clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(loadStudentSchedule, 500)
+    debounceTimer = setTimeout(loadTeacherSchedule, 500)
   }
 
   // --- Navigation ---
@@ -235,32 +262,43 @@
     const d = new Date(selectedDate)
     d.setDate(d.getDate() + days)
     selectedDate = d.toISOString().split('T')[0]
-    await loadStudentSchedule()
+    await loadTeacherSchedule()
   }
 
   const onDateChange = async (e) => {
     if (isLoading) return
     selectedDate = e.target.value
-    await loadStudentSchedule()
+    await loadTeacherSchedule()
   }
 
   const goToToday = async () => {
     if (isLoading || selectedDate === today()) return
     selectedDate = today()
-    await loadStudentSchedule()
+    await loadTeacherSchedule()
   }
 
   // --- Lifecycle ---
   onMount(async () => {
     await loadStaticData()
-    await loadStudentSchedule()
+    await loadTeacherSchedule()
     unsubSchedule = await pb.collection('schedule').subscribe('*', debounceRefresh)
+    unsubRoomType = await pb.collection('roomType').subscribe('*', async () => {
+      await loadStaticData()
+      debounceRefresh()
+    })
+    unsubTeacher = await pb.collection('teacher').subscribe('*', async () => {
+      await loadStaticData()
+      debounceRefresh()
+    })
   })
 
   onDestroy(() => {
     clearTimeout(debounceTimer)
     unsubSchedule?.()
+    unsubRoomType?.()
+    unsubTeacher?.()
     gridInstance?.destroy()
+    gridInstance = null
   })
 </script>
 
@@ -268,40 +306,37 @@
   <!-- HEADER -->
   <div class="mb-3 bg-base-200/60 rounded-xl p-3 shadow-sm">
     <div class="flex items-center justify-between gap-3 flex-wrap">
-      <!-- PROFILE ROW -->
+      <!-- PROFILE ROW (scroll-synced with grid) -->
       <div
         bind:this={profileRowEl}
         class="profile-row flex overflow-x-auto items-stretch border border-base-300 rounded-lg bg-base-100"
       >
+        <!-- Fixed label cell -->
         <div
           class="shrink-0 flex items-center justify-center bg-base-200 border-r border-base-300 px-3"
           style="min-width: 140px;"
         >
           <div class="font-bold text-sm text-center">Profile</div>
         </div>
-        {#each students as student (student.id)}
+        <!-- One card per teacher -->
+        {#each teachers as teacher (teacher.id)}
           <div
             class="shrink-0 flex flex-col items-start justify-center text-left px-3 py-2 gap-0.5"
-            style="min-width: 140px;"
+            style="min-width: 160px;"
           >
-            <div class="font-bold text-xs">{student.name}</div>
-            <div class="text-[11px]">{student.englishName || ''}</div>
-            <div class="text-[11px]">{student.course || ''}</div>
-            <div class="text-[11px]">{student.level || ''}</div>
-            <div class="text-[11px] italic">{student.groupName || ''}</div>
-            {#if student.status === 'new'}
-              <span class="badge badge-success badge-xs mt-1">New</span>
-            {:else if student.status === 'extended'}
-              <span class="badge badge-secondary badge-xs mt-1">Extended</span>
-            {:else if student.status === 'changed'}
-              <span class="badge badge-error badge-xs mt-1">Changed</span>
+            <div class="font-bold text-xs">{teacher.name}</div>
+            <div class="font-bold text-xs">
+              Room: {teacherRoomMap.get(teacher.id) || 'Not assigned'}
+            </div>
+            {#if teacher.status === 'disabled'}
+              <span class="badge badge-error badge-xs mt-1">Disabled</span>
             {/if}
           </div>
         {/each}
       </div>
 
       <!-- DATE DISPLAY -->
-      <h3 class="text-lg md:text-xl font-bold text-center text-neutral-700 flex-1">
+      <h3 class="text-lg md:text-xl font-bold text-center flex-1">
         {formatDateDisplay(selectedDate)}
       </h3>
 
@@ -341,12 +376,15 @@
             disabled={isLoading}>&rarr;</button
           >
         </div>
+        {#if isLoading}
+          <div class="loading loading-spinner loading-sm"></div>
+        {/if}
       </div>
     </div>
   </div>
 
   <!-- GRID -->
-  <div id="student-grid" class="border rounded-xl shadow-sm overflow-hidden"></div>
+  <div id="teacher-grid" class="border rounded-xl shadow-sm overflow-hidden"></div>
 </div>
 
 <style>
@@ -354,26 +392,25 @@
     scrollbar-gutter: stable;
   }
 
-  #student-grid :global(.gridjs-wrapper) {
+  #teacher-grid :global(.gridjs-wrapper) {
     max-height: calc(100vh - 220px);
     overflow: auto;
     contain: strict;
   }
 
-  /* Fix padding and alignment */
-  #student-grid :global(td) {
+  #teacher-grid :global(td) {
     padding: 0 !important;
     vertical-align: middle !important;
   }
 
-  #student-grid :global(.gridjs-table td > div) {
+  #teacher-grid :global(.gridjs-table td > div) {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
     min-height: 65px;
   }
 
-  #student-grid :global(th) {
+  #teacher-grid :global(th) {
     position: sticky;
     top: 0;
     z-index: 20;
@@ -385,9 +422,16 @@
   }
 
   /* Hover effect for cells */
-  #student-grid :global(.gridjs-table td:hover > div) {
+  #teacher-grid :global(.gridjs-table td:hover > div) {
     background-color: #d1fae5 !important;
     transition: background-color 0.2s ease;
     cursor: pointer;
+  }
+
+  .profile-row {
+    scrollbar-width: none;
+  }
+  .profile-row::-webkit-scrollbar {
+    display: none;
   }
 </style>
