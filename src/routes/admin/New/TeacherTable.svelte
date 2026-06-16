@@ -113,7 +113,7 @@
       }
 
       // Load schedules
-      let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}"`
+      let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}" && status = "show"`
       if (!isAdmin) scheduleFilter += ` && teacher.user = "${pb.authStore.model?.id}"`
 
       let schedules = await pb.collection('schedule').getFullList({

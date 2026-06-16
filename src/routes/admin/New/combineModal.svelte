@@ -350,6 +350,7 @@
           student: studentId,
           start: `${startDate} 00:00:00.000Z`,
           end: `${endDate} 00:00:00.000Z`,
+          status: 'draft',
         })
       })
 
@@ -429,6 +430,7 @@
           student: rec.student,
           start: `${getNextDay(targetDate)} 00:00:00.000Z`,
           end: `${recEnd} 00:00:00.000Z`,
+          status: 'draft',
         })
       }
     }

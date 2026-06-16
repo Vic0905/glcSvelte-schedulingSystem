@@ -149,6 +149,18 @@
     }
   }
 
+  // ── Student ID helper ──────────────────────────────────────────────────────
+  async function getNextStudentId() {
+    try {
+      const records = await pb.collection('student').getFullList({ fields: 'studentId' })
+      const max = records.reduce((m, r) => Math.max(m, Number(r.studentId) || 0), 0)
+      return max + 1
+    } catch {
+      return 1
+    }
+  }
+  const padId = (n) => String(n).padStart(5, '0')
+
   // ── Grid ──────────────────────────────────────────────────────────────────
   function renderGrid(records) {
     if (!gridElement) return
@@ -170,6 +182,7 @@
           selectedStudents = next
         },
       }),
+      s.studentId || '-',
       s.englishName || '-',
       s.name || '-',
       s.course || '-',
@@ -186,24 +199,25 @@
 
     gridInstance = new Grid({
       columns: [
-        { name: 'Select', width: '50px', sort: false },
-        { name: 'English Name', width: '120px' },
+        { name: '', width: '50px', sort: false },
+        { name: 'Student ID', width: '80px' },
+        { name: 'English Name', width: '100px' },
         { name: 'Name', width: '120px' },
         { name: 'Course', width: '90px' },
-        { name: 'Level', width: '65px' },
+        { name: 'Level', width: '90px' },
         { name: 'Remarks', width: '90px' },
         { name: 'Start', width: '90px' },
         { name: 'End', width: '90px' },
-        { name: 'Status', width: '80px' },
+        { name: 'Status', width: '90px' },
         { name: 'Actions', width: '110px', sort: false },
       ],
       data,
       search: true,
       pagination: { limit: 10 },
-      className: { table: 'table w-full', th: 'text-center', td: 'text-center' },
+      className: { table: 'table w-full', th: 'text-center' },
       style: {
         th: { 'font-size': '0.7rem' },
-        td: { 'font-size': '0.75rem' },
+        td: { 'font-size': '0.75rem', 'white-space': 'normal' },
       },
     }).render(gridElement)
   }
@@ -211,7 +225,7 @@
   // ── Data ──────────────────────────────────────────────────────────────────
   async function loadStudents() {
     try {
-      let records = await pb.collection('student').getFullList({ sort: '-created' })
+      let records = await pb.collection('student').getFullList({ sort: '-studentId' })
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
@@ -224,7 +238,7 @@
           ...toPromote.map(({ id }) => pb.collection('student').update(id, { status: 'old' })),
           ...toGraduate.map(({ id }) => pb.collection('student').update(id, { status: 'graduated' })),
         ])
-        records = await pb.collection('student').getFullList({ sort: '-created' })
+        records = await pb.collection('student').getFullList({ sort: '-studentId' })
       }
 
       students = records
@@ -236,47 +250,47 @@
   }
 
   // ── Archive & delete ──────────────────────────────────────────────────────
-  async function archiveAndDelete(studentIds, nameMap) {
-    const allSchedules = await pb.collection('lessonSchedule').getFullList()
-    const targets = allSchedules.filter((s) => studentIds.includes(getId(s.student)))
+  // async function archiveAndDelete(studentIds, nameMap) {
+  //   const allSchedules = await pb.collection('lessonSchedule').getFullList()
+  //   const targets = allSchedules.filter((s) => studentIds.includes(getId(s.student)))
 
-    const grouped = {}
-    for (const s of targets) {
-      const [sid, tid, slid, subid, rid] = [
-        getId(s.student),
-        getId(s.teacher),
-        getId(s.timeslot),
-        getId(s.subject),
-        getId(s.room),
-      ]
-      if (!sid || !tid || !slid || !subid || !rid) continue
-      const key = `${sid}_${tid}_${slid}_${subid}_${rid}_${s.week_id}`
-      if (!grouped[key]) {
-        grouped[key] = {
-          student: sid,
-          teacher: tid,
-          timeslot: slid,
-          subject: subid,
-          room: rid,
-          week_id: s.week_id,
-          start_date: s.date,
-          end_date: s.date,
-        }
-      } else {
-        const d = new Date(s.date)
-        if (d < new Date(grouped[key].start_date)) grouped[key].start_date = s.date
-        if (d > new Date(grouped[key].end_date)) grouped[key].end_date = s.date
-      }
-    }
+  //   const grouped = {}
+  //   for (const s of targets) {
+  //     const [sid, tid, slid, subid, rid] = [
+  //       getId(s.student),
+  //       getId(s.teacher),
+  //       getId(s.timeslot),
+  //       getId(s.subject),
+  //       getId(s.room),
+  //     ]
+  //     if (!sid || !tid || !slid || !subid || !rid) continue
+  //     const key = `${sid}_${tid}_${slid}_${subid}_${rid}_${s.week_id}`
+  //     if (!grouped[key]) {
+  //       grouped[key] = {
+  //         student: sid,
+  //         teacher: tid,
+  //         timeslot: slid,
+  //         subject: subid,
+  //         room: rid,
+  //         week_id: s.week_id,
+  //         start_date: s.date,
+  //         end_date: s.date,
+  //       }
+  //     } else {
+  //       const d = new Date(s.date)
+  //       if (d < new Date(grouped[key].start_date)) grouped[key].start_date = s.date
+  //       if (d > new Date(grouped[key].end_date)) grouped[key].end_date = s.date
+  //     }
+  //   }
 
-    await Promise.all(
-      Object.values(grouped).map((g) =>
-        pb.collection('lessonScheduleHistory').create({ ...g, student_name: nameMap[g.student] })
-      )
-    )
-    await Promise.all(targets.map((s) => pb.collection('lessonSchedule').delete(s.id)))
-    await Promise.all(studentIds.map((id) => pb.collection('student').delete(id)))
-  }
+  //   await Promise.all(
+  //     Object.values(grouped).map((g) =>
+  //       pb.collection('lessonScheduleHistory').create({ ...g, student_name: nameMap[g.student] })
+  //     )
+  //   )
+  //   await Promise.all(targets.map((s) => pb.collection('lessonSchedule').delete(s.id)))
+  //   await Promise.all(studentIds.map((id) => pb.collection('student').delete(id)))
+  // }
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   async function saveStudent() {
@@ -287,7 +301,9 @@
     try {
       if (formData.id && formData.isChanged) {
         const original = students.find((s) => s.id === formData.id)
+        const nextId = await getNextStudentId()
         await pb.collection('student').create({
+          studentId: padId(nextId),
           name: original.name,
           englishName: original.englishName,
           course: formData.course.trim(),
@@ -301,7 +317,9 @@
         toast.success('New record created with changed course')
       } else if (formData.id && formData.isExtended) {
         const original = students.find((s) => s.id === formData.id)
+        const nextId = await getNextStudentId()
         await pb.collection('student').create({
+          studentId: padId(nextId),
           name: original.name,
           englishName: original.englishName,
           course: formData.course.trim(),
@@ -316,7 +334,9 @@
       } else {
         if (!formData.id && students.some((s) => s.englishName?.toUpperCase() === trimmed.toUpperCase()))
           return toast.error(`"${trimmed}" already exists`)
+        const nextId = !formData.id ? await getNextStudentId() : null
         const payload = {
+          ...(nextId !== null && { studentId: padId(nextId) }),
           name: formData.name.trim(),
           englishName: trimmed,
           course: formData.course.trim(),
@@ -362,10 +382,24 @@
 
   async function deleteStudent(id) {
     if (!confirm('Delete this student?')) return
+
     try {
-      const s = await pb.collection('student').getOne(id)
-      await archiveAndDelete([id], { [id]: s.englishName || s.name || 'Unknown' })
-      toast.success('Student deleted and schedules archived')
+      const student = await pb.collection('student').getOne(id)
+
+      // delete schedules first (if still needed)
+      const allSchedules = await pb.collection('lessonSchedule').getFullList()
+      const targets = allSchedules.filter((item) => getId(item.student) === id)
+      await Promise.all(targets.map((item) => pb.collection('lessonSchedule').delete(item.id)))
+
+      // delete student
+      await pb.collection('student').delete(id)
+
+      // ✅ delete linked user (same as teacher)
+      if (student.user) {
+        await pb.collection('users').delete(student.user)
+      }
+
+      toast.success('Student deleted')
       await loadStudents()
     } catch {
       toast.error('Failed to delete student')
@@ -385,13 +419,14 @@
       isProcessing = false
       return
     }
+    const nextId = await getNextStudentId()
 
     try {
       const results = await batchFetch(
-        toCreate.map((row) => ({
+        toCreate.map((row, i) => ({
           method: 'POST',
           url: '/api/collections/student/records',
-          body: { ...row, status: bulkDefaultStatus },
+          body: { ...row, status: bulkDefaultStatus, studentId: padId(nextId + i) },
         }))
       )
       const added = results.filter((r) => r.status >= 200 && r.status < 300).length
@@ -436,14 +471,32 @@
 
   async function bulkDeleteStudents() {
     if (!selectedStudents.size) return toast.error('No students selected')
-    if (!confirm(`Delete ${selectedStudents.size} student(s)? This will archive their schedules.`)) return
+    if (!confirm(`Delete ${selectedStudents.size} student(s)?`)) return
+
     isProcessing = true
+
     try {
       const ids = Array.from(selectedStudents)
-      const records = await pb.collection('student').getFullList({ filter: ids.map((id) => `id="${id}"`).join(' || ') })
+
+      const records = await pb.collection('student').getFullList({
+        filter: ids.map((id) => `id="${id}"`).join(' || '),
+      })
+
       const nameMap = Object.fromEntries(records.map((r) => [r.id, r.englishName || r.name || 'Unknown']))
-      await archiveAndDelete(ids, nameMap)
-      toast.success(`${ids.length} student(s) deleted and archived`)
+
+      // delete schedules
+      const allSchedules = await pb.collection('lessonSchedule').getFullList()
+      const targets = allSchedules.filter((item) => ids.includes(getId(item.student)))
+
+      await Promise.all(targets.map((item) => pb.collection('lessonSchedule').delete(item.id)))
+
+      // delete students
+      await Promise.all(ids.map((id) => pb.collection('student').delete(id)))
+
+      // ✅ delete linked users (same pattern as teacher)
+      await Promise.allSettled(records.filter((s) => s.user).map((s) => pb.collection('users').delete(s.user)))
+
+      toast.success(`${ids.length} student(s) deleted`)
       selectedStudents = new Set()
       await loadStudents()
     } catch {
@@ -510,14 +563,15 @@
           e.target.value = ''
           return
         }
+        const nextId = await getNextStudentId()
 
         isProcessing = true
         try {
           const results = await batchFetch(
-            toCreate.map((row) => ({
+            toCreate.map((row, i) => ({
               method: 'POST',
               url: '/api/collections/student/records',
-              body: row,
+              body: { ...row, studentId: padId(nextId + i) },
             }))
           )
           const added = results.filter((r) => r.status >= 200 && r.status < 300).length
