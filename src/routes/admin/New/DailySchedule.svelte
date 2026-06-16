@@ -592,7 +592,7 @@
     <!-- Right: navigation controls -->
     <div class="flex items-center gap-2 justify-end">
       <button class="btn btn-outline btn-sm btn-error" onclick={() => clearDayModal.open()} disabled={isLoading}>
-        Clear Day
+        Clear
       </button>
       <button class="btn btn-outline btn-sm" onclick={() => showStatusModal.open()} disabled={isLoading}> Show </button>
 
