@@ -616,7 +616,7 @@
 {/key}
 
 <CopyModal bind:this={copyModal} sourceDate={selectedDate} onrefresh={refreshWithScroll} />
-<ShowStatusModal bind:this={showStatusModal} sourceDate={selectedDate} onrefresh={refreshWithScroll} />
+<ShowStatusModal bind:this={showStatusModal} sourceDate={selectedDate} roomType="mtm" onrefresh={refreshWithScroll} />
 
 <!-- ─────────────────────────────────────────── -->
 <!-- STYLES                                      -->

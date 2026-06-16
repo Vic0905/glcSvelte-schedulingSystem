@@ -5,7 +5,7 @@
   // ─────────────────────────────────────────────
   // Props
   // ─────────────────────────────────────────────
-  let { sourceDate = '', onrefresh } = $props()
+  let { sourceDate = '', roomType = '', onrefresh } = $props()
 
   // ─────────────────────────────────────────────
   // State
@@ -63,7 +63,7 @@
 
     try {
       const records = await pb.collection('schedule').getFullList({
-        filter: `start <= "${endStr}" && end >= "${startStr}"`,
+        filter: `start <= "${endStr}" && end >= "${startStr}"${roomType ? ` && room.roomType = "${roomType}"` : ''}`,
         fields: 'id,status,start,end',
       })
 
@@ -95,7 +95,7 @@
     try {
       // Fetch all draft records in range
       const records = await pb.collection('schedule').getFullList({
-        filter: `start <= "${endStr}" && end >= "${startStr}" && status = "draft"`,
+        filter: `start <= "${endStr}" && end >= "${startStr}" && status = "draft"${roomType ? ` && room.roomType = "${roomType}"` : ''}`,
         fields: 'id,start',
       })
 

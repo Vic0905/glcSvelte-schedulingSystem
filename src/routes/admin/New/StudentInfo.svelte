@@ -199,7 +199,7 @@
 
     gridInstance = new Grid({
       columns: [
-        { name: '', width: '50px', sort: false },
+        { name: '-', width: '50px', sort: false },
         { name: 'Student ID', width: '80px' },
         { name: 'English Name', width: '100px' },
         { name: 'Name', width: '120px' },

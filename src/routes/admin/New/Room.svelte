@@ -30,12 +30,8 @@
 
   // Watch for status changes to handle teacher removal
   $effect(() => {
-    // If status changes to 'disabled' and there's a teacher assigned
-    if (formData.status === 'disabled' && formData.selectedTeacherId) {
-      // Show confirmation toast
-      toast.warning('Teacher will be removed when disabling this room', {
-        duration: 3000,
-      })
+    if (formData.status === 'disabled') {
+      formData.selectedTeacherId = ''
     }
   })
 
