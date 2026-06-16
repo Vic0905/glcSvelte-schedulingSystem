@@ -579,9 +579,7 @@
         Clear Day
       </button>
       <button class="btn btn-outline btn-sm" onclick={() => showStatusModal.open()} disabled={isLoading}> Show </button>
-      <button class="btn btn-outline btn-sm" onclick={() => copyModal.open()} disabled={isLoading}>
-        Copy Schedule
-      </button>
+      <button class="btn btn-outline btn-sm" onclick={() => copyModal.open()} disabled={isLoading}> Copy </button>
       <button
         class="btn btn-outline btn-sm"
         onclick={goToToday}
