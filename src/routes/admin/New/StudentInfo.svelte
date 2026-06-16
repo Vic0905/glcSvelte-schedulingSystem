@@ -645,7 +645,7 @@
   onMount(loadStudents)
 </script>
 
-<main class="p-8 max-w-[90rem] mx-auto space-y-6">
+<main class="p-8 max-w-[100rem] mx-auto space-y-6">
   <!-- Header -->
   <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
     <div>

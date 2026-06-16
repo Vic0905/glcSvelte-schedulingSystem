@@ -166,7 +166,7 @@
 <main class="p-8 max-w-[90rem] mx-auto space-y-6">
   <header class="flex justify-between items-center border-b pb-6">
     <div>
-      <h1 class="text-3xl font-bold">Holiday/Special Class Information</h1>
+      <h1 class="text-3xl font-bold">Clear Day - Holiday Information</h1>
       {#if isLoading}<p class="text-sm text-gray-500 mt-2">Loading...</p>{/if}
     </div>
     <button class="btn btn-outline btn-primary" onclick={openCreate} disabled={isLoading}> Add Holiday </button>

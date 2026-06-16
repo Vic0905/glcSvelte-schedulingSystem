@@ -152,7 +152,7 @@
     <details>
       <summary>Management</summary>
       <ul class="relative z-50 text-xs p-2">
-        <li><a href="/#/new/holidaypicker">Holiday/Special Class</a></li>
+        <li><a href="/#/new/holidaypicker">Clear Day - Holiday</a></li>
         <li><a href="/#/management/subject">Subject</a></li>
         <li><a href="/#/new/room">Room</a></li>
         <!-- <li><a href="/#/management/room">Room</a></li> -->
