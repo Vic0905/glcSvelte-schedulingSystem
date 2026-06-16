@@ -7,6 +7,7 @@
   import CombineModal from './combineModal.svelte'
   import CopyModal from './copyModal.svelte'
   import ShowStatusModal from './showStatusModal.svelte'
+  import ClearDayModal from './clearDayModal.svelte'
 
   // ─────────────────────────────────────────────
   // SECTION 1: Non-reactive module-level state
@@ -22,6 +23,7 @@
   // ─────────────────────────────────────────────
   let combineModal = $state()
   let showStatusModal = $state()
+  let clearDayModal = $state()
   let copyModal = $state()
   let selectedDate = $state(getInitialDate())
   let todayHoliday = $state(null)
@@ -511,6 +513,11 @@
     await loadSchedules(saveScroll())
   }
 
+  async function refreshAfterClearDay() {
+    cachedHolidays = await pb.collection('holiday').getFullList({ fields: 'id,name,date' })
+    await loadSchedules(saveScroll())
+  }
+
   // ─────────────────────────────────────────────
   // SECTION 11: Realtime subscription
   // ─────────────────────────────────────────────
@@ -584,6 +591,9 @@
 
     <!-- Right: navigation controls -->
     <div class="flex items-center gap-2 justify-end">
+      <button class="btn btn-outline btn-sm btn-error" onclick={() => clearDayModal.open()} disabled={isLoading}>
+        Clear Day
+      </button>
       <button class="btn btn-outline btn-sm" onclick={() => showStatusModal.open()} disabled={isLoading}> Show </button>
 
       <button class="btn btn-outline btn-sm" onclick={() => copyModal.open()} disabled={isLoading}>
@@ -617,6 +627,7 @@
 
 <CopyModal bind:this={copyModal} sourceDate={selectedDate} onrefresh={refreshWithScroll} />
 <ShowStatusModal bind:this={showStatusModal} sourceDate={selectedDate} roomType="mtm" onrefresh={refreshWithScroll} />
+<ClearDayModal bind:this={clearDayModal} {selectedDate} onrefresh={refreshAfterClearDay} />
 
 <!-- ─────────────────────────────────────────── -->
 <!-- STYLES                                      -->

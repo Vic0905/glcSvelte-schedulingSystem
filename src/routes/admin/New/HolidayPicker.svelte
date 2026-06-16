@@ -136,7 +136,7 @@
     if (gridElement) {
       gridInstance = new Grid({
         columns: [
-          { name: 'Holiday Name', width: '300px' },
+          { name: 'Clear Day - Holiday Name', width: '300px' },
           { name: 'Date', width: '200px' },
           { name: 'Actions', width: '200px', sort: false },
         ],
