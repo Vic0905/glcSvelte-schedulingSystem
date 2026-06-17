@@ -22,6 +22,7 @@
   let unsubSchedule = null
   let unsubRoomType = null
   let unsubTeacher = null
+  let scheduleMap = new Map()
 
   // --- Helper Functions ---
   function getTodayDate() {
@@ -33,11 +34,25 @@
     return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   }
 
-  // Function to extract numeric value from room name for sorting (A005 -> 5, A1033 -> 1033)
-  function getRoomNumber(roomName) {
-    if (!roomName) return Infinity
-    const num = parseInt(roomName.replace(/\D/g, ''), 10)
-    return isNaN(num) ? Infinity : num
+  function getRoomSortKey(roomName) {
+    if (!roomName) return { tier: 99, num: Infinity }
+    const upper = roomName.toUpperCase()
+
+    let tier
+    if (upper.startsWith('ST'))
+      tier = 1 // MTM: ST01–ST12
+    else if (upper.startsWith('A'))
+      tier = 0 // MTM: A001–A157
+    else if (upper.startsWith('B'))
+      tier = 2 // MTM: B01–B20
+    else if (upper.startsWith('G'))
+      tier = 3 // GRP: G01–G26
+    else if (upper.startsWith('H'))
+      tier = 4 // GRP: H01–H16
+    else tier = 5 // unknown room prefix
+
+    const num = parseInt(upper.replace(/\D/g, ''), 10)
+    return { tier, num: isNaN(num) ? Infinity : num }
   }
 
   const changeDay = async (days) => {
@@ -105,7 +120,7 @@
     try {
       const [timeslots, roomTypes, teachers, holidays] = await Promise.all([
         pb.collection('timeslot').getFullList({ sort: 'start' }),
-        pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher', filter: 'roomType = "mtm"' }),
+        pb.collection('roomType').getFullList({ sort: 'name', expand: 'teacher' }),
         pb.collection('teacher').getFullList({ sort: 'name', fields: 'id,name,status' }),
         pb.collection('holiday').getFullList({ fields: 'id,name,date' }),
       ])
@@ -127,6 +142,8 @@
 
   async function loadTeacherSchedule(savedScrollTop = null, savedScrollLeft = null) {
     if (isLoading) return
+
+    scheduleMap = new Map()
 
     isLoading = true
     try {
@@ -153,7 +170,7 @@
       }
 
       // Build schedule map: teacherId-timeslotId -> array of schedules
-      const scheduleMap = new Map()
+
       const bookedTeacherIds = new Set()
 
       for (const s of schedules) {
@@ -182,17 +199,16 @@
           const aRoom = teacherRoomMap.get(a.id)
           const bRoom = teacherRoomMap.get(b.id)
 
-          // Both have rooms - sort by room number (A001, A002, etc.)
-          if (aRoom && bRoom) {
-            return getRoomNumber(aRoom) - getRoomNumber(bRoom)
-          }
+          // Unassigned teachers come last, sorted alphabetically among themselves
+          if (!aRoom && !bRoom) return a.name.localeCompare(b.name)
+          if (!aRoom) return 1
+          if (!bRoom) return -1
 
-          // One has room, one doesn't - rooms come first
-          if (aRoom && !bRoom) return -1
-          if (!aRoom && bRoom) return 1
+          const aKey = getRoomSortKey(aRoom)
+          const bKey = getRoomSortKey(bRoom)
 
-          // Neither has room - sort alphabetically by name
-          return a.name.localeCompare(b.name)
+          if (aKey.tier !== bKey.tier) return aKey.tier - bKey.tier
+          return aKey.num - bKey.num
         })
 
       // Build grid data: rows = teachers, columns = teacher name, room, then timeslots
@@ -200,7 +216,7 @@
         const bgClass = 'bg-white text-neutral-800'
 
         const row = [
-          { value: teacher.name, status: teacher.status, bgClass },
+          { value: teacher.name, id: teacher.id, status: teacher.status, bgClass },
           { value: teacherRoomMap.get(teacher.id) || '—', bgClass },
         ]
 
@@ -223,13 +239,42 @@
           width: '150px',
           formatter: (cell, row) => {
             const hasNewBadge = cell.status === 'new'
+
+            const totalSlots = cachedTimeslots.length
+            let mtmCount = 0
+            let grpCount = 0
+            for (const ts of cachedTimeslots) {
+              const entries = scheduleMap.get(`${cell.id}-${ts.id}`) || []
+              for (const entry of entries) {
+                const roomName = (entry.roomName || '').toUpperCase()
+                if (roomName.startsWith('A') || roomName.startsWith('ST') || roomName.startsWith('B')) mtmCount++
+                else if (roomName.startsWith('G') || roomName.startsWith('H')) grpCount++
+              }
+            }
+
             return h(
               'div',
-              { class: `w-full h-full p-2 flex items-center justify-center text-center ${row.cells[0].data.bgClass}` },
+              {
+                class: `w-full h-full p-2 flex flex-col items-center justify-center text-center ${row.cells[0].data.bgClass}`,
+              },
               [
-                h('span', { class: 'font-bold text-neutral-700' }, cell.value),
-                hasNewBadge && h('span', { class: 'badge badge-success badge-xs ml-1' }, 'New'),
-              ].filter(Boolean)
+                h(
+                  'div',
+                  { class: 'flex items-center gap-1' },
+                  [
+                    h('span', { class: 'font-bold text-neutral-700' }, cell.value),
+                    hasNewBadge && h('span', { class: 'badge badge-success badge-xs ml-1' }, 'New'),
+                  ].filter(Boolean)
+                ),
+                h(
+                  'div',
+                  { class: 'flex gap-1 mt-1' },
+                  [
+                    h('span', { class: 'badge badge-ghost badge-xs' }, `MTM: ${mtmCount}`),
+                    h('span', { class: 'badge badge-ghost badge-xs' }, `GRP: ${grpCount}`),
+                  ].filter(Boolean)
+                ),
+              ]
             )
           },
         },

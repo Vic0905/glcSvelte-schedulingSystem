@@ -23,6 +23,7 @@
       await pb.collection('holiday').create({
         name,
         date: `${selectedDate} 00:00:00.000Z`,
+        Status: 'Special Class',
       })
       toast.success(`"${name}" added for ${selectedDate}`)
       close()

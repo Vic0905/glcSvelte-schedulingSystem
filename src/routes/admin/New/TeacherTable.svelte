@@ -326,7 +326,7 @@
           >
             <div class="font-bold text-xs">{teacher.name}</div>
             <div class="font-bold text-xs">
-              Room: {teacherRoomMap.get(teacher.id) || 'Not assigned'}
+              Assigned Room: {teacherRoomMap.get(teacher.id) || 'Not assigned'}
             </div>
             {#if teacher.status === 'disabled'}
               <span class="badge badge-error badge-xs mt-1">Disabled</span>

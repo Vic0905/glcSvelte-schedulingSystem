@@ -6,7 +6,7 @@
   import { onMount } from 'svelte'
 
   // --- State ---
-  let holidays = $state([])
+  let specialDays = $state([])
   let isLoading = $state(false)
   let showModal = $state(false)
   let gridElement = $state(null)
@@ -16,15 +16,28 @@
     id: null,
     name: '',
     date: '',
+    status: 'No Class',
   })
 
   // --- Update Grid Data ---
   function updateGrid() {
     if (!gridInstance) return
 
-    const data = holidays.map((item) => [
+    const data = specialDays.map((item) => [
       item.name,
       new Date(item.date).toLocaleDateString(),
+      h(
+        'span',
+        {
+          className:
+            item.Status === 'No Class'
+              ? 'badge badge-secondary'
+              : item.Status === 'Special Class'
+                ? 'badge badge-warning'
+                : 'badge badge-success',
+        },
+        item.Status
+      ),
       h('div', { className: 'flex gap-2 justify-center' }, [
         h(
           'button',
@@ -38,7 +51,7 @@
           'button',
           {
             className: 'btn btn-xs btn-outline btn-error',
-            onclick: () => deleteHoliday(item),
+            onclick: () => deleteSpecialDay(item),
           },
           'Delete'
         ),
@@ -49,26 +62,25 @@
   }
 
   // --- Data Loading ---
-  async function loadHolidays() {
+  async function loadSpecialDays() {
     if (isLoading) return
 
     isLoading = true
     try {
       const records = await pb.collection('holiday').getFullList({ sort: '-created' })
-      holidays = records.sort((a, b) => new Date(a.date) - new Date(b.date))
+      specialDays = records.sort((a, b) => new Date(a.date) - new Date(b.date))
 
-      // Update grid after data loads
       updateGrid()
     } catch (err) {
       console.error('Load failed:', err)
-      toast.error('Failed to load holidays')
+      toast.error('Failed to load special days')
     } finally {
       isLoading = false
     }
   }
 
-  // --- Save Holiday (Create/Update) ---
-  async function saveHoliday() {
+  // --- Save (Create/Update) ---
+  async function saveSpecialDay() {
     const name = formData.name.trim()
     const date = formData.date
 
@@ -78,38 +90,51 @@
     }
 
     // Check for duplicates
-    const exists = holidays.find((h) => h.name.toLowerCase() === name.toLowerCase() && h.id !== formData.id)
+    const exists = specialDays.find((d) => d.name.toLowerCase() === name.toLowerCase() && d.id !== formData.id)
     if (exists) {
-      toast.error('Holiday already exists')
+      toast.error('Entry already exists')
       return
     }
 
     try {
       if (formData.id) {
-        await pb.collection('holiday').update(formData.id, { name, date })
-        toast.success('Holiday updated')
+        await pb.collection('holiday').update(formData.id, {
+          name,
+          date,
+          Status: formData.status,
+        })
+        toast.success('Updated')
       } else {
-        await pb.collection('holiday').create({ name, date })
-        toast.success('Holiday created')
+        await pb.collection('holiday').create({
+          name,
+          date,
+          Status: formData.status,
+        })
+        toast.success('Created')
       }
 
       showModal = false
-      formData = { id: null, name: '', date: '' }
-      await loadHolidays()
+      formData = {
+        id: null,
+        name: '',
+        date: '',
+        status: 'No Class',
+      }
+      await loadSpecialDays()
     } catch (err) {
       console.error('Save failed:', err)
       toast.error('Save failed')
     }
   }
 
-  // --- Delete Holiday ---
-  async function deleteHoliday(holiday) {
-    if (!confirm(`Delete "${holiday.name}"?`)) return
+  // --- Delete ---
+  async function deleteSpecialDay(item) {
+    if (!confirm(`Delete "${item.name}"?`)) return
 
     try {
-      await pb.collection('holiday').delete(holiday.id)
+      await pb.collection('holiday').delete(item.id)
       toast.success('Deleted')
-      await loadHolidays()
+      await loadSpecialDays()
     } catch (err) {
       console.error('Delete failed:', err)
       toast.error('Delete failed')
@@ -117,17 +142,23 @@
   }
 
   // --- UI Helpers ---
-  function openEdit(holiday) {
+  function openEdit(item) {
     formData = {
-      id: holiday.id,
-      name: holiday.name,
-      date: holiday.date?.slice(0, 10),
+      id: item.id,
+      name: item.name,
+      date: item.date?.slice(0, 10),
+      status: item.Status || 'No Class',
     }
     showModal = true
   }
 
   function openCreate() {
-    formData = { id: null, name: '', date: '' }
+    formData = {
+      id: null,
+      name: '',
+      date: '',
+      status: 'No Class',
+    }
     showModal = true
   }
 
@@ -136,8 +167,9 @@
     if (gridElement) {
       gridInstance = new Grid({
         columns: [
-          { name: 'Clear Day - Holiday Name', width: '300px' },
+          { name: 'Name', width: '300px' },
           { name: 'Date', width: '200px' },
+          { name: 'Status', width: '180px' },
           { name: 'Actions', width: '200px', sort: false },
         ],
         data: [],
@@ -150,8 +182,7 @@
         },
       }).render(gridElement)
 
-      // Load data AFTER grid is initialized
-      loadHolidays()
+      loadSpecialDays()
     }
 
     return () => {
@@ -166,21 +197,20 @@
 <main class="p-8 max-w-[90rem] mx-auto space-y-6">
   <header class="flex justify-between items-center border-b pb-6">
     <div>
-      <h1 class="text-3xl font-bold">Clear Day - Holiday Information</h1>
-      {#if isLoading}<p class="text-sm text-gray-500 mt-2">Loading...</p>{/if}
+      <h1 class="text-3xl font-bold">Special Days</h1>
+      <p class="text-sm text-gray-500 mt-1">Manage holidays, no-class days, and weekends</p>
+      {#if isLoading}<p class="text-sm text-gray-400 mt-1">Loading...</p>{/if}
     </div>
-    <button class="btn btn-outline btn-primary" onclick={openCreate} disabled={isLoading}> Add Holiday </button>
+    <button class="btn btn-outline btn-primary" onclick={openCreate} disabled={isLoading}> Add Special Day </button>
   </header>
 
   <section class="card bg-base-100 shadow-lg">
     <div class="card-body p-0">
-      <!-- Always show the grid container, even when empty -->
       <div bind:this={gridElement}></div>
 
-      <!-- Optional: Show message when no data AND not loading -->
-      {#if holidays.length === 0 && !isLoading && gridInstance}
+      {#if specialDays.length === 0 && !isLoading && gridInstance}
         <div class="text-center py-8 text-gray-500">
-          <p>No holidays found. Click "Add Holiday" to create one.</p>
+          <p>No entries found. Click "Add Special Day" to create one.</p>
         </div>
       {/if}
     </div>
@@ -193,7 +223,7 @@
   <div class="modal modal-open bg-black/50" onclick={(e) => e.target === e.currentTarget && (showModal = false)}>
     <div class="modal-box max-w-md p-6">
       <div class="flex justify-between items-center mb-4">
-        <h3 class="text-xl font-bold">{formData.id ? 'Edit Holiday' : 'Add Holiday'}</h3>
+        <h3 class="text-xl font-bold">{formData.id ? 'Edit Special Day' : 'Add Special Day'}</h3>
         <button class="btn btn-sm btn-circle btn-ghost" onclick={() => (showModal = false)}>✕</button>
       </div>
 
@@ -202,21 +232,27 @@
           type="text"
           class="input input-bordered w-full"
           bind:value={formData.name}
-          placeholder="Holiday name (e.g., Christmas)"
-          onkeypress={(e) => e.key === 'Enter' && saveHoliday()}
+          placeholder="Name (e.g., Christmas, Foundation Day)"
+          onkeypress={(e) => e.key === 'Enter' && saveSpecialDay()}
         />
+
+        <select class="select select-bordered w-full" bind:value={formData.status}>
+          <option value="No Class">No Class</option>
+          <option value="Special Class">Special Class</option>
+          <option value="Weekend">Weekend</option>
+        </select>
 
         <input
           type="date"
           class="input input-bordered w-full"
           bind:value={formData.date}
-          onkeypress={(e) => e.key === 'Enter' && saveHoliday()}
+          onkeypress={(e) => e.key === 'Enter' && saveSpecialDay()}
         />
       </div>
 
       <div class="modal-action mt-6">
         <button class="btn btn-ghost" onclick={() => (showModal = false)}>Cancel</button>
-        <button class="btn btn-primary" onclick={saveHoliday}>
+        <button class="btn btn-primary" onclick={saveSpecialDay}>
           {formData.id ? 'Update' : 'Create'}
         </button>
       </div>
@@ -225,6 +261,9 @@
 {/if}
 
 <style>
+  :global(html) {
+    overflow-y: scroll;
+  }
   :global(.gridjs-container) {
     border-radius: 0.75rem;
     overflow: hidden;
