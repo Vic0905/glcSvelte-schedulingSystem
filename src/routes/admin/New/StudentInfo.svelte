@@ -37,6 +37,7 @@
   let gridElement = $state(null)
   let gridInstance = null
   let isProcessing = $state(false)
+  let importProgress = $state({ current: 0, total: 0 })
   let selectedStudents = $state(new Set())
   let formData = $state({ ...BLANK_FORM })
   let bulkRawInput = $state('')
@@ -47,7 +48,7 @@
   let viewSchedules = $state([])
   let isLoadingSchedule = $state(false)
 
-  let scheduleDate = $derived(viewedStudent?.start ? getFridayOfWeek(viewedStudent.start.slice(0, 10)) : null)
+  let scheduleDate = $derived(getScheduleEndDate(viewedStudent))
 
   // ── Derived: schedule for the student's END DATE only ──────────────────────
   let dayPeriods = $derived(() => {
@@ -130,12 +131,13 @@
     return JSON.parse(text)
   }
 
-  async function batchFetchChunked(requests, chunkSize = 50) {
+  async function batchFetchChunked(requests, chunkSize = 50, onProgress) {
     const allResults = []
     for (let i = 0; i < requests.length; i += chunkSize) {
       const chunk = requests.slice(i, i + chunkSize)
       const res = await batchFetch(chunk)
       allResults.push(...res)
+      onProgress?.(allResults.length, requests.length)
     }
     return allResults
   }
@@ -146,7 +148,7 @@
     const d = new Date(dateStr + 'T00:00:00')
     const dow = d.getDay() // 0=Sun..6=Sat
     const monday = new Date(d)
-    monday.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow))
+    monday.setDate(d.getDate() + (dow === 0 ? 1 : 1 - dow))
     const friday = new Date(monday)
     friday.setDate(monday.getDate() + 4)
 
@@ -154,6 +156,11 @@
     const m = String(friday.getMonth() + 1).padStart(2, '0')
     const day = String(friday.getDate()).padStart(2, '0')
     return `${y}-${m}-${day}`
+  }
+
+  function getScheduleEndDate(student) {
+    if (!student?.end) return null
+    return student.end.slice(0, 10)
   }
 
   // ── ADDED: User account helper ─────────────────────────────────────────────
@@ -247,7 +254,16 @@
           'button',
           {
             className: `btn btn-xs btn-outline ${viewedStudent?.id === s.id ? 'btn-primary' : 'btn-ghost'}`,
-            onclick: () => loadStudentSchedules(s),
+            onclick: (e) => {
+              const btn = e.target
+              loadStudentSchedules(s) // updates state & fetches schedule
+              // Immediately update the button text (DOM only)
+              if (viewedStudent?.id === s.id) {
+                btn.textContent = 'Hide'
+              } else {
+                btn.textContent = 'View'
+              }
+            },
           },
           viewedStudent?.id === s.id ? 'Hide' : 'View'
         ),
@@ -307,49 +323,6 @@
       toast.error('Failed to load students')
     }
   }
-
-  // ── Archive & delete ──────────────────────────────────────────────────────
-  // async function archiveAndDelete(studentIds, nameMap) {
-  //   const allSchedules = await pb.collection('lessonSchedule').getFullList()
-  //   const targets = allSchedules.filter((s) => studentIds.includes(getId(s.student)))
-
-  //   const grouped = {}
-  //   for (const s of targets) {
-  //     const [sid, tid, slid, subid, rid] = [
-  //       getId(s.student),
-  //       getId(s.teacher),
-  //       getId(s.timeslot),
-  //       getId(s.subject),
-  //       getId(s.room),
-  //     ]
-  //     if (!sid || !tid || !slid || !subid || !rid) continue
-  //     const key = `${sid}_${tid}_${slid}_${subid}_${rid}_${s.week_id}`
-  //     if (!grouped[key]) {
-  //       grouped[key] = {
-  //         student: sid,
-  //         teacher: tid,
-  //         timeslot: slid,
-  //         subject: subid,
-  //         room: rid,
-  //         week_id: s.week_id,
-  //         start_date: s.date,
-  //         end_date: s.date,
-  //       }
-  //     } else {
-  //       const d = new Date(s.date)
-  //       if (d < new Date(grouped[key].start_date)) grouped[key].start_date = s.date
-  //       if (d > new Date(grouped[key].end_date)) grouped[key].end_date = s.date
-  //     }
-  //   }
-
-  //   await Promise.all(
-  //     Object.values(grouped).map((g) =>
-  //       pb.collection('lessonScheduleHistory').create({ ...g, student_name: nameMap[g.student] })
-  //     )
-  //   )
-  //   await Promise.all(targets.map((s) => pb.collection('lessonSchedule').delete(s.id)))
-  //   await Promise.all(studentIds.map((id) => pb.collection('student').delete(id)))
-  // }
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   async function saveStudent() {
@@ -625,13 +598,16 @@
         const nextId = await getNextStudentId()
 
         isProcessing = true
+        importProgress = { current: 0, total: toCreate.length }
         try {
           const results = await batchFetchChunked(
             toCreate.map((row, i) => ({
               method: 'POST',
               url: '/api/collections/student/records',
               body: { ...row, studentId: padId(nextId + i) },
-            }))
+            })),
+            50,
+            (current, total) => (importProgress = { current, total })
           )
           const added = results.filter((r) => r.status >= 200 && r.status < 300).length
           const failed = results.filter((r) => r.status < 200 || r.status >= 300).length
@@ -712,26 +688,22 @@
     if (viewedStudent?.id === student.id) {
       viewedStudent = null
       viewSchedules = []
-      renderGrid(students)
       return
     }
+
     viewedStudent = student
     viewSchedules = []
     isLoadingSchedule = true
-    renderGrid(students)
 
-    if (!student.start) {
+    const targetDate = getScheduleEndDate(student) // ← replaces the inline ternary
+    if (!targetDate) {
       isLoadingSchedule = false
       return
     }
 
     try {
-      const dayStr = getFridayOfWeek(student.start.slice(0, 10))
-      const startStr = `${dayStr} 00:00:00`
-      const endStr = `${dayStr} 23:59:59`
-
       viewSchedules = await pb.collection('schedule').getFullList({
-        filter: `student = "${student.id}" && end >= "${startStr}" && start <= "${endStr}"`,
+        filter: `student = "${student.id}"`,
         expand: 'timeslot,room,teacher,subject',
         sort: 'start',
       })
@@ -778,6 +750,20 @@
     </div>
   </header>
 
+  {#if isProcessing && importProgress.total > 0}
+    <div class="space-y-1">
+      <div class="w-full bg-base-200 rounded-full h-2 overflow-hidden">
+        <div
+          class="bg-primary h-2 transition-all duration-300"
+          style="width: {Math.round((importProgress.current / importProgress.total) * 100)}%"
+        ></div>
+      </div>
+      <p class="text-xs text-base-content/60 text-right">
+        Importing {importProgress.current} / {importProgress.total}
+      </p>
+    </div>
+  {/if}
+
   <!-- Bulk action bar -->
   {#if selectedStudents.size > 0}
     <div class="card bg-base-100 border border-base-200 px-5 py-3">
@@ -816,7 +802,6 @@
             onclick={() => {
               viewedStudent = null
               viewSchedules = []
-              renderGrid(students)
             }}>✕</button
           >
         </div>
@@ -830,11 +815,10 @@
             <span class="font-bold uppercase">English Name: </span>{viewedStudent.englishName || '—'}
           </div>
           <div class="px-4 py-3 font-bold text-error">
-            DATE:
             {#if scheduleDate}
-              {fmtFullDate(scheduleDate)} ONLY
+              DATE: {fmtFullDate(scheduleDate)} ONLY
             {:else}
-              No start date set
+              No schedule date for this student
             {/if}
           </div>
         </div>
@@ -845,7 +829,7 @@
           </div>
         {:else if !scheduleDate}
           <div class="text-center text-base-content/40 py-10 text-sm">
-            This student has no end date set, so no schedule day can be shown.
+            This student has no start date set, so no schedule day can be shown.
           </div>
         {:else if dayPeriods().length === 0}
           <div class="text-center text-base-content/40 py-10 text-sm">
@@ -966,19 +950,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Status -->
-        <!-- <div class="form-control">
-          <label class="label py-1" for="student-status"><span class="label-text font-semibold">Status</span></label>
-          <select
-            id="student-status"
-            bind:value={formData.status}
-            disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
-            class="select select-bordered w-full focus:select-primary disabled:opacity-50"
-          >
-            {#each STATUS_OPTIONS as opt}<option value={opt}>{capitalize(opt)}</option>{/each}
-          </select>
-        </div> -->
 
         <!-- Edit Mode (only in edit, not add) -->
         {#if formData.id}
