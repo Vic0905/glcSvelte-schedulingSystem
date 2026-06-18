@@ -1,75 +1,29 @@
 <script>
-  import { onDestroy, onMount, tick } from 'svelte'
-  import { Grid, h } from 'gridjs'
-  import 'gridjs/dist/theme/mermaid.css'
+  import { onDestroy, onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  // --- State ---
   let selectedDate = $state(new Date().toISOString().split('T')[0])
   let todayHoliday = $state(null)
   let isLoading = $state(false)
   let students = $state([])
+  let scheduleMap = $state(new Map())
 
-  let gridInstance = null
-  let profileRowEl
   let unsubSchedule = null
   let debounceTimer = null
 
-  // Static data (loaded once)
   let cachedTimeslots = []
   let cachedStudents = []
   let cachedHolidays = []
 
-  // --- Helpers ---
   const today = () => new Date().toISOString().split('T')[0]
 
-  function formatDateDisplay(dateStr) {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
+  function formatDateShort(dateStr) {
+    return new Date(dateStr)
+      .toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      .toUpperCase()
   }
 
-  function formatScheduleCell(items) {
-    if (!items?.length) {
-      return h(
-        'div',
-        { class: 'w-full h-full min-h-[55px] flex items-center justify-center text-gray-300 text-lg' },
-        '—'
-      )
-    }
-    return h(
-      'div',
-      { class: 'flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full' },
-      items.map((item) =>
-        h(
-          'div',
-          { class: 'flex flex-col gap-1 w-full' },
-          [
-            h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full text-center' }, [
-              h('div', {}, item.subject?.name || 'No Subject'),
-              h(
-                'div',
-                { class: 'text-[10px] uppercase mt-1 text-neutral-500 tracking-wide' },
-                item.teacher?.name || 'No Teacher'
-              ),
-            ]),
-            item.room &&
-              h(
-                'div',
-                { class: 'flex justify-center' },
-                h('span', { class: 'badge badge-ghost badge-xs whitespace-nowrap' }, item.room.name)
-              ),
-          ].filter(Boolean)
-        )
-      )
-    )
-  }
-
-  // --- Data Loading ---
   async function loadStaticData() {
     try {
       const [timeslots, holidays] = await Promise.all([
@@ -94,12 +48,10 @@
 
       todayHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate) ?? null
 
-      // Load students
       let studentFilter = `status != "graduated" && start <= "${endStr}" && end >= "${startStr}"`
       if (!isAdmin) studentFilter += ` && user = "${pb.authStore.model?.id}"`
       cachedStudents = await pb.collection('student').getFullList({ filter: studentFilter })
 
-      // Load schedules
       let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}" && status = "show"`
       if (!isAdmin) scheduleFilter += ` && student.user = "${pb.authStore.model?.id}"`
       let schedules = await pb.collection('schedule').getFullList({
@@ -107,20 +59,21 @@
         expand: 'teacher,student,subject,room,timeslot',
       })
 
-      // On holidays, only show same-day records
       if (todayHoliday) {
         schedules = schedules.filter(
           (s) => s.start?.split(' ')[0] === selectedDate && s.end?.split(' ')[0] === selectedDate
         )
       }
 
-      // Build schedule map: studentId → timeslotId → entries[]
-      const scheduleMap = new Map()
-
+      const newMap = new Map()
       for (const s of schedules) {
         const timeslotId = s.expand?.timeslot?.id
         if (!timeslotId) continue
-        const entry = { subject: s.expand?.subject, teacher: s.expand?.teacher, room: s.expand?.room }
+        const entry = {
+          subject: s.expand?.subject,
+          teacher: s.expand?.teacher,
+          room: s.expand?.room,
+        }
         const studentList = Array.isArray(s.expand?.student)
           ? s.expand.student
           : s.expand?.student
@@ -128,14 +81,14 @@
             : []
 
         for (const student of studentList) {
-          if (!scheduleMap.has(student.id)) scheduleMap.set(student.id, new Map())
-          const slots = scheduleMap.get(student.id)
+          if (!newMap.has(student.id)) newMap.set(student.id, new Map())
+          const slots = newMap.get(student.id)
           if (!slots.has(timeslotId)) slots.set(timeslotId, [])
           slots.get(timeslotId).push(entry)
         }
       }
+      scheduleMap = newMap
 
-      // Always show all active students for the date, deduplicated by englishName (latest record wins)
       const latestByName = new Map()
       for (const s of cachedStudents) {
         const key = s.englishName?.toLowerCase()
@@ -150,54 +103,6 @@
         const bIsNew = b.status === 'new' ? 1 : 0
         return aIsNew !== bIsNew ? aIsNew - bIsNew : new Date(a.created) - new Date(b.created)
       })
-
-      // --- Grid columns & data ---
-      const columns = [
-        {
-          name: 'Timeslot',
-          width: '160px',
-          formatter: (cell) =>
-            h(
-              'div',
-              {
-                class:
-                  'w-full h-full p-2 flex items-center justify-center font-bold text-neutral-700 text-center bg-base-200',
-              },
-              cell.value
-            ),
-        },
-        ...students.map((student) => ({
-          id: student.id,
-          width: '160px',
-          name: h('div', { class: 'flex items-center justify-center' }, 'Class'),
-          formatter: (cell) => formatScheduleCell(cell),
-        })),
-      ]
-
-      const data = cachedTimeslots.map((ts) => [
-        { value: `${ts.start} - ${ts.end}` },
-        ...students.map((student) => scheduleMap.get(student.id)?.get(ts.id) || []),
-      ])
-
-      await tick()
-
-      if (gridInstance && document.getElementById('student-grid')) {
-        gridInstance.updateConfig({ columns, data }).forceRender()
-      } else {
-        gridInstance = new Grid({
-          columns,
-          data,
-          height: 'calc(100vh - 220px)',
-          search: false,
-          sort: false,
-          pagination: false,
-          className: { table: 'w-full border text-xs !border-collapse', th: 'text-center', td: 'text-center' },
-          style: { table: { 'table-layout': 'fixed' } },
-        }).render(document.getElementById('student-grid'))
-
-        await tick()
-        attachScrollSync()
-      }
     } catch (err) {
       console.error(err)
       toast.error('Failed to load student schedule')
@@ -206,30 +111,11 @@
     }
   }
 
-  function attachScrollSync() {
-    const wrapper = document.querySelector('#student-grid .gridjs-wrapper')
-    if (!wrapper || !profileRowEl) return
-    let syncing = false
-    wrapper.addEventListener('scroll', () => {
-      if (syncing) return
-      syncing = true
-      profileRowEl.scrollLeft = wrapper.scrollLeft
-      syncing = false
-    })
-    profileRowEl.addEventListener('scroll', () => {
-      if (syncing) return
-      syncing = true
-      wrapper.scrollLeft = profileRowEl.scrollLeft
-      syncing = false
-    })
-  }
-
   function debounceRefresh() {
     clearTimeout(debounceTimer)
     debounceTimer = setTimeout(loadStudentSchedule, 500)
   }
 
-  // --- Navigation ---
   const changeDay = async (days) => {
     if (isLoading) return
     const d = new Date(selectedDate)
@@ -250,7 +136,6 @@
     await loadStudentSchedule()
   }
 
-  // --- Lifecycle ---
   onMount(async () => {
     await loadStaticData()
     await loadStudentSchedule()
@@ -260,134 +145,172 @@
   onDestroy(() => {
     clearTimeout(debounceTimer)
     unsubSchedule?.()
-    gridInstance?.destroy()
   })
 </script>
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100 min-h-screen">
-  <!-- HEADER -->
-  <div class="mb-3 bg-base-200/60 rounded-xl p-3 shadow-sm">
-    <div class="flex items-center justify-between gap-3 flex-wrap">
-      <!-- PROFILE ROW -->
-      <div
-        bind:this={profileRowEl}
-        class="profile-row flex overflow-x-auto items-stretch border border-base-300 rounded-lg bg-base-100"
-      >
-        <div
-          class="shrink-0 flex items-center justify-center bg-base-200 border-r border-base-300 px-3"
-          style="min-width: 140px;"
-        >
-          <div class="font-bold text-sm text-center">Profile</div>
-        </div>
-        {#each students as student (student.id)}
-          <div
-            class="shrink-0 flex flex-col items-start justify-center text-left px-3 py-2 gap-0.5"
-            style="min-width: 140px;"
-          >
-            <div class="font-bold text-xs">{student.name}</div>
-            <div class="text-[11px]">{student.englishName || ''}</div>
-            <div class="text-[11px]">{student.course || ''}</div>
-            <div class="text-[11px]">{student.level || ''}</div>
-            <div class="text-[11px] italic">{student.groupName || ''}</div>
-            {#if student.status === 'new'}
-              <span class="badge badge-success badge-xs mt-1">New</span>
-            {:else if student.status === 'extended'}
-              <span class="badge badge-secondary badge-xs mt-1">Extended</span>
-            {:else if student.status === 'changed'}
-              <span class="badge badge-error badge-xs mt-1">Changed</span>
-            {/if}
-          </div>
-        {/each}
-      </div>
-
-      <!-- DATE DISPLAY -->
-      <h3 class="text-lg md:text-xl font-bold text-center text-neutral-700 flex-1">
-        {formatDateDisplay(selectedDate)}
-      </h3>
-
-      <!-- CONTROLS -->
-      <div class="flex items-center gap-2 justify-end flex-wrap">
-        <button
-          class="btn btn-sm btn-primary btn-outline rounded-full px-4"
-          onclick={goToToday}
-          disabled={isLoading || selectedDate === today()}
-        >
-          Today
-        </button>
-        {#if todayHoliday}
-          <span
-            class="flex items-center gap-2 text-yellow-800 border border-yellow-300 bg-yellow-50 rounded-full px-3 py-1 shadow-sm"
-          >
-            <span>🎉</span>
-            <span class="text-xs font-semibold">{todayHoliday.name}</span>
-          </span>
-        {/if}
-        <div class="join">
-          <button
-            class="join-item btn btn-sm btn-ghost border border-base-300"
-            onclick={() => changeDay(-1)}
-            disabled={isLoading}>&larr;</button
-          >
-          <input
-            type="date"
-            class="join-item input input-bordered input-sm w-auto"
-            value={selectedDate}
-            onchange={onDateChange}
-            disabled={isLoading}
-          />
-          <button
-            class="join-item btn btn-sm btn-ghost border border-base-300"
-            onclick={() => changeDay(1)}
-            disabled={isLoading}>&rarr;</button
-          >
-        </div>
-      </div>
+  <!-- LOADING -->
+  {#if isLoading}
+    <div class="flex justify-center py-16">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
     </div>
-  </div>
+  {:else if todayHoliday && students.length === 0}
+    <div class="flex flex-col items-center justify-center py-20 gap-3 text-center">
+      <span class="text-5xl">🎉</span>
+      <h3 class="text-xl font-bold">{todayHoliday.name}</h3>
+      <p class="text-sm text-base-content/50">No classes scheduled for this holiday.</p>
+    </div>
+  {:else if students.length === 0}
+    <div class="flex flex-col items-center justify-center py-20 gap-2">
+      <span class="text-4xl">📅</span>
+      <p class="text-sm text-base-content/50">No active students for this date.</p>
+    </div>
+  {:else}
+    <div class="flex flex-col gap-8">
+      {#each students as student (student.id)}
+        {@const slots = scheduleMap.get(student.id)}
 
-  <!-- GRID -->
-  <div id="student-grid" class="border rounded-xl shadow-sm overflow-hidden"></div>
+        <div class="border-2 border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-sm">
+          <!-- HEADER: holiday left | title center | controls right -->
+          <div class="flex items-center gap-2 px-4 py-4 border-b-2 border-base-300 bg-base-100">
+            <!-- LEFT: holiday badge -->
+            <div class="flex items-center min-w-0 w-48">
+              {#if todayHoliday}
+                <span
+                  class="flex items-center gap-1.5 text-yellow-800 border border-yellow-300 bg-yellow-50 rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap"
+                >
+                  <span>🎉</span>
+                  {todayHoliday.name}
+                </span>
+              {/if}
+            </div>
+
+            <!-- CENTER: title -->
+            <h3 class="flex-1 text-xl font-extrabold tracking-widest text-center whitespace-nowrap">
+              STUDENT'S SCHEDULE
+            </h3>
+
+            <!-- RIGHT: controls -->
+            <div class="flex items-center gap-2 justify-end w-48">
+              <button
+                class="btn btn-xs btn-primary btn-outline rounded-full px-3"
+                onclick={goToToday}
+                disabled={isLoading || selectedDate === today()}>Today</button
+              >
+
+              <div class="join">
+                <button
+                  class="join-item btn btn-xs btn-ghost border border-base-300"
+                  onclick={() => changeDay(-1)}
+                  disabled={isLoading}>&larr;</button
+                >
+                <input
+                  type="date"
+                  class="join-item input input-bordered input-xs w-32"
+                  value={selectedDate}
+                  onchange={onDateChange}
+                  disabled={isLoading}
+                />
+                <button
+                  class="join-item btn btn-xs btn-ghost border border-base-300"
+                  onclick={() => changeDay(1)}
+                  disabled={isLoading}>&rarr;</button
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- STUDENT INFO ROW -->
+          <div class="flex flex-col sm:flex-row border-b-2 border-base-300 sm:divide-x-2 sm:divide-base-300">
+            <div class="flex flex-col gap-1 px-4 py-2 flex-1 min-w-0 border-b border-base-300 sm:border-b-0">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-base-content/50">Name:</span>
+              <span class="text-base font-bold truncate">{student.name || '—'}</span>
+            </div>
+            <div class="flex flex-col gap-1 px-4 py-2 flex-1 min-w-0 border-b border-base-300 sm:border-b-0">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-base-content/50">English Name:</span>
+              <span class="text-base font-bold truncate">{student.englishName || '—'}</span>
+            </div>
+            <div class="flex flex-col gap-1 px-4 py-2 flex-1 min-w-0 border-b border-base-300 sm:border-b-0">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-base-content/50">Date:</span>
+              <span class="text-base font-bold text-error">{formatDateShort(selectedDate)}</span>
+            </div>
+          </div>
+
+          <!-- STATUS ROW -->
+          {#if student.status !== 'old'}
+            <div class="flex items-center gap-2 px-4 py-1.5 bg-base-200 border-b border-base-300">
+              {#if student.status === 'new'}<span class="badge badge-success badge-sm">New</span>{/if}
+              {#if student.status === 'extended'}<span class="badge badge-secondary badge-sm">Extended</span>{/if}
+              {#if student.status === 'changed'}<span class="badge badge-error badge-sm">Changed</span>{/if}
+              {#if student.course || student.level}
+                <span class="text-xs text-base-content/50"
+                  >{student.course || ''}{student.level ? ` · ${student.level}` : ''}</span
+                >
+              {/if}
+            </div>
+          {/if}
+
+          <!-- SCHEDULE TABLE -->
+          <div class="overflow-x-auto">
+            <table class="table table-xs sm:table-sm w-full min-w-[680px] border-collapse">
+              <colgroup>
+                <col class="w-30" />
+                <col class="w-100" />
+                <col class="w-100" />
+                <col class="w-100" />
+                <col />
+              </colgroup>
+              <thead class="text-center border border-neutral-focus py-3">
+                <tr class="bg-neutral text-neutral-content text-xs tracking-widest">
+                  <th>PERIOD</th>
+                  <th>TIME</th>
+                  <th>TEACHER</th>
+                  <th>CUBICLE / ROOM</th>
+                  <th>SUBJECT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each cachedTimeslots as ts, i}
+                  {@const entries = slots?.get(ts.id) || []}
+                  <tr class="hover:bg-base-200 transition-colors">
+                    <td class="text-center font-extrabold text-base border border-base-300 bg-base-200">{i + 1}</td>
+                    <td class="text-center font-semibold text-sm border border-base-300 whitespace-nowrap"
+                      >{ts.start} - {ts.end}</td
+                    >
+                    <td class="text-center text-sm border border-base-300">
+                      {#if entries.length}
+                        <div class="flex flex-col gap-0.5">
+                          {#each entries as e}<span>{e.teacher?.name || '—'}</span>{/each}
+                        </div>
+                      {:else}
+                        <span class="text-base-content/20">—</span>
+                      {/if}
+                    </td>
+                    <td class="text-center text-sm border border-base-300">
+                      {#if entries.length}
+                        <div class="flex flex-col gap-0.5">
+                          {#each entries as e}<span>{e.room?.name || '—'}</span>{/each}
+                        </div>
+                      {:else}
+                        <span class="text-base-content/20">—</span>
+                      {/if}
+                    </td>
+                    <td class="text-center text-sm font-semibold border border-base-300">
+                      {#if entries.length}
+                        <div class="flex flex-col gap-0.5">
+                          {#each entries as e}<span>{e.subject?.name || '—'}</span>{/each}
+                        </div>
+                      {:else}
+                        <span class="text-base-content/20">—</span>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
 </div>
-
-<style>
-  :global(html) {
-    scrollbar-gutter: stable;
-  }
-
-  #student-grid :global(.gridjs-wrapper) {
-    max-height: calc(100vh - 220px);
-    overflow: auto;
-    contain: strict;
-  }
-
-  /* Fix padding and alignment */
-  #student-grid :global(td) {
-    padding: 0 !important;
-    vertical-align: middle !important;
-  }
-
-  #student-grid :global(.gridjs-table td > div) {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    min-height: 65px;
-  }
-
-  #student-grid :global(th) {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    box-shadow: 0 1px 0 #ddd;
-    background-color: #484b4f;
-    color: #ffffff;
-    text-align: center;
-    vertical-align: middle;
-  }
-
-  /* Hover effect for cells */
-  #student-grid :global(.gridjs-table td:hover > div) {
-    background-color: #d1fae5 !important;
-    transition: background-color 0.2s ease;
-    cursor: pointer;
-  }
-</style>

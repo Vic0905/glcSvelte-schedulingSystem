@@ -152,6 +152,7 @@
     <details>
       <summary>Management</summary>
       <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/new/releaselog">Release Logs</a></li>
         <li><a href="/#/new/holidaypicker">Special Days</a></li>
         <li><a href="/#/management/subject">Subject</a></li>
         <li><a href="/#/new/room">Room</a></li>
@@ -186,15 +187,14 @@
   </li> -->
 {:else if current.user && current.user.role === 'student'}
   <!-- student routes -->
-  <li>
+  <!-- <li>
     <details>
       <summary>Student Table</summary>
       <ul class="relative z-50 text-xs p-2">
-        <!-- <li><a href="/#/new/dailystudentview">StudentView</a></li> -->
         <li><a href="/#/new/studenttable">Student View</a></li>
       </ul>
     </details>
-  </li>
+  </li> -->
 {:else if current.user && current.user.role === 'staff'}
   <!-- staff routes -->
   <li>

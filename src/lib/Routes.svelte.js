@@ -111,6 +111,9 @@ export const adminRoutes = {
   '/new/holidaypicker': wrap({
     asyncComponent: () => import('../routes/admin/New/HolidayPicker.svelte'),
   }),
+  '/new/releaselog': wrap({
+    asyncComponent: () => import('../routes/admin/New/ReleaseLog.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),

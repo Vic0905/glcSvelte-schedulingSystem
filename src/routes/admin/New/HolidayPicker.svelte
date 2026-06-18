@@ -239,7 +239,7 @@
         <select class="select select-bordered w-full" bind:value={formData.status}>
           <option value="No Class">No Class</option>
           <option value="Special Class">Special Class</option>
-          <option value="Weekend">Weekend</option>
+          <option value="Weekend Activity">Weekend Activity</option>
         </select>
 
         <input

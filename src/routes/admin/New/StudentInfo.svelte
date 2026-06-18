@@ -42,6 +42,31 @@
   let bulkRawInput = $state('')
   let bulkDefaultStatus = $state('new')
 
+  // ── State ─────────────────────────────────────────────────────────────────
+  let viewedStudent = $state(null)
+  let viewSchedules = $state([])
+  let isLoadingSchedule = $state(false)
+
+  let scheduleDate = $derived(viewedStudent?.start ? getFridayOfWeek(viewedStudent.start.slice(0, 10)) : null)
+
+  // ── Derived: schedule for the student's END DATE only ──────────────────────
+  let dayPeriods = $derived(() => {
+    const map = new Map()
+    for (const s of viewSchedules) {
+      const ts = s.expand?.timeslot
+      if (!ts) continue
+      if (!map.has(ts.id)) {
+        map.set(ts.id, { start: ts.start, end: ts.end, entries: [] })
+      }
+      map.get(ts.id).entries.push({
+        subject: s.expand?.subject?.name ?? '—',
+        teacher: s.expand?.teacher?.name ?? '—',
+        room: s.expand?.room?.name ?? '—',
+      })
+    }
+    return [...map.values()].sort((a, b) => a.start.localeCompare(b.start))
+  })
+
   // ── Derived for edit mode ──────────────────────────────────────────────────
   let editMode = $derived(formData.isChanged ? 'changed' : formData.isExtended ? 'extended' : 'normal')
 
@@ -103,6 +128,32 @@
     const text = await res.text()
     if (!res.ok) throw new Error(text)
     return JSON.parse(text)
+  }
+
+  async function batchFetchChunked(requests, chunkSize = 50) {
+    const allResults = []
+    for (let i = 0; i < requests.length; i += chunkSize) {
+      const chunk = requests.slice(i, i + chunkSize)
+      const res = await batchFetch(chunk)
+      allResults.push(...res)
+    }
+    return allResults
+  }
+
+  // ── ADDED: get friday of the date range helper ─────────────────────────────────────────────
+
+  function getFridayOfWeek(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00')
+    const dow = d.getDay() // 0=Sun..6=Sat
+    const monday = new Date(d)
+    monday.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow))
+    const friday = new Date(monday)
+    friday.setDate(monday.getDate() + 4)
+
+    const y = friday.getFullYear()
+    const m = String(friday.getMonth() + 1).padStart(2, '0')
+    const day = String(friday.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
   }
 
   // ── ADDED: User account helper ─────────────────────────────────────────────
@@ -191,7 +242,15 @@
       s.start ? s.start.slice(0, 10) : '-',
       s.end ? s.end.slice(0, 10) : '-',
       h('span', { className: `badge badge-sm ${STATUS_BADGE[s.status] ?? 'badge-neutral'}` }, s.status ?? 'new'),
-      h('div', { className: 'flex gap-2 justify-center' }, [
+      h('div', { className: 'flex gap-1 justify-center flex-wrap' }, [
+        h(
+          'button',
+          {
+            className: `btn btn-xs btn-outline ${viewedStudent?.id === s.id ? 'btn-primary' : 'btn-ghost'}`,
+            onclick: () => loadStudentSchedules(s),
+          },
+          viewedStudent?.id === s.id ? 'Hide' : 'View'
+        ),
         h('button', { className: 'btn btn-xs btn-outline btn-info', onclick: () => openEdit(s) }, 'Edit'),
         h('button', { className: 'btn btn-xs btn-outline btn-error', onclick: () => deleteStudent(s.id) }, 'Delete'),
       ]),
@@ -209,7 +268,7 @@
         { name: 'Start', width: '90px' },
         { name: 'End', width: '90px' },
         { name: 'Status', width: '90px' },
-        { name: 'Actions', width: '110px', sort: false },
+        { name: 'Actions', width: '150px', sort: false },
       ],
       data,
       search: true,
@@ -422,7 +481,7 @@
     const nextId = await getNextStudentId()
 
     try {
-      const results = await batchFetch(
+      const results = await batchFetchChunked(
         toCreate.map((row, i) => ({
           method: 'POST',
           url: '/api/collections/student/records',
@@ -567,7 +626,7 @@
 
         isProcessing = true
         try {
-          const results = await batchFetch(
+          const results = await batchFetchChunked(
             toCreate.map((row, i) => ({
               method: 'POST',
               url: '/api/collections/student/records',
@@ -636,6 +695,53 @@
     showBulkModal = false
   }
 
+  // ── Formatting helpers for the printable day-schedule ───────────────────────
+  function fmtTime(t) {
+    if (!t) return '—'
+    const [h, m = '00'] = t.split(':')
+    return `${parseInt(h, 10)}:${m}`
+  }
+
+  function fmtFullDate(d) {
+    return new Date(d + 'T00:00:00')
+      .toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      .toUpperCase()
+  }
+
+  async function loadStudentSchedules(student) {
+    if (viewedStudent?.id === student.id) {
+      viewedStudent = null
+      viewSchedules = []
+      renderGrid(students)
+      return
+    }
+    viewedStudent = student
+    viewSchedules = []
+    isLoadingSchedule = true
+    renderGrid(students)
+
+    if (!student.start) {
+      isLoadingSchedule = false
+      return
+    }
+
+    try {
+      const dayStr = getFridayOfWeek(student.start.slice(0, 10))
+      const startStr = `${dayStr} 00:00:00`
+      const endStr = `${dayStr} 23:59:59`
+
+      viewSchedules = await pb.collection('schedule').getFullList({
+        filter: `student = "${student.id}" && end >= "${startStr}" && start <= "${endStr}"`,
+        expand: 'timeslot,room,teacher,subject',
+        sort: 'start',
+      })
+    } catch {
+      toast.error('Failed to load schedules')
+    } finally {
+      isLoadingSchedule = false
+    }
+  }
+
   $effect(() => () => {
     if (gridInstance && gridElement) {
       gridElement.innerHTML = ''
@@ -697,6 +803,85 @@
       <div bind:this={gridElement}></div>
     </div>
   </section>
+
+  <!-- Printable end-date schedule -->
+  {#if viewedStudent}
+    <section class="card bg-base-100 border-2 border-black overflow-hidden">
+      <div class="card-body p-0">
+        <!-- Title bar -->
+        <div class="flex items-center justify-between border-b-2 border-black px-6 py-4">
+          <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight uppercase">Student's Schedule</h2>
+          <button
+            class="btn btn-sm btn-ghost btn-circle"
+            onclick={() => {
+              viewedStudent = null
+              viewSchedules = []
+              renderGrid(students)
+            }}>✕</button
+          >
+        </div>
+
+        <!-- Info row -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 border-b-2 border-black text-sm">
+          <div class="border-b sm:border-b-0 sm:border-r-2 border-black px-4 py-3">
+            <span class="font-bold uppercase">Name: </span>{viewedStudent.name || '—'}
+          </div>
+          <div class="border-b sm:border-b-0 sm:border-r-2 border-black px-4 py-3">
+            <span class="font-bold uppercase">English Name: </span>{viewedStudent.englishName || '—'}
+          </div>
+          <div class="px-4 py-3 font-bold text-error">
+            DATE:
+            {#if scheduleDate}
+              {fmtFullDate(scheduleDate)} ONLY
+            {:else}
+              No start date set
+            {/if}
+          </div>
+        </div>
+
+        {#if isLoadingSchedule}
+          <div class="flex justify-center py-10">
+            <span class="loading loading-spinner loading-md"></span>
+          </div>
+        {:else if !scheduleDate}
+          <div class="text-center text-base-content/40 py-10 text-sm">
+            This student has no end date set, so no schedule day can be shown.
+          </div>
+        {:else if dayPeriods().length === 0}
+          <div class="text-center text-base-content/40 py-10 text-sm">
+            No schedule found for {fmtFullDate(scheduleDate)}.
+          </div>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="table w-full text-center border-collapse">
+              <thead>
+                <tr class="text-sm font-bold uppercase">
+                  <th class="border-2 border-black py-2">Period</th>
+                  <th class="border-2 border-black py-2">Time</th>
+                  <th class="border-2 border-black py-2">Teacher</th>
+                  <th class="border-2 border-black py-2">Cubicle/Room</th>
+                  <th class="border-2 border-black py-2">Class/Subject</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each dayPeriods() as p, i}
+                  <tr>
+                    <td class="border-2 border-black font-bold py-2">{i + 1}</td>
+                    <td class="border-2 border-black py-2 whitespace-nowrap">
+                      {fmtTime(p.start)} - {fmtTime(p.end)}
+                    </td>
+                    <td class="border-2 border-black py-2">{p.entries.map((e) => e.teacher).join(', ')}</td>
+                    <td class="border-2 border-black py-2">{p.entries.map((e) => e.room).join(', ')}</td>
+                    <td class="border-2 border-black py-2">{p.entries.map((e) => e.subject).join(', ')}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </div>
+    </section>
+  {/if}
 </main>
 
 <!-- Add / Edit Modal -->

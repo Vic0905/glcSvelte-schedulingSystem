@@ -300,6 +300,33 @@
     gridInstance?.destroy()
     gridInstance = null
   })
+
+  const todayOne = new Date()
+  // 1. Calculate this week's Friday natively
+  // Convert Sunday (0) to 7 so Monday is 1 and Sunday is 7
+  const currentDay = todayOne.getDay() === 0 ? 7 : todayOne.getDay()
+  const distanceToFriday = 5 - currentDay
+
+  const currentFriday = new Date(todayOne)
+  currentFriday.setDate(todayOne.getDate() + distanceToFriday)
+
+  // 2. Format to 'YYYY-MM-DD' manually
+  const year = currentFriday.getFullYear()
+  const month = String(currentFriday.getMonth() + 1).padStart(2, '0')
+  const day = String(currentFriday.getDate()).padStart(2, '0')
+  const maxFridayString = $derived(`${year}-${month}-${day}`)
+
+  // 4. Fallback validation for manual typing
+  function handleInput(event) {
+    const inputVal = event.target.value
+    if (!inputVal) return
+
+    // Compare date strings directly (YYYY-MM-DD compares perfectly alphabetically/chronologically)
+    if (inputVal > maxFridayString) {
+      alert("You cannot select a date past this week's Friday!")
+      selectedDate = maxFridayString // Snap back to max
+    }
+  }
 </script>
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100 min-h-screen">
@@ -369,11 +396,12 @@
             value={selectedDate}
             onchange={onDateChange}
             disabled={isLoading}
+            max={maxFridayString}
           />
           <button
             class="join-item btn btn-sm btn-ghost border border-base-300"
             onclick={() => changeDay(1)}
-            disabled={isLoading}>&rarr;</button
+            disabled={isLoading || selectedDate >= maxFridayString}>&rarr;</button
           >
         </div>
         {#if isLoading}

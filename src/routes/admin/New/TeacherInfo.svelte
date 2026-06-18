@@ -42,6 +42,16 @@
     return JSON.parse(text)
   }
 
+  async function batchFetchChunked(requests, chunkSize = 50) {
+    const allResults = []
+    for (let i = 0; i < requests.length; i += chunkSize) {
+      const chunk = requests.slice(i, i + chunkSize)
+      const res = await batchFetch(chunk)
+      allResults.push(...res)
+    }
+    return allResults
+  }
+
   // ── User account helper ────────────────────────────────────────────────────
   async function createTeacherUser(name) {
     const trimmedName = name.trim()
@@ -308,7 +318,7 @@
 
         isProcessing = true
         try {
-          const results = await batchFetch(
+          const results = await batchFetchChunked(
             toCreate.map((row) => ({
               method: 'POST',
               url: '/api/collections/teacher/records',

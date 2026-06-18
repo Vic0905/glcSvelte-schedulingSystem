@@ -67,8 +67,6 @@
         fields: 'id,status,start,end',
       })
 
-      // Only count records whose start date falls within our range
-      // (records that belong to this date window)
       const inRange = records.filter((r) => {
         const recStart = r.start?.split(' ')[0]
         return recStart >= start && recStart <= end
@@ -84,6 +82,41 @@
     }
   }
 
+  // ─────────────────────────────────────────────
+  // Write release log entry
+  // ─────────────────────────────────────────────
+  async function writeReleaseLog(start, end, count) {
+    try {
+      const userId = pb.authStore.record?.id
+      if (!userId) {
+        console.warn('writeReleaseLog: no authenticated user')
+        return
+      }
+
+      const now = new Date().toISOString().replace('T', ' ').slice(0, 19) + '.000Z'
+      const dateField = `${start} 00:00:00.000Z`
+
+      const payload = {
+        date: dateField,
+        releasedBy: userId,
+        releasedAt: now,
+        count,
+        roomType: roomType || '',
+        rangeStart: start,
+        rangeEnd: end,
+      }
+
+      console.log('writeReleaseLog payload:', payload) // remove after confirming it works
+
+      await pb.collection('releaseLog').create(payload)
+    } catch (err) {
+      console.warn('Failed to write release log:', err)
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Main action
+  // ─────────────────────────────────────────────
   async function handleShow() {
     if (!isValidRange()) return
 
@@ -131,6 +164,10 @@
 
       if (!res.ok) throw new Error(`Batch failed: ${res.statusText}`)
 
+      // ── Write release log ──────────────────────
+      await writeReleaseLog(start, end, toUpdate.length)
+      // ──────────────────────────────────────────
+
       toast.success(`Shown ${toUpdate.length} schedule${toUpdate.length !== 1 ? 's' : ''}.`)
       close()
       onrefresh?.()
@@ -144,7 +181,6 @@
 
   // Re-fetch preview when mode or dates change
   $effect(() => {
-    // track all relevant state
     mode
     targetDate
     rangeStart

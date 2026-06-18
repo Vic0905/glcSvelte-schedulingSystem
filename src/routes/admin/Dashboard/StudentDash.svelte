@@ -164,7 +164,7 @@
             ><span class="inline-block h-2 w-2 rounded-full bg-warning"></span>Special Class</span
           >
           <span class="flex items-center gap-1"
-            ><span class="inline-block h-2 w-2 rounded-full bg-success"></span>Weekend</span
+            ><span class="inline-block h-2 w-2 rounded-full bg-success"></span>Weekend Activity</span
           >
         </div>
 
