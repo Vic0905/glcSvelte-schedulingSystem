@@ -173,15 +173,14 @@
   </li>
 {:else if current.user && current.user.role === 'teacher'}
   <!-- teacher routes -->
-  <li>
+  <!-- <li>
     <details>
       <summary>Teacher Table</summary>
       <ul class="relative z-50 text-xs p-2">
-        <!-- <li><a href="/#/new/dailystudentview">StudentView</a></li> -->
         <li><a href="/#/new/teachertable">Teacher View</a></li>
       </ul>
     </details>
-  </li>
+  </li> -->
   <!-- <li>
     <details>
       <summary>Teacher Table</summary>
