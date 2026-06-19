@@ -2,6 +2,8 @@
   import { current } from '../lib/Pocketbase.svelte'
   import { onMount, onDestroy } from 'svelte'
 
+  let openMenus = $state({ daily: false, management: false })
+
   function handleOutsideClick(event) {
     const openDetails = document.querySelectorAll('details[open]')
     openDetails.forEach((el) => {
@@ -132,39 +134,42 @@
       </ul>
     </details>
   </li> -->
-  <li>
-    <details>
-      <summary>Daily Booking</summary>
-      <ul class="relative z-50 text-xs p-2">
+  <li class="relative">
+    <button
+      onclick={() => (openMenus.daily = !openMenus.daily)}
+      class="flex items-center justify-between px-4 py-2 hover:bg-base-200 rounded-lg"
+    >
+      <span class="text-xs ml-2">{openMenus.daily ? '▶' : '◀'}</span>
+      Daily Booking
+    </button>
+    {#if openMenus.daily}
+      <ul class="absolute right-full top-0 mr-30 text-xs flex flex-row gap-2 p-2 z-50 whitespace-nowrap">
         <li><a href="/#/new/dailyschedule">MTM Input</a></li>
         <li><a href="/#/new/dailygroupschedule">GRP Input</a></li>
-        <!-- <li><a href="/#/current/groupview">GRP Room Table</a></li> -->
         <li><a href="/#/new/dailystudentview">StudentView</a></li>
         <li><a href="/#/new/dailyteacherview">TeacherView</a></li>
         <li><a href="/#/new/graduatingstudent">Graduating Student</a></li>
-        <!-- <li><a href="/#/new/teacherinfo">Teacher Information</a></li>
-        <li><a href="/#/new/studentinfo">Student Information</a></li>
-        <li><a href="/#/new/room">Room Information</a></li> -->
       </ul>
-    </details>
+    {/if}
   </li>
-  <li>
-    <details>
-      <summary>Management</summary>
-      <ul class="relative z-50 text-xs p-2">
+  <li class="relative">
+    <button
+      onclick={() => (openMenus.management = !openMenus.management)}
+      class="flex items-center justify-between px-4 py-2 hover:bg-base-200 rounded-lg"
+    >
+      Management
+      <span class="text-xs ml-2">{openMenus.management ? '◀' : '▶'}</span>
+    </button>
+    {#if openMenus.management}
+      <ul class="absolute left-full top-0 text-xs flex flex-row gap-2 p-2 z-50 whitespace-nowrap">
         <li><a href="/#/new/releaselog">Release Logs</a></li>
         <li><a href="/#/new/holidaypicker">Special Days</a></li>
         <li><a href="/#/management/subject">Subject</a></li>
         <li><a href="/#/new/room">Room</a></li>
-        <!-- <li><a href="/#/management/room">Room</a></li> -->
-        <!-- <li><a href="/#/management/group">Group</a></li> -->
-        <!-- <li><a href="/#/management/student">Student</a></li> -->
-        <!-- <li><a href="/#/management/teacher">Teacher</a></li> -->
-        <!-- <li><a href="/#/management/bookings">Bookings</a></li> -->
         <li><a href="/#/new/teacherinfo">Teacher</a></li>
         <li><a href="/#/new/studentinfo">Student</a></li>
       </ul>
-    </details>
+    {/if}
   </li>
 {:else if current.user && current.user.role === 'teacher'}
   <!-- teacher routes -->
