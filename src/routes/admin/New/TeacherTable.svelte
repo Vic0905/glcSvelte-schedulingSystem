@@ -91,7 +91,7 @@
 
       todayHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate) ?? null
 
-      let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}" && status = "show"`
+      let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}"`
       if (!isAdmin) scheduleFilter += ` && teacher.user = "${pb.authStore.model?.id}"`
       let schedules = await pb.collection('schedule').getFullList({
         filter: scheduleFilter,
