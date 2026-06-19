@@ -73,7 +73,7 @@
     const status = specialDayMap[getDateKey(day)]
     if (status === 'No Class') return 'bg-secondary text-secondary-content font-medium'
     if (status === 'Special Class') return 'bg-warning text-warning-content font-medium'
-    if (status === 'Weekend') return 'bg-success text-success-content font-medium'
+    if (status === 'Weekend Activity') return 'bg-success text-success-content font-medium'
     return 'opacity-70 hover:bg-current/10'
   }
 </script>
