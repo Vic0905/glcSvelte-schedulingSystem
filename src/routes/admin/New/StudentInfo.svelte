@@ -469,12 +469,10 @@
         .map((row, i) => ({ row, result: results[i] }))
         .filter(({ result }) => result.status >= 200 && result.status < 300)
 
-      await Promise.allSettled(
-        successful.map(async ({ row, result }) => {
-          const userId = await createStudentUser(row.englishName)
-          if (userId) await pb.collection('student').update(result.body.id, { user: userId })
-        })
-      )
+      for (const { row, result } of successful) {
+        const userId = await createStudentUser(row.englishName)
+        if (userId) await pb.collection('student').update(result.body.id, { user: userId })
+      }
 
       toast.success(
         [added && `${added} added`, skipped && `${skipped} skipped`, failed && `${failed} failed`]
@@ -617,12 +615,10 @@
             .map((row, i) => ({ row, result: results[i] }))
             .filter(({ result }) => result.status >= 200 && result.status < 300)
 
-          await Promise.allSettled(
-            successful.map(async ({ row, result }) => {
-              const userId = await createStudentUser(row.englishName)
-              if (userId) await pb.collection('student').update(result.body.id, { user: userId })
-            })
-          )
+          for (const { row, result } of successful) {
+            const userId = await createStudentUser(row.englishName)
+            if (userId) await pb.collection('student').update(result.body.id, { user: userId })
+          }
 
           toast.success(
             [added && `${added} imported`, skipped && `${skipped} skipped`, failed && `${failed} failed`]
