@@ -139,11 +139,11 @@
       onclick={() => (openMenus.daily = !openMenus.daily)}
       class="flex items-center justify-between px-4 py-2 hover:bg-base-200 rounded-lg"
     >
-      <span class="text-xs ml-2">{openMenus.daily ? '▶' : '◀'}</span>
+      <span class="text-xs mr-2">{openMenus.daily ? '▶' : '◀'}</span>
       Daily Booking
     </button>
     {#if openMenus.daily}
-      <ul class="absolute right-full top-0 mr-30 text-xs flex flex-row gap-2 p-2 z-50 whitespace-nowrap">
+      <ul class="absolute right-full top-0 mr-30 text-xs flex flex-row p-2 z-50 whitespace-nowrap">
         <li><a href="/#/new/dailyschedule">MTM Input</a></li>
         <li><a href="/#/new/dailygroupschedule">GRP Input</a></li>
         <li><a href="/#/new/dailystudentview">StudentView</a></li>
@@ -161,7 +161,7 @@
       <span class="text-xs ml-2">{openMenus.management ? '◀' : '▶'}</span>
     </button>
     {#if openMenus.management}
-      <ul class="absolute left-full top-0 text-xs flex flex-row gap-2 p-2 z-50 whitespace-nowrap">
+      <ul class="absolute left-full top-0 text-xs flex flex-row p-2 z-50 whitespace-nowrap">
         <li><a href="/#/new/releaselog">Release Logs</a></li>
         <li><a href="/#/new/holidaypicker">Special Days</a></li>
         <li><a href="/#/management/subject">Subject</a></li>

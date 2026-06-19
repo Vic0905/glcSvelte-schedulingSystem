@@ -1,40 +1,41 @@
 <script>
-  import { onDestroy, onMount, tick } from 'svelte'
-  import { Grid, h } from 'gridjs'
-  import 'gridjs/dist/theme/mermaid.css'
+  import { onDestroy, onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../lib/Pocketbase.svelte'
 
-  // --- State ---
   let selectedDate = $state(new Date().toISOString().split('T')[0])
   let todayHoliday = $state(null)
   let isLoading = $state(false)
+  let isRefreshing = $state(false)
   let teachers = $state([])
+  let scheduleMap = $state(new Map())
 
-  let gridInstance = null
-  let profileRowEl
   let unsubSchedule = null
   let unsubRoomType = null
   let unsubTeacher = null
   let debounceTimer = null
 
-  // Static data (loaded once)
   let cachedTimeslots = []
   let cachedTeachers = []
   let cachedHolidays = []
   let cachedRoomTypes = []
   let teacherRoomMap = new Map()
 
-  // --- Helpers ---
   const today = () => new Date().toISOString().split('T')[0]
 
-  function formatDateDisplay(dateStr) {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
+  // This week's Friday (max date for non-admin)
+  const todayOne = new Date()
+  const currentDay = todayOne.getDay() === 0 ? 7 : todayOne.getDay()
+  const currentFriday = new Date(todayOne)
+  currentFriday.setDate(todayOne.getDate() + (5 - currentDay))
+  const maxFridayString = $derived(
+    `${currentFriday.getFullYear()}-${String(currentFriday.getMonth() + 1).padStart(2, '0')}-${String(currentFriday.getDate()).padStart(2, '0')}`
+  )
+
+  function formatDateShort(dateStr) {
+    return new Date(dateStr)
+      .toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      .toUpperCase()
   }
 
   function getRoomNumber(roomName) {
@@ -43,37 +44,8 @@
     return isNaN(num) ? Infinity : num
   }
 
-  function formatScheduleCell(items) {
-    if (!items?.length) {
-      return h(
-        'div',
-        { class: 'w-full h-full min-h-[55px] flex items-center justify-center text-gray-300 text-lg' },
-        '—'
-      )
-    }
-    return h(
-      'div',
-      { class: 'flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full' },
-      items.map((item) =>
-        h('div', { class: 'flex flex-col gap-1 w-full' }, [
-          h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full text-center' }, [
-            h('div', {}, item.subject?.name || 'No Subject'),
-            h('div', { class: 'text-[10px] uppercase mt-1  tracking-wide' }, item.room?.name || 'No Room'),
-          ]),
-          h(
-            'div',
-            { class: 'flex flex-wrap justify-center gap-1' },
-            (item.students || []).map((s) =>
-              h('span', { class: 'badge badge-ghost badge-xs whitespace-nowrap' }, s.name)
-            )
-          ),
-        ])
-      )
-    )
-  }
-
-  // --- Data Loading ---
-  async function loadStaticData() {
+  // Loads timeslots, roomTypes, teachers, holidays — rebuilds teachers[] and teacherRoomMap
+  async function loadStructure() {
     try {
       const [timeslots, roomTypes, allTeachers, holidays] = await Promise.all([
         pb.collection('timeslot').getFullList({ sort: 'start' }),
@@ -88,73 +60,12 @@
       teacherRoomMap = new Map(
         roomTypes.filter((rt) => rt.expand?.teacher).map((rt) => [rt.expand.teacher.id, rt.name])
       )
-    } catch (err) {
-      console.error(err)
-      toast.error('Failed to load schedule data')
-    }
-  }
 
-  async function loadTeacherSchedule() {
-    if (isLoading) return
-    isLoading = true
-    try {
       const isAdmin = pb.authStore.model?.role === 'admin'
-      const startStr = `${selectedDate} 00:00:00`
-      const endStr = `${selectedDate} 23:59:59`
+      let visibleTeachers = isAdmin
+        ? cachedTeachers.filter((t) => t.status !== 'disabled')
+        : cachedTeachers.filter((t) => t.user === pb.authStore.model?.id)
 
-      todayHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate) ?? null
-
-      // Determine visible teachers
-      let visibleTeachers
-      if (isAdmin) {
-        visibleTeachers = cachedTeachers.filter((t) => t.status !== 'disabled')
-      } else {
-        visibleTeachers = cachedTeachers.filter((t) => t.user === pb.authStore.model?.id)
-      }
-
-      // Load schedules
-      let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}" && status = "show"`
-      if (!isAdmin) scheduleFilter += ` && teacher.user = "${pb.authStore.model?.id}"`
-
-      let schedules = await pb.collection('schedule').getFullList({
-        filter: scheduleFilter,
-        expand: 'teacher,student,subject,room,timeslot',
-      })
-
-      // On holidays, only show same-day records
-      if (todayHoliday) {
-        schedules = schedules.filter(
-          (s) => s.start?.split(' ')[0] === selectedDate && s.end?.split(' ')[0] === selectedDate
-        )
-      }
-
-      // Build schedule map: teacherId → timeslotId → entries[]
-      const scheduleMap = new Map()
-      const bookedTeacherIds = new Set()
-
-      for (const s of schedules) {
-        const teacherId = s.expand?.teacher?.id
-        const timeslotId = s.expand?.timeslot?.id
-        if (!teacherId || !timeslotId) continue
-
-        bookedTeacherIds.add(teacherId)
-        if (!scheduleMap.has(teacherId)) scheduleMap.set(teacherId, new Map())
-        const slots = scheduleMap.get(teacherId)
-        if (!slots.has(timeslotId)) slots.set(timeslotId, [])
-        slots.get(timeslotId).push({
-          subject: s.expand?.subject,
-          room: s.expand?.room,
-          students: s.expand?.student ? [{ id: s.expand.student.id, name: s.expand.student.englishName }] : [],
-        })
-      }
-
-      // For admin: also include disabled teachers that have bookings today
-      if (isAdmin) {
-        const disabledWithBookings = cachedTeachers.filter((t) => t.status === 'disabled' && bookedTeacherIds.has(t.id))
-        visibleTeachers = [...visibleTeachers, ...disabledWithBookings]
-      }
-
-      // Sort: teachers with rooms first (by room number), then rest alphabetically
       teachers = visibleTeachers.sort((a, b) => {
         const aRoom = teacherRoomMap.get(a.id)
         const bRoom = teacherRoomMap.get(b.id)
@@ -163,132 +74,126 @@
         if (!aRoom && bRoom) return 1
         return a.name.localeCompare(b.name)
       })
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load teacher data')
+    }
+  }
 
-      // --- Grid: timeslots as rows, teachers as columns ---
-      const columns = [
-        {
-          name: 'Timeslot',
-          width: '160px',
-          formatter: (cell) =>
-            h(
-              'div',
-              {
-                class: 'w-full h-full p-2 flex items-center justify-center ',
-              },
-              cell.value
-            ),
-        },
-        ...teachers.map((teacher) => ({
-          id: teacher.id,
-          width: '180px',
-          name: h('div', { class: 'flex items-center justify-center' }, 'Class'),
-          formatter: (cell) => formatScheduleCell(cell),
-        })),
-      ]
+  // Only fetches schedules and rebuilds scheduleMap — does NOT touch teachers[]
+  async function loadScheduleData() {
+    if (isRefreshing) return
+    isRefreshing = true
+    try {
+      const isAdmin = pb.authStore.model?.role === 'admin'
+      const startStr = `${selectedDate} 00:00:00`
+      const endStr = `${selectedDate} 23:59:59`
 
-      const data = cachedTimeslots.map((ts) => [
-        { value: `${ts.start} - ${ts.end}` },
-        ...teachers.map((teacher) => scheduleMap.get(teacher.id)?.get(ts.id) || []),
-      ])
+      todayHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate) ?? null
 
-      await tick()
+      let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}" && status = "show"`
+      if (!isAdmin) scheduleFilter += ` && teacher.user = "${pb.authStore.model?.id}"`
+      let schedules = await pb.collection('schedule').getFullList({
+        filter: scheduleFilter,
+        expand: 'teacher,student,subject,room,timeslot',
+      })
 
-      if (gridInstance && document.getElementById('teacher-grid')) {
-        const wrapper = document.querySelector('#teacher-grid .gridjs-wrapper')
-        const savedScrollTop = wrapper?.scrollTop || 0
-        const savedScrollLeft = wrapper?.scrollLeft || 0
+      if (todayHoliday) {
+        schedules = schedules.filter(
+          (s) => s.start?.split(' ')[0] === selectedDate && s.end?.split(' ')[0] === selectedDate
+        )
+      }
 
-        gridInstance.updateConfig({ columns, data }).forceRender()
+      const newMap = new Map()
+      const bookedTeacherIds = new Set()
 
-        await tick()
-        attachScrollSync()
+      for (const s of schedules) {
+        const teacherId = s.expand?.teacher?.id
+        const timeslotId = s.expand?.timeslot?.id
+        if (!teacherId || !timeslotId) continue
+        bookedTeacherIds.add(teacherId)
+        if (!newMap.has(teacherId)) newMap.set(teacherId, new Map())
+        const slots = newMap.get(teacherId)
+        if (!slots.has(timeslotId)) slots.set(timeslotId, [])
 
-        requestAnimationFrame(() => {
-          const w = document.querySelector('#teacher-grid .gridjs-wrapper')
-          if (w) {
-            w.scrollTop = savedScrollTop
-            w.scrollLeft = savedScrollLeft
-          }
+        const studentList = Array.isArray(s.expand?.student)
+          ? s.expand.student
+          : s.expand?.student
+            ? [s.expand.student]
+            : []
+
+        slots.get(timeslotId).push({
+          subject: s.expand?.subject,
+          room: s.expand?.room,
+          students: studentList,
         })
-      } else {
-        gridInstance = new Grid({
-          columns,
-          data,
-          height: 'calc(100vh - 220px)',
-          search: false,
-          sort: false,
-          pagination: false,
-          className: { table: 'w-full border text-xs !border-collapse', th: 'text-center', td: 'text-center' },
-          style: { table: { 'table-layout': 'fixed' } },
-        }).render(document.getElementById('teacher-grid'))
+      }
 
-        await tick()
-        attachScrollSync()
+      scheduleMap = newMap
+
+      // Admin: surface disabled teachers that have bookings today without replacing the full list
+      if (isAdmin) {
+        const disabledWithBookings = cachedTeachers.filter((t) => t.status === 'disabled' && bookedTeacherIds.has(t.id))
+        if (disabledWithBookings.length) {
+          const existingIds = new Set(teachers.map((t) => t.id))
+          const toAdd = disabledWithBookings.filter((t) => !existingIds.has(t.id))
+          if (toAdd.length) teachers = [...teachers, ...toAdd]
+        }
       }
     } catch (err) {
       console.error(err)
-      toast.error('Failed to load teacher schedule')
+      toast.error('Failed to load schedule data')
+    } finally {
+      isRefreshing = false
+    }
+  }
+
+  // Full initial load
+  async function initialLoad() {
+    isLoading = true
+    try {
+      await loadStructure()
+      await loadScheduleData()
     } finally {
       isLoading = false
     }
   }
 
-  function attachScrollSync() {
-    const wrapper = document.querySelector('#teacher-grid .gridjs-wrapper')
-    if (!wrapper || !profileRowEl) return
-    let syncing = false
-    wrapper.addEventListener('scroll', () => {
-      if (syncing) return
-      syncing = true
-      profileRowEl.scrollLeft = wrapper.scrollLeft
-      syncing = false
-    })
-    profileRowEl.addEventListener('scroll', () => {
-      if (syncing) return
-      syncing = true
-      wrapper.scrollLeft = profileRowEl.scrollLeft
-      syncing = false
-    })
-  }
-
   function debounceRefresh() {
     clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(loadTeacherSchedule, 500)
+    debounceTimer = setTimeout(loadScheduleData, 500)
   }
 
-  // --- Navigation ---
   const changeDay = async (days) => {
-    if (isLoading) return
+    if (isRefreshing) return
     const d = new Date(selectedDate)
     d.setDate(d.getDate() + days)
     selectedDate = d.toISOString().split('T')[0]
-    await loadTeacherSchedule()
+    await loadScheduleData()
   }
 
   const onDateChange = async (e) => {
-    if (isLoading) return
+    if (isRefreshing) return
     selectedDate = e.target.value
-    await loadTeacherSchedule()
+    await loadScheduleData()
   }
 
   const goToToday = async () => {
-    if (isLoading || selectedDate === today()) return
+    if (isRefreshing || selectedDate === today()) return
     selectedDate = today()
-    await loadTeacherSchedule()
+    await loadScheduleData()
   }
 
-  // --- Lifecycle ---
   onMount(async () => {
-    await loadStaticData()
-    await loadTeacherSchedule()
+    await initialLoad()
     unsubSchedule = await pb.collection('schedule').subscribe('*', debounceRefresh)
     unsubRoomType = await pb.collection('roomType').subscribe('*', async () => {
-      await loadStaticData()
-      debounceRefresh()
+      await loadStructure()
+      await loadScheduleData()
     })
     unsubTeacher = await pb.collection('teacher').subscribe('*', async () => {
-      await loadStaticData()
-      debounceRefresh()
+      await loadStructure()
+      await loadScheduleData()
     })
   })
 
@@ -297,169 +202,176 @@
     unsubSchedule?.()
     unsubRoomType?.()
     unsubTeacher?.()
-    gridInstance?.destroy()
-    gridInstance = null
   })
-
-  const todayOne = new Date()
-  // 1. Calculate this week's Friday natively
-  // Convert Sunday (0) to 7 so Monday is 1 and Sunday is 7
-  const currentDay = todayOne.getDay() === 0 ? 7 : todayOne.getDay()
-  const distanceToFriday = 5 - currentDay
-
-  const currentFriday = new Date(todayOne)
-  currentFriday.setDate(todayOne.getDate() + distanceToFriday)
-
-  // 2. Format to 'YYYY-MM-DD' manually
-  const year = currentFriday.getFullYear()
-  const month = String(currentFriday.getMonth() + 1).padStart(2, '0')
-  const day = String(currentFriday.getDate()).padStart(2, '0')
-  const maxFridayString = $derived(`${year}-${month}-${day}`)
-
-  // 4. Fallback validation for manual typing
-  function handleInput(event) {
-    const inputVal = event.target.value
-    if (!inputVal) return
-
-    // Compare date strings directly (YYYY-MM-DD compares perfectly alphabetically/chronologically)
-    if (inputVal > maxFridayString) {
-      alert("You cannot select a date past this week's Friday!")
-      selectedDate = maxFridayString // Snap back to max
-    }
-  }
 </script>
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100 min-h-screen">
-  <!-- HEADER -->
-  <div class="mb-3 bg-base-200/60 rounded-xl p-3 shadow-sm">
-    <div class="flex items-center justify-between gap-3 flex-wrap">
-      <!-- PROFILE ROW (scroll-synced with grid) -->
-      <div
-        bind:this={profileRowEl}
-        class="profile-row flex overflow-x-auto items-stretch border border-base-300 rounded-lg bg-base-100"
-      >
-        <!-- Fixed label cell -->
-        <div
-          class="shrink-0 flex items-center justify-center bg-base-200 border-r border-base-300 px-3"
-          style="min-width: 140px;"
-        >
-          <div class="font-bold text-sm text-center">Profile</div>
-        </div>
-        <!-- One card per teacher -->
-        {#each teachers as teacher (teacher.id)}
-          <div
-            class="shrink-0 flex flex-col items-start justify-center text-left px-3 py-2 gap-0.5"
-            style="min-width: 160px;"
-          >
-            <div class="font-bold text-xs">{teacher.name}</div>
-            <div class="font-bold text-xs">
-              Assigned Room: {teacherRoomMap.get(teacher.id) || 'Not assigned'}
-            </div>
-            {#if teacher.status === 'disabled'}
-              <span class="badge badge-error badge-xs mt-1">Disabled</span>
-            {/if}
-          </div>
-        {/each}
-      </div>
-
-      <!-- DATE DISPLAY -->
-      <h3 class="text-lg md:text-xl font-bold text-center flex-1">
-        {formatDateDisplay(selectedDate)}
-      </h3>
-
-      <!-- CONTROLS -->
-      <div class="flex items-center gap-2 justify-end flex-wrap">
-        <button
-          class="btn btn-sm btn-primary btn-outline rounded-full px-4"
-          onclick={goToToday}
-          disabled={isLoading || selectedDate === today()}
-        >
-          Today
-        </button>
-        {#if todayHoliday}
-          <span
-            class="flex items-center gap-2 text-yellow-800 border border-yellow-300 bg-yellow-50 rounded-full px-3 py-1 shadow-sm"
-          >
-            <span>🎉</span>
-            <span class="text-xs font-semibold">{todayHoliday.name}</span>
-          </span>
-        {/if}
-        <div class="join">
-          <button
-            class="join-item btn btn-sm btn-ghost border border-base-300"
-            onclick={() => changeDay(-1)}
-            disabled={isLoading}>&larr;</button
-          >
-          <input
-            type="date"
-            class="join-item input input-bordered input-sm w-auto"
-            value={selectedDate}
-            onchange={onDateChange}
-            disabled={isLoading}
-            max={maxFridayString}
-          />
-          <button
-            class="join-item btn btn-sm btn-ghost border border-base-300"
-            onclick={() => changeDay(1)}
-            disabled={isLoading || selectedDate >= maxFridayString}>&rarr;</button
-          >
-        </div>
-        {#if isLoading}
-          <div class="loading loading-spinner loading-sm"></div>
-        {/if}
-      </div>
+  <!-- INITIAL LOAD -->
+  {#if isLoading}
+    <div class="flex justify-center py-16">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
     </div>
-  </div>
+  {:else if todayHoliday && teachers.length === 0}
+    <div class="flex flex-col items-center justify-center py-20 gap-3 text-center">
+      <span class="text-5xl">🎉</span>
+      <h3 class="text-xl font-bold">{todayHoliday.name}</h3>
+      <p class="text-sm text-base-content/50">No classes scheduled for this holiday.</p>
+    </div>
+  {:else if teachers.length === 0}
+    <div class="flex flex-col items-center justify-center py-20 gap-2">
+      <span class="text-4xl">📅</span>
+      <p class="text-sm text-base-content/50">No active teachers for this date.</p>
+    </div>
+  {:else}
+    <div class="flex flex-col gap-8">
+      {#each teachers as teacher (teacher.id)}
+        {@const slots = scheduleMap.get(teacher.id)}
 
-  <!-- GRID -->
-  <div id="teacher-grid" class="border rounded-xl shadow-sm overflow-hidden"></div>
+        <div class="border-2 border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-sm">
+          <!-- HEADER: holiday left | title center | controls right -->
+          <div class="flex items-center gap-2 px-4 py-4 border-b-2 border-base-300 bg-base-100">
+            <!-- LEFT: holiday badge -->
+            <div class="flex items-center min-w-0 w-48">
+              {#if todayHoliday}
+                <span
+                  class="flex items-center gap-1.5 text-yellow-800 border border-yellow-300 bg-yellow-50 rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap"
+                >
+                  <span>🎉</span>
+                  {todayHoliday.name}
+                </span>
+              {/if}
+            </div>
+
+            <!-- CENTER: title -->
+            <h3 class="flex-1 text-xl font-extrabold tracking-widest text-center whitespace-nowrap">
+              TEACHER'S SCHEDULE
+            </h3>
+
+            <!-- RIGHT: controls -->
+            <div class="flex items-center gap-2 justify-end w-48">
+              <button
+                class="btn btn-xs btn-primary btn-outline rounded-full px-3"
+                onclick={goToToday}
+                disabled={isRefreshing || selectedDate === today()}>Today</button
+              >
+
+              <div class="join">
+                <button
+                  class="join-item btn btn-xs btn-ghost border border-base-300"
+                  onclick={() => changeDay(-1)}
+                  disabled={isRefreshing}>&larr;</button
+                >
+                <input
+                  type="date"
+                  class="join-item input input-bordered input-xs w-32"
+                  value={selectedDate}
+                  onchange={onDateChange}
+                  disabled={isRefreshing}
+                  max={maxFridayString}
+                />
+                <button
+                  class="join-item btn btn-xs btn-ghost border border-base-300"
+                  onclick={() => changeDay(1)}
+                  disabled={isRefreshing || selectedDate >= maxFridayString}>&rarr;</button
+                >
+              </div>
+
+              {#if isRefreshing}
+                <span class="loading loading-spinner loading-xs text-primary"></span>
+              {/if}
+            </div>
+          </div>
+
+          <!-- TEACHER INFO ROW -->
+          <div class="flex flex-col sm:flex-row border-b-2 border-base-300 sm:divide-x-2 sm:divide-base-300">
+            <div class="flex flex-col gap-1 px-4 py-2 flex-1 min-w-0 border-b border-base-300 sm:border-b-0">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-base-content/50">Name:</span>
+              <span class="text-base font-bold truncate">{teacher.name || '—'}</span>
+            </div>
+            <div class="flex flex-col gap-1 px-4 py-2 flex-1 min-w-0 border-b border-base-300 sm:border-b-0">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-base-content/50">Assigned Room:</span>
+              <span class="text-base font-bold truncate">{teacherRoomMap.get(teacher.id) || '—'}</span>
+            </div>
+            <div class="flex flex-col gap-1 px-4 py-2 flex-1 min-w-0 border-b border-base-300 sm:border-b-0">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-base-content/50">Date:</span>
+              <span class="text-base font-bold text-error">{formatDateShort(selectedDate)}</span>
+            </div>
+          </div>
+
+          <!-- STATUS ROW (disabled badge) -->
+          {#if teacher.status === 'disabled'}
+            <div class="flex items-center gap-2 px-4 py-1.5 bg-base-200 border-b border-base-300">
+              <span class="badge badge-error badge-sm">Disabled</span>
+            </div>
+          {/if}
+
+          <!-- SCHEDULE TABLE -->
+          <div class="overflow-x-auto">
+            <table class="table table-xs sm:table-sm w-full min-w-[680px] border-collapse">
+              <colgroup>
+                <col class="w-30" />
+                <col class="w-100" />
+                <col class="w-100" />
+                <col class="w-100" />
+                <col />
+              </colgroup>
+              <thead class="text-center border border-neutral-focus py-3">
+                <tr class="bg-neutral text-neutral-content text-xs tracking-widest">
+                  <th>PERIOD</th>
+                  <th>TIME</th>
+                  <th>CUBICLE / ROOM</th>
+                  <th>SUBJECT</th>
+                  <th>STUDENTS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each cachedTimeslots as ts, i}
+                  {@const entries = slots?.get(ts.id) || []}
+                  <tr class="hover:bg-base-200 transition-colors">
+                    <td class="text-center font-extrabold text-base border border-base-300 bg-base-200">{i + 1}</td>
+                    <td class="text-center font-semibold text-sm border border-base-300 whitespace-nowrap"
+                      >{ts.start} - {ts.end}</td
+                    >
+                    <td class="text-center text-sm border border-base-300">
+                      {#if entries.length}
+                        <div class="flex flex-col gap-0.5">
+                          {#each entries as e}<span>{e.room?.name || '—'}</span>{/each}
+                        </div>
+                      {:else}
+                        <span class="text-base-content/20">—</span>
+                      {/if}
+                    </td>
+                    <td class="text-center text-sm font-semibold border border-base-300">
+                      {#if entries.length}
+                        <div class="flex flex-col gap-0.5">
+                          {#each entries as e}<span>{e.subject?.name || '—'}</span>{/each}
+                        </div>
+                      {:else}
+                        <span class="text-base-content/20">—</span>
+                      {/if}
+                    </td>
+                    <td class="text-center text-sm border border-base-300">
+                      {#if entries.length}
+                        <div class="flex flex-col gap-1 py-1">
+                          {#each entries as e}
+                            <div class="flex flex-wrap justify-center gap-1">
+                              {#each e.students as s}
+                                <span class="font-semibold">{s.englishName || s.name}</span>
+                              {/each}
+                            </div>
+                          {/each}
+                        </div>
+                      {:else}
+                        <span class="text-base-content/20">—</span>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
 </div>
-
-<style>
-  :global(html) {
-    scrollbar-gutter: stable;
-  }
-
-  #teacher-grid :global(.gridjs-wrapper) {
-    max-height: calc(100vh - 220px);
-    overflow: auto;
-    contain: strict;
-  }
-
-  #teacher-grid :global(td) {
-    padding: 0 !important;
-    vertical-align: middle !important;
-  }
-
-  #teacher-grid :global(.gridjs-table td > div) {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    min-height: 65px;
-  }
-
-  #teacher-grid :global(th) {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    box-shadow: 0 1px 0 #ddd;
-    background-color: #484b4f;
-    color: #ffffff;
-    text-align: center;
-    vertical-align: middle;
-  }
-
-  /* Hover effect for cells */
-  #teacher-grid :global(.gridjs-table td:hover > div) {
-    background-color: #d1fae5 !important;
-    transition: background-color 0.2s ease;
-    cursor: pointer;
-  }
-
-  .profile-row {
-    scrollbar-width: none;
-  }
-  .profile-row::-webkit-scrollbar {
-    display: none;
-  }
-</style>

@@ -6,6 +6,7 @@
   let selectedDate = $state(new Date().toISOString().split('T')[0])
   let todayHoliday = $state(null)
   let isLoading = $state(false)
+  let isRefreshing = $state(false)
   let students = $state([])
   let scheduleMap = $state(new Map())
 
@@ -13,7 +14,6 @@
   let debounceTimer = null
 
   let cachedTimeslots = []
-  let cachedStudents = []
   let cachedHolidays = []
 
   const today = () => new Date().toISOString().split('T')[0]
@@ -24,7 +24,8 @@
       .toUpperCase()
   }
 
-  async function loadStaticData() {
+  // Loads timeslots and holidays — rebuilds students[]
+  async function loadStructure() {
     try {
       const [timeslots, holidays] = await Promise.all([
         pb.collection('timeslot').getFullList({ sort: 'start' }),
@@ -32,25 +33,45 @@
       ])
       cachedTimeslots = timeslots
       cachedHolidays = holidays
+
+      const isAdmin = pb.authStore.model?.role === 'admin'
+      const startStr = `${selectedDate} 00:00:00`
+      const endStr = `${selectedDate} 23:59:59`
+
+      let studentFilter = `status != "graduated" && start <= "${endStr}" && end >= "${startStr}"`
+      if (!isAdmin) studentFilter += ` && user = "${pb.authStore.model?.id}"`
+      const fetchedStudents = await pb.collection('student').getFullList({ filter: studentFilter })
+
+      const latestByName = new Map()
+      for (const s of fetchedStudents) {
+        const key = s.englishName?.toLowerCase()
+        if (!key) continue
+        if (!latestByName.has(key) || new Date(s.created) > new Date(latestByName.get(key).created)) {
+          latestByName.set(key, s)
+        }
+      }
+
+      students = [...latestByName.values()].sort((a, b) => {
+        const aIsNew = a.status === 'new' ? 1 : 0
+        const bIsNew = b.status === 'new' ? 1 : 0
+        return aIsNew !== bIsNew ? aIsNew - bIsNew : new Date(a.created) - new Date(b.created)
+      })
     } catch (err) {
       console.error(err)
-      toast.error('Failed to load schedule data')
+      toast.error('Failed to load student data')
     }
   }
 
-  async function loadStudentSchedule() {
-    if (isLoading) return
-    isLoading = true
+  // Only fetches schedules and rebuilds scheduleMap — does NOT touch students[]
+  async function loadScheduleData() {
+    if (isRefreshing) return
+    isRefreshing = true
     try {
       const isAdmin = pb.authStore.model?.role === 'admin'
       const startStr = `${selectedDate} 00:00:00`
       const endStr = `${selectedDate} 23:59:59`
 
       todayHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate) ?? null
-
-      let studentFilter = `status != "graduated" && start <= "${endStr}" && end >= "${startStr}"`
-      if (!isAdmin) studentFilter += ` && user = "${pb.authStore.model?.id}"`
-      cachedStudents = await pb.collection('student').getFullList({ filter: studentFilter })
 
       let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}" && status = "show"`
       if (!isAdmin) scheduleFilter += ` && student.user = "${pb.authStore.model?.id}"`
@@ -88,57 +109,55 @@
         }
       }
       scheduleMap = newMap
-
-      const latestByName = new Map()
-      for (const s of cachedStudents) {
-        const key = s.englishName?.toLowerCase()
-        if (!key) continue
-        if (!latestByName.has(key) || new Date(s.created) > new Date(latestByName.get(key).created)) {
-          latestByName.set(key, s)
-        }
-      }
-
-      students = [...latestByName.values()].sort((a, b) => {
-        const aIsNew = a.status === 'new' ? 1 : 0
-        const bIsNew = b.status === 'new' ? 1 : 0
-        return aIsNew !== bIsNew ? aIsNew - bIsNew : new Date(a.created) - new Date(b.created)
-      })
     } catch (err) {
       console.error(err)
       toast.error('Failed to load student schedule')
+    } finally {
+      isRefreshing = false
+    }
+  }
+
+  async function initialLoad() {
+    isLoading = true
+    try {
+      await loadStructure()
+      await loadScheduleData()
     } finally {
       isLoading = false
     }
   }
 
-  function debounceRefresh() {
+  function debounceRefresh(e) {
     clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(loadStudentSchedule, 500)
+    debounceTimer = setTimeout(loadScheduleData, 500)
+
+    if (e?.action === 'create') toast.success('Schedule created')
+    else if (e?.action === 'update') toast.info('Schedule updated')
+    else if (e?.action === 'delete') toast.warning('Schedule deleted')
   }
 
   const changeDay = async (days) => {
-    if (isLoading) return
+    if (isRefreshing) return
     const d = new Date(selectedDate)
     d.setDate(d.getDate() + days)
     selectedDate = d.toISOString().split('T')[0]
-    await loadStudentSchedule()
+    await loadScheduleData()
   }
 
   const onDateChange = async (e) => {
-    if (isLoading) return
+    if (isRefreshing) return
     selectedDate = e.target.value
-    await loadStudentSchedule()
+    await loadScheduleData()
   }
 
   const goToToday = async () => {
-    if (isLoading || selectedDate === today()) return
+    if (isRefreshing || selectedDate === today()) return
     selectedDate = today()
-    await loadStudentSchedule()
+    await loadScheduleData()
   }
 
   onMount(async () => {
-    await loadStaticData()
-    await loadStudentSchedule()
+    await initialLoad()
     unsubSchedule = await pb.collection('schedule').subscribe('*', debounceRefresh)
   })
 
@@ -149,7 +168,7 @@
 </script>
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100 min-h-screen">
-  <!-- LOADING -->
+  <!-- INITIAL LOAD -->
   {#if isLoading}
     <div class="flex justify-center py-16">
       <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -195,28 +214,32 @@
               <button
                 class="btn btn-xs btn-primary btn-outline rounded-full px-3"
                 onclick={goToToday}
-                disabled={isLoading || selectedDate === today()}>Today</button
+                disabled={isRefreshing || selectedDate === today()}>Today</button
               >
 
               <div class="join">
                 <button
                   class="join-item btn btn-xs btn-ghost border border-base-300"
                   onclick={() => changeDay(-1)}
-                  disabled={isLoading}>&larr;</button
+                  disabled={isRefreshing}>&larr;</button
                 >
                 <input
                   type="date"
                   class="join-item input input-bordered input-xs w-32"
                   value={selectedDate}
                   onchange={onDateChange}
-                  disabled={isLoading}
+                  disabled={isRefreshing}
                 />
                 <button
                   class="join-item btn btn-xs btn-ghost border border-base-300"
                   onclick={() => changeDay(1)}
-                  disabled={isLoading}>&rarr;</button
+                  disabled={isRefreshing}>&rarr;</button
                 >
               </div>
+
+              {#if isRefreshing}
+                <span class="loading loading-spinner loading-xs text-primary"></span>
+              {/if}
             </div>
           </div>
 
@@ -277,7 +300,7 @@
                     <td class="text-center font-semibold text-sm border border-base-300 whitespace-nowrap"
                       >{ts.start} - {ts.end}</td
                     >
-                    <td class="text-center text-sm border border-base-300">
+                    <td class="text-center font-bold text-sm border border-base-300">
                       {#if entries.length}
                         <div class="flex flex-col gap-0.5">
                           {#each entries as e}<span>{e.teacher?.name || '—'}</span>{/each}
@@ -286,7 +309,7 @@
                         <span class="text-base-content/20">—</span>
                       {/if}
                     </td>
-                    <td class="text-center text-sm border border-base-300">
+                    <td class="text-center font-bold text-sm border border-base-300">
                       {#if entries.length}
                         <div class="flex flex-col gap-0.5">
                           {#each entries as e}<span>{e.room?.name || '—'}</span>{/each}
