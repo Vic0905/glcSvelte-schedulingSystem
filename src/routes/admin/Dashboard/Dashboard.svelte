@@ -69,11 +69,16 @@
   }
 
   function getDayClass(day) {
-    if (day === todayDate) return 'bg-sky-600 font-bold text-white dark:bg-sky-500'
     const status = specialDayMap[getDateKey(day)]
-    if (status === 'No Class') return 'bg-secondary text-secondary-content font-medium'
-    if (status === 'Special Class') return 'bg-warning text-warning-content font-medium'
-    if (status === 'Weekend Activity') return 'bg-success text-success-content font-medium'
+    const isToday = day === todayDate
+
+    const todayRing = isToday ? ' ring-2 ring-sky-600 dark:ring-sky-400 ring-offset-1' : ''
+
+    if (status === 'No Class') return `bg-secondary text-secondary-content font-medium${todayRing}`
+    if (status === 'Special Class') return `bg-warning text-warning-content font-medium${todayRing}`
+    if (status === 'Weekend Activity') return `bg-success text-success-content font-medium${todayRing}`
+
+    if (isToday) return 'bg-sky-600 font-bold text-white dark:bg-sky-500'
     return 'opacity-70 hover:bg-current/10'
   }
 </script>
