@@ -126,13 +126,11 @@
 
     isLoading = true
     try {
-      // Fetch all draft records in range
       const records = await pb.collection('schedule').getFullList({
         filter: `start <= "${endStr}" && end >= "${startStr}" && status = "draft"${roomType ? ` && room.roomType = "${roomType}"` : ''}`,
         fields: 'id,start',
       })
 
-      // Filter to records whose start falls within our range
       const toUpdate = records.filter((r) => {
         const recStart = r.start?.split(' ')[0]
         return recStart >= start && recStart <= end
@@ -144,29 +142,13 @@
         return
       }
 
-      // Batch update via PocketBase batch API
-      const batchBody = {
-        requests: toUpdate.map((r) => ({
-          method: 'PATCH',
-          url: `/api/collections/schedule/records/${r.id}`,
-          body: { status: 'show' },
-        })),
+      const chunkSize = 50
+      for (let i = 0; i < toUpdate.length; i += chunkSize) {
+        const chunk = toUpdate.slice(i, i + chunkSize)
+        await Promise.all(chunk.map((r) => pb.collection('schedule').update(r.id, { status: 'show' })))
       }
 
-      const res = await fetch(`${pb.baseUrl}/api/batch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: pb.authStore.token,
-        },
-        body: JSON.stringify(batchBody),
-      })
-
-      if (!res.ok) throw new Error(`Batch failed: ${res.statusText}`)
-
-      // ── Write release log ──────────────────────
       await writeReleaseLog(start, end, toUpdate.length)
-      // ──────────────────────────────────────────
 
       toast.success(`Shown ${toUpdate.length} schedule${toUpdate.length !== 1 ? 's' : ''}.`)
       close()
