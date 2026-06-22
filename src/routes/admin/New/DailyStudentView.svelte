@@ -145,7 +145,7 @@
       // Fetch students active on selected date (same filter as modal)
       cachedStudents = await pb.collection('student').getFullList({
         filter: `status != "graduated" && start <= "${endDateStr}" && end >= "${startDateStr}"`,
-        fields: 'id,name,englishName,course,level,groupName,status,start,created',
+        fields: 'id,name,englishName,course,level,groupName,status,start,created,remarks',
       })
 
       let schedules = await pb.collection('schedule').getFullList({
@@ -246,7 +246,7 @@
           { value: student.englishName || '' },
           { value: student.course || '' },
           { value: student.level || '' },
-          { value: student.groupName || '' },
+          { value: student.remarks || '' },
         ]
 
         for (const ts of cachedTimeslots) {
