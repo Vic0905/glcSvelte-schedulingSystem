@@ -314,6 +314,7 @@
                 <col class="w-100" />
                 <col class="w-100" />
                 <col />
+                <col />
               </colgroup>
               <thead class="text-center border border-neutral-focus py-3">
                 <tr class="bg-neutral text-neutral-content text-xs tracking-widest">
@@ -322,6 +323,7 @@
                   <th>CUBICLE / ROOM</th>
                   <th>SUBJECT</th>
                   <th>STUDENTS</th>
+                  <th>REMARKS</th>
                 </tr>
               </thead>
               <tbody>
@@ -357,6 +359,21 @@
                             <div class="flex flex-wrap justify-center gap-1">
                               {#each e.students as s}
                                 <span class="font-semibold">{s.englishName || s.name}</span>
+                              {/each}
+                            </div>
+                          {/each}
+                        </div>
+                      {:else}
+                        <span class="text-base-content/20">—</span>
+                      {/if}
+                    </td>
+                    <td class="text-center text-sm border border-base-300">
+                      {#if entries.length}
+                        <div class="flex flex-col gap-1 py-1">
+                          {#each entries as e}
+                            <div class="flex flex-wrap justify-center gap-1">
+                              {#each e.students as s}
+                                <span>{s.remarks || '—'}</span>
                               {/each}
                             </div>
                           {/each}
