@@ -114,6 +114,9 @@ export const adminRoutes = {
   '/new/releaselog': wrap({
     asyncComponent: () => import('../routes/admin/New/ReleaseLog.svelte'),
   }),
+  '/new/activitylog': wrap({
+    asyncComponent: () => import('../routes/admin/New/ActivityLog.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),

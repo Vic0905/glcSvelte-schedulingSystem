@@ -162,7 +162,8 @@
     </button>
     {#if openMenus.management}
       <ul class="absolute left-full top-0 text-xs flex flex-row p-2 z-50 whitespace-nowrap">
-        <li><a href="/#/new/releaselog">Release Logs</a></li>
+        <!-- <li><a href="/#/new/releaselog">Release Logs</a></li> -->
+        <li><a href="/#/new/activitylog">Activity Logs</a></li>
         <li><a href="/#/new/holidaypicker">Special Days</a></li>
         <li><a href="/#/management/subject">Subject</a></li>
         <li><a href="/#/new/room">Room</a></li>

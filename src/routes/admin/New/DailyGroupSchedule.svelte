@@ -8,6 +8,7 @@
   import CopyModal from './copyModal.svelte'
   import ShowStatusModal from './showStatusModal.svelte'
   import ClearDayModal from './clearDayModal.svelte'
+  // import ImportModal from './importModal.svelte'
 
   // ─────────────────────────────────────────────
   // SECTION 1: Non-reactive module-level state
@@ -26,6 +27,7 @@
   let showStatusModal = $state()
   let clearDayModal = $state()
   let copyModal = $state()
+  let importModal = $state()
   let selectedDate = $state(getInitialDate())
   let todayHoliday = $state(null)
   let isLoading = $state(false)
@@ -579,6 +581,7 @@
         Clear
       </button>
       <button class="btn btn-outline btn-sm" onclick={() => showStatusModal.open()} disabled={isLoading}> Show </button>
+      <!-- <button class="btn btn-outline btn-sm" onclick={() => importModal.open()} disabled={isLoading}> Import </button> -->
       <button class="btn btn-outline btn-sm" onclick={() => copyModal.open()} disabled={isLoading}> Copy </button>
       <button
         class="btn btn-outline btn-sm"
@@ -609,6 +612,14 @@
 <CopyModal bind:this={copyModal} sourceDate={selectedDate} onrefresh={refreshWithScroll} />
 <ShowStatusModal bind:this={showStatusModal} sourceDate={selectedDate} roomType="grp" onrefresh={refreshWithScroll} />
 <ClearDayModal bind:this={clearDayModal} {selectedDate} onrefresh={refreshAfterClearDay} />
+
+<!-- <ImportModal
+  bind:this={importModal}
+  {selectedDate}
+  onrefresh={refreshWithScroll}
+  roomType="grp"
+  defaultRoomFilter="^[GH]\d+$"
+/> -->
 
 <!-- ─────────────────────────────────────────── -->
 <!-- STYLES                                      -->

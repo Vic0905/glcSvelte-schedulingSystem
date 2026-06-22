@@ -150,6 +150,24 @@
 
       await writeReleaseLog(start, end, toUpdate.length)
 
+      // ─── ACTIVITY LOG ───
+      try {
+        await pb.collection('activityLog').create({
+          action: 'show',
+          performedBy: pb.authStore.record?.id,
+          targetId: `${start}_${end}`,
+          details: {
+            rangeStart: start,
+            rangeEnd: end,
+            roomType: roomType || 'all',
+            count: toUpdate.length,
+          },
+        })
+      } catch (err) {
+        console.error('Failed to write activity log:', err)
+      }
+      // ────────────────────
+
       toast.success(`Shown ${toUpdate.length} schedule${toUpdate.length !== 1 ? 's' : ''}.`)
       close()
       onrefresh?.()

@@ -75,6 +75,19 @@
   // API HELPERS
   // ═══════════════════════════════════
 
+  async function logActivity(action, details = {}) {
+    try {
+      await pb.collection('activityLog').create({
+        action: action,
+        performedBy: pb.authStore.model?.id,
+        targetId: form.id || 'bulk-schedule', // Uses the schedule ID if available
+        details: details,
+      })
+    } catch (err) {
+      console.error('Failed to write activity log:', err)
+    }
+  }
+
   async function loadDropdowns() {
     try {
       const [subj, stu, teach, room, ts] = await Promise.all([
@@ -355,6 +368,22 @@
       })
 
       await batch.send()
+      // --- ADDED LOGGING HERE ---
+      await logActivity(form.mode === 'edit' ? 'update' : 'add', {
+        subject: form.subject?.name,
+        teacherName: form.teacher?.name,
+        roomName: form.room?.name,
+        timeslot: form.timeslot ? `${form.timeslot.start} - ${form.timeslot.end}` : null,
+        rangeStart: selectedStudents[0]?.startDate || null, // ← add these
+        rangeEnd: selectedStudents[selectedStudents.length - 1]?.endDate || null,
+        students: selectedStudents.map((s) => ({
+          id: s.id,
+          name: students.find((st) => st.id === s.id)?.englishName || s.id,
+          start: s.startDate,
+          end: s.endDate,
+        })),
+      })
+      // --------------------------
       toast.success(form.mode === 'edit' ? 'Schedule updated' : 'Schedule created')
       onrefresh?.()
       close()
@@ -445,6 +474,16 @@
     loading = true
     try {
       await removeStudentForDay(studentId, targetDate)
+      // --- ADDED LOGGING HERE ---
+      await logActivity('update', {
+        type: 'skip_day',
+        studentId: studentId,
+        skippedDate: targetDate,
+        teacherName: form.teacher?.name,
+        timeslot: form.timeslot ? `${form.timeslot.start} - ${form.timeslot.end}` : null,
+        roomName: form.room?.name,
+      })
+      // --------------------------
       skipDates[studentId] = ''
       toast.success(`Removed student from ${targetDate}`)
       onrefresh?.()
@@ -476,6 +515,20 @@
       const batch = pb.createBatch()
       records.forEach((rec) => batch.collection('schedule').delete(rec.id))
       await batch.send()
+
+      // --- ADDED LOGGING HERE ---
+      await logActivity('delete', {
+        roomName: form.room?.name,
+        teacherName: form.teacher?.name,
+        timeslot: form.timeslot ? `${form.timeslot.start} - ${form.timeslot.end}` : null,
+        rangeStart: originalState.startDate, // ← was 'startDate', now consistent
+        rangeEnd: originalState.startDate, // ← same since delete targets one start date
+        students: selectedStudents.map((s) => ({
+          id: s.id,
+          name: students.find((st) => st.id === s.id)?.englishName || s.id,
+        })),
+      })
+      // --------------------------
 
       toast.success('Schedule deleted')
       onrefresh?.()
