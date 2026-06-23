@@ -7,11 +7,17 @@
   // ─────────────────────────────────────────────
   let logs = $state([])
   let isLoading = $state(false)
-  let filterAction = $state('') // '' | 'add' | 'update' | 'delete'
+  let filterAction = $state('')
   let searchQuery = $state('')
 
+  // Pagination
+  let currentPage = $state(1)
+  let totalPages = $state(1)
+  let totalItems = $state(0)
+  const PER_PAGE = 15
+
   // ─────────────────────────────────────────────
-  // DERIVED: filtered logs for display
+  // DERIVED
   // ─────────────────────────────────────────────
   let filteredLogs = $derived.by(() => {
     if (!searchQuery.trim()) return logs
@@ -24,7 +30,7 @@
   })
 
   // ─────────────────────────────────────────────
-  // HELPERS
+  // HELPERS (unchanged)
   // ─────────────────────────────────────────────
   function formatDateTime(dateStr) {
     if (!dateStr) return '—'
@@ -49,41 +55,36 @@
 
   function formatDetails(log) {
     if (!log.details) return '—'
-
     const { teacherName, roomName, timeslot, students, rangeStart, rangeEnd, roomType, count } = log.details
-
     const studentList = Array.isArray(students) ? students.map((s) => s.name).join(', ') : 'No students'
     const range = rangeStart && rangeEnd ? (rangeStart === rangeEnd ? rangeStart : `${rangeStart} → ${rangeEnd}`) : '?'
 
-    if (log.action === 'show') {
-      return `Date: ${range} | Room type: ${roomType || 'all'} | Count: ${count}`
-    }
-
-    if (log.action === 'delete') {
+    if (log.action === 'show') return `Date: ${range} | Room type: ${roomType || 'all'} | Count: ${count}`
+    if (log.action === 'delete')
       return `Date: ${range} | Timeslot: ${timeslot || '?'} | Room: ${roomName || '?'} | Teacher: ${teacherName || '?'} | Students: ${studentList}`
-    }
-
-    if (log.details.type === 'skip_day') {
+    if (log.details.type === 'skip_day')
       return `Skipped student: ${log.details.studentId} on ${log.details.skippedDate}`
-    }
-
-    // add / update
     return `Date: ${range} | Timeslot: ${timeslot || '?'} | Room: ${roomName || '?'} | Teacher: ${teacherName || '?'} | Students: ${studentList}`
   }
 
   // ─────────────────────────────────────────────
   // DATA FETCHING
   // ─────────────────────────────────────────────
-  async function fetchLogs() {
+  async function fetchLogs(page = 1) {
     isLoading = true
     try {
       const filter = filterAction ? `action = "${filterAction}"` : ''
 
-      logs = await pb.collection('activityLog').getFullList({
+      const result = await pb.collection('activityLog').getList(page, PER_PAGE, {
         ...(filter ? { filter } : {}),
         sort: '-created',
         expand: 'performedBy',
       })
+
+      logs = result.items
+      currentPage = result.page
+      totalPages = result.totalPages
+      totalItems = result.totalItems
     } catch (err) {
       console.error('Failed to fetch activity logs:', err)
       logs = []
@@ -92,15 +93,18 @@
     }
   }
 
-  // Refetch when the filter changes
+  function goToPage(page) {
+    if (page < 1 || page > totalPages) return
+    fetchLogs(page)
+  }
+
+  // Reset to page 1 when filter changes
   $effect(() => {
     filterAction
-    fetchLogs()
+    fetchLogs(1)
   })
 
-  onMount(() => {
-    fetchLogs()
-  })
+  onMount(() => fetchLogs(1))
 </script>
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100 min-h-screen">
@@ -152,7 +156,9 @@
         <tbody>
           {#each filteredLogs as log, i (log.id)}
             <tr>
-              <td class="text-center text-base-content/40 font-mono text-xs">{filteredLogs.length - i}</td>
+              <td class="text-center text-base-content/40 font-mono text-xs">
+                {totalItems - (currentPage - 1) * PER_PAGE - i}
+              </td>
               <td>
                 <span class="font-medium">
                   {log.expand?.performedBy?.name || log.expand?.performedBy?.username || 'System'}
@@ -176,6 +182,50 @@
           {/each}
         </tbody>
       </table>
+
+      <!-- After </table>, inside the overflow-x-auto div or below it -->
+
+      <!-- Pagination footer -->
+      <div class="flex items-center justify-between px-4 py-3 border-t border-base-300 text-sm text-base-content/60">
+        <span>
+          {#if totalItems > 0}
+            Showing {(currentPage - 1) * PER_PAGE + 1}–{Math.min(currentPage * PER_PAGE, totalItems)} of {totalItems}
+          {:else}
+            No results
+          {/if}
+        </span>
+
+        <div class="join">
+          <button class="join-item btn btn-sm" onclick={() => goToPage(1)} disabled={currentPage === 1}>«</button>
+          <button class="join-item btn btn-sm" onclick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}
+            >‹</button
+          >
+
+          {#each Array.from({ length: totalPages }, (_, i) => i + 1) as page}
+            {#if totalPages <= 7 || page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1}
+              <button
+                class="join-item btn btn-sm {page === currentPage ? 'btn-neutral' : ''}"
+                onclick={() => goToPage(page)}
+              >
+                {page}
+              </button>
+            {:else if Math.abs(page - currentPage) === 2}
+              <button class="join-item btn btn-sm btn-disabled">…</button>
+            {/if}
+          {/each}
+
+          <button
+            class="join-item btn btn-sm"
+            onclick={() => goToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}>›</button
+          >
+          <button
+            class="join-item btn btn-sm"
+            onclick={() => goToPage(totalPages)}
+            disabled={currentPage === totalPages}>»</button
+          >
+        </div>
+      </div>
     </div>
   {/if}
 </div>
