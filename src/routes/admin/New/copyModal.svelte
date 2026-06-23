@@ -8,17 +8,20 @@
   let isSaving = $state(false)
   let targetStart = $state('')
   let targetEnd = $state('')
-  let summary = $state(null) // { extended, created, skipped }
+  let summary = $state(null) // { extended, created, skipped, graduated }
+  let preview = $state(null) // { graduatedStudents: [...] } — shown before confirm
 
   export function open() {
     targetStart = ''
     targetEnd = ''
     summary = null
+    preview = null
     isOpen = true
   }
 
   export function close() {
     isOpen = false
+    preview = null
   }
 
   function dayBefore(dateStr) {
@@ -31,27 +34,22 @@
     return `${dateStr} 00:00:00.000Z`
   }
 
-  /** Stable key for matching records across queries */
   function makeKey(teacherId, subjectId, roomId, timeslotId, studentId) {
     return `${teacherId}|${subjectId}|${roomId}|${timeslotId}|${studentId ?? ''}`
   }
 
-  async function save() {
+  async function previewCopy() {
     if (!targetStart || !targetEnd) return toast.error('Please select a target date range')
     if (targetEnd < targetStart) return toast.error('End date must be on or after start date')
     if (targetStart <= sourceDate && sourceDate <= targetEnd)
       return toast.error('Target range cannot overlap the source date')
 
     isSaving = true
-    summary = null
+    preview = null
 
     try {
       const sourceDateStr = toDbDate(sourceDate)
-      const adjacentEndStr = toDbDate(dayBefore(targetStart))
 
-      // ── 3 bulk fetches, no per-record queries ──────────────────────────────
-
-      // 1. All schedules on the source date
       const sourceSchedules = await pb.collection('schedule').getFullList({
         filter: `start <= "${sourceDateStr}" && end >= "${sourceDateStr}"`,
         expand: 'teacher,subject,room,timeslot,student',
@@ -63,45 +61,82 @@
         return
       }
 
-      // Collect unique teacher/timeslot IDs from source records
+      // Collect unique student IDs that have a student relation
+      const studentIds = [...new Set(sourceSchedules.map((s) => s.expand?.student?.id || s.student).filter(Boolean))]
+
+      // Fetch student records to check end dates
+      // Replace the studentIds fetch block with this
+      let studentMap = new Map()
+      if (studentIds.length) {
+        const studentRecords = await pb.collection('student').getFullList({
+          fields: 'id,englishName,end',
+        })
+        for (const s of studentRecords) studentMap.set(s.id, s)
+      }
+
+      // Identify graduated students (end < targetStart)
+      const graduatedStudents = []
+      for (const id of studentIds) {
+        const student = studentMap.get(id)
+        if (!student) continue
+        const studentEnd = student.end?.split(' ')[0]
+        if (studentEnd && studentEnd < targetStart) {
+          graduatedStudents.push({ id, name: student.englishName, end: studentEnd })
+        }
+      }
+
+      preview = { graduatedStudents, sourceSchedules, studentMap }
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to load preview')
+    } finally {
+      isSaving = false
+    }
+  }
+
+  async function save() {
+    if (!preview) return
+
+    isSaving = true
+    summary = null
+
+    const { sourceSchedules, studentMap } = preview
+    const graduatedIds = new Set(preview.graduatedStudents.map((s) => s.id))
+
+    try {
+      const sourceDateStr = toDbDate(sourceDate)
+      const adjacentEndStr = toDbDate(dayBefore(targetStart))
+
       const teacherIds = [...new Set(sourceSchedules.map((s) => s.expand?.teacher?.id || s.teacher).filter(Boolean))]
       const timeslotIds = [...new Set(sourceSchedules.map((s) => s.expand?.timeslot?.id || s.timeslot).filter(Boolean))]
 
-      // PocketBase does not support `field in (...)` — build OR chains instead
       const teacherFilter = teacherIds.map((id) => `teacher = "${id}"`).join(' || ')
       const timeslotFilter = timeslotIds.map((id) => `timeslot = "${id}"`).join(' || ')
 
-      // 2. Fetch all records with adjacent end (candidates for extend)
       const adjacentRecords = await pb.collection('schedule').getFullList({
         filter: `end = "${adjacentEndStr}" && (${teacherFilter}) && (${timeslotFilter})`,
       })
 
-      // 3. Fetch all records sharing teacher+timeslot (for skip detection)
       const existingRecords = await pb.collection('schedule').getFullList({
         filter: `start <= "${toDbDate(targetEnd)}" && end >= "${toDbDate(targetStart)}" && (${teacherFilter}) && (${timeslotFilter})`,
       })
 
-      // ── Build lookup maps ──────────────────────────────────────────────────
-
-      // key → adjacent record (extendable)
       const adjacentMap = new Map()
       for (const r of adjacentRecords) {
         const key = makeKey(r.teacher, r.subject, r.room, r.timeslot, r.student || null)
         adjacentMap.set(key, r)
       }
 
-      // key → any existing record (for skip detection)
       const existingMap = new Map()
       for (const r of existingRecords) {
         const key = makeKey(r.teacher, r.subject, r.room, r.timeslot, r.student || null)
         existingMap.set(key, r)
       }
 
-      // ── Build batch from in-memory lookups ────────────────────────────────
-
       let extended = 0
       let created = 0
       let skipped = 0
+      let graduated = 0
 
       const batch = pb.createBatch()
 
@@ -117,16 +152,19 @@
           continue
         }
 
+        // Skip graduated students
+        if (studentId && graduatedIds.has(studentId)) {
+          graduated++
+          continue
+        }
+
         const key = makeKey(teacherId, subjectId, roomId, timeslotId, studentId)
 
         const adjacent = adjacentMap.get(key)
         if (adjacent) {
-          batch.collection('schedule').update(adjacent.id, {
-            end: toDbDate(targetEnd),
-          })
+          batch.collection('schedule').update(adjacent.id, { end: toDbDate(targetEnd) })
           extended++
         } else if (existingMap.has(key)) {
-          // Exists but not adjacent — skip
           skipped++
         } else {
           batch.collection('schedule').create({
@@ -144,8 +182,11 @@
 
       await batch.send()
 
-      summary = { extended, created, skipped }
-      toast.success(`Done — ${extended} extended, ${created} created, ${skipped} skipped`)
+      summary = { extended, created, skipped, graduated }
+      preview = null
+      toast.success(
+        `Done — ${extended} extended, ${created} created, ${skipped} skipped, ${graduated} graduated skipped`
+      )
       onrefresh?.()
     } catch (err) {
       console.error(err)
@@ -172,35 +213,89 @@
         <button class="btn btn-ghost btn-sm btn-circle" onclick={close}>✕</button>
       </div>
 
-      <div class="text-sm text-base-content/60">
-        Copying all schedules from
-        <span class="font-semibold text-base-content">{sourceDate}</span>
-        to the selected range.
-      </div>
+      {#if !preview}
+        <!-- ── Step 1: date inputs ── -->
+        <div class="text-sm text-base-content/60">
+          Copying all schedules from
+          <span class="font-semibold text-base-content">{sourceDate}</span>
+          to the selected range.
+        </div>
 
-      <div class="flex flex-col gap-3">
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium">Target Start</span>
-          <input
-            type="date"
-            class="input input-bordered input-sm"
-            bind:value={targetStart}
-            min={sourceDate}
-            disabled={isSaving}
-          />
-        </label>
+        <div class="flex flex-col gap-3">
+          <label class="flex flex-col gap-1">
+            <span class="text-sm font-medium">Target Start</span>
+            <input
+              type="date"
+              class="input input-bordered input-sm"
+              bind:value={targetStart}
+              min={sourceDate}
+              disabled={isSaving}
+            />
+          </label>
 
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium">Target End</span>
-          <input
-            type="date"
-            class="input input-bordered input-sm"
-            bind:value={targetEnd}
-            min={targetStart || sourceDate}
-            disabled={isSaving}
-          />
-        </label>
-      </div>
+          <label class="flex flex-col gap-1">
+            <span class="text-sm font-medium">Target End</span>
+            <input
+              type="date"
+              class="input input-bordered input-sm"
+              bind:value={targetEnd}
+              min={targetStart || sourceDate}
+              disabled={isSaving}
+            />
+          </label>
+        </div>
+
+        <div class="flex gap-2 justify-end">
+          <button class="btn btn-ghost btn-sm" onclick={close} disabled={isSaving}>Cancel</button>
+          <button
+            class="btn btn-primary btn-sm"
+            onclick={previewCopy}
+            disabled={isSaving || !targetStart || !targetEnd}
+          >
+            {#if isSaving}
+              <span class="loading loading-spinner loading-xs"></span>
+            {/if}
+            Preview
+          </button>
+        </div>
+      {:else}
+        <!-- ── Step 2: preview ── -->
+        <div class="text-sm text-base-content/60">
+          Copying schedules from
+          <span class="font-semibold text-base-content">{sourceDate}</span>
+          → <span class="font-semibold text-base-content">{targetStart}</span>
+          to <span class="font-semibold text-base-content">{targetEnd}</span>
+        </div>
+
+        {#if preview.graduatedStudents.length}
+          <div class="flex flex-col gap-2">
+            <div class="text-sm font-medium text-warning">
+              {preview.graduatedStudents.length} graduated student{preview.graduatedStudents.length > 1 ? 's' : ''} will
+              be skipped
+            </div>
+            <div class="rounded-lg bg-base-200 p-3 flex flex-col gap-1 max-h-48 overflow-y-auto">
+              {#each preview.graduatedStudents as s}
+                <div class="flex justify-between text-xs">
+                  <span class="font-medium">{s.name}</span>
+                  <span class="text-base-content/50">ended {s.end}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {:else}
+          <div class="text-sm text-success">No graduated students detected — all schedules will be copied.</div>
+        {/if}
+
+        <div class="flex gap-2 justify-end">
+          <button class="btn btn-ghost btn-sm" onclick={() => (preview = null)} disabled={isSaving}>Back</button>
+          <button class="btn btn-primary btn-sm" onclick={save} disabled={isSaving}>
+            {#if isSaving}
+              <span class="loading loading-spinner loading-xs"></span>
+            {/if}
+            Confirm Copy
+          </button>
+        </div>
+      {/if}
 
       {#if summary}
         <div class="rounded-lg bg-base-200 p-3 text-sm flex flex-col gap-1">
@@ -216,18 +311,12 @@
             <span class="text-warning font-medium">Skipped</span>
             <span class="font-bold">{summary.skipped}</span>
           </div>
+          <div class="flex justify-between">
+            <span class="text-error font-medium">Graduated (skipped)</span>
+            <span class="font-bold">{summary.graduated}</span>
+          </div>
         </div>
       {/if}
-
-      <div class="flex gap-2 justify-end">
-        <button class="btn btn-ghost btn-sm" onclick={close} disabled={isSaving}>Cancel</button>
-        <button class="btn btn-primary btn-sm" onclick={save} disabled={isSaving || !targetStart || !targetEnd}>
-          {#if isSaving}
-            <span class="loading loading-spinner loading-xs"></span>
-          {/if}
-          Copy
-        </button>
-      </div>
     </div>
   </div>
 {/if}

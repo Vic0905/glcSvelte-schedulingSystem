@@ -250,7 +250,7 @@
             <!-- RIGHT: controls -->
             <div class="flex items-center gap-2 justify-end w-48">
               <button
-                class="btn btn-xs btn-primary btn-outline rounded-full px-3"
+                class="btn btn-xs btn-ghost btn-outline rounded-full px-3"
                 onclick={goToToday}
                 disabled={isRefreshing || selectedDate === today()}>Today</button
               >
@@ -317,10 +317,10 @@
                 <col />
               </colgroup>
               <thead class="text-center border border-neutral-focus py-3">
-                <tr class="bg-neutral text-neutral-content text-xs tracking-widest">
+                <tr class="bg-neutral text-neutral-content text-xs tracking-widest h-10">
                   <th>PERIOD</th>
                   <th>TIME</th>
-                  <th>CUBICLE / ROOM</th>
+                  <th>ROOM</th>
                   <th>SUBJECT</th>
                   <th>STUDENTS</th>
                   <th>REMARKS</th>
@@ -329,7 +329,7 @@
               <tbody>
                 {#each cachedTimeslots as ts, i}
                   {@const entries = slots?.get(ts.id) || []}
-                  <tr class="hover:bg-base-200 transition-colors">
+                  <tr class="{i % 2 === 0 ? 'bg-base-100' : 'bg-base-200'} hover:bg-base-300 transition-colors">
                     <td class="text-center font-extrabold text-base border border-base-300 bg-base-200">{i + 1}</td>
                     <td class="text-center font-semibold text-sm border border-base-300 whitespace-nowrap"
                       >{ts.start} - {ts.end}</td
@@ -340,7 +340,7 @@
                           {#each entries as e}<span>{e.room?.name || '—'}</span>{/each}
                         </div>
                       {:else}
-                        <span class="text-base-content/20">—</span>
+                        <span>—</span>
                       {/if}
                     </td>
                     <td class="text-center text-sm font-semibold border border-base-300">
@@ -349,7 +349,7 @@
                           {#each entries as e}<span>{e.subject?.name || '—'}</span>{/each}
                         </div>
                       {:else}
-                        <span class="text-base-content/20">—</span>
+                        <span>—</span>
                       {/if}
                     </td>
                     <td class="text-center text-sm border border-base-300">
@@ -364,7 +364,7 @@
                           {/each}
                         </div>
                       {:else}
-                        <span class="text-base-content/20">—</span>
+                        <span>—</span>
                       {/if}
                     </td>
                     <td class="text-center text-sm border border-base-300">
@@ -379,7 +379,7 @@
                           {/each}
                         </div>
                       {:else}
-                        <span class="text-base-content/20">—</span>
+                        <span>—</span>
                       {/if}
                     </td>
                   </tr>

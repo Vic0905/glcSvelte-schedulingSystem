@@ -26,7 +26,7 @@
   function getWeekRangeDisplay(startDate) {
     const start = new Date(startDate)
     const end = new Date(start)
-    end.setDate(start.getDate() + 4) // Monday + 4 days = Friday
+    end.setDate(start.getDate() + 6) // Monday + 4 days = Friday
 
     const opts = { month: 'long', day: 'numeric' }
 
@@ -44,7 +44,7 @@
     try {
       const startD = new Date(weekStart)
       const endD = new Date(startD)
-      endD.setDate(startD.getDate() + 4)
+      endD.setDate(startD.getDate() + 6)
 
       const startDateStr = `${weekStart} 00:00:00`
       const endDateStr = `${endD.toISOString().split('T')[0]} 23:59:59`
@@ -82,7 +82,7 @@
           data,
           search: true,
           sort: true,
-          pagination: { limit: 20 },
+          pagination: { limit: 10 },
           className: {
             table: 'w-full border text-sm',
             th: 'text-center',

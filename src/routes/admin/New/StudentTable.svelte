@@ -284,7 +284,7 @@
                 <col />
               </colgroup>
               <thead class="text-center border border-neutral-focus py-3">
-                <tr class="bg-neutral text-neutral-content text-xs tracking-widest">
+                <tr class="bg-neutral text-neutral-content text-xs tracking-widest h-10">
                   <th>PERIOD</th>
                   <th>TIME</th>
                   <th>TEACHER</th>
@@ -295,7 +295,7 @@
               <tbody>
                 {#each cachedTimeslots as ts, i}
                   {@const entries = slots?.get(ts.id) || []}
-                  <tr class="hover:bg-base-200 transition-colors">
+                  <tr class="{i % 2 === 0 ? 'bg-base-100' : 'bg-base-200'} hover:bg-base-300 transition-colors">
                     <td class="text-center font-extrabold text-base border border-base-300 bg-base-200">{i + 1}</td>
                     <td class="text-center font-semibold text-sm border border-base-300 whitespace-nowrap"
                       >{ts.start} - {ts.end}</td

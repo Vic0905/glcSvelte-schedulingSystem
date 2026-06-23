@@ -85,21 +85,28 @@
   }
 
   const formatCell = (cell) => {
-    if (!cell?.length) {
-      return h('div', { class: 'w-full h-full min-h-[55px] flex items-center justify-center text-gray-400' }, '—')
+    const bgClass = cell?.bgClass || 'bg-white'
+    const items = cell?.schedules || []
+
+    if (!items.length) {
+      return h(
+        'div',
+        { class: `w-full h-full min-h-[55px] flex items-center justify-center text-gray-400 ${bgClass}` },
+        '—'
+      )
     }
 
     return h(
       'div',
-      { class: 'flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full' },
-      cell.map((item) =>
+      { class: `flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full ${bgClass}` },
+      items.map((item) =>
         h(
           'div',
           { class: 'flex flex-col gap-1 w-full' },
           [
-            h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full text-center' }, [
+            h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-500 mb-1 pb-1 w-full text-center' }, [
               h('div', {}, item.subject?.name || 'No Subject'),
-              h('div', { class: 'text-[10px] uppercase mt-1 text-neutral-500' }, item.teacher?.name || 'No Teacher'),
+              h('div', { class: 'text-[10px] uppercase mt-1' }, item.teacher?.name || 'No Teacher'),
             ]),
             item.room &&
               h(
@@ -238,20 +245,21 @@
         return new Date(a.created) - new Date(b.created)
       })
 
-      const data = students.map((student) => {
+      const data = students.map((student, i) => {
+        const bgClass = i % 2 === 0 ? 'bg-white text-neutral-800' : 'bg-neutral-100 text-neutral-800'
         const studentSlots = scheduleMap.get(student.id) || new Map()
 
         const row = [
-          { value: student.name, status: student.status },
-          { value: student.englishName || '' },
-          { value: student.course || '' },
-          { value: student.level || '' },
-          { value: student.remarks || '' },
+          { value: student.name, status: student.status, bgClass },
+          { value: student.englishName || '', bgClass },
+          { value: student.course || '', bgClass },
+          { value: student.level || '', bgClass },
+          { value: student.remarks || '', bgClass },
         ]
 
         for (const ts of cachedTimeslots) {
           const schedules = studentSlots.get(ts.id) || []
-          row.push(schedules)
+          row.push({ schedules, bgClass })
         }
         return row
       })
@@ -269,7 +277,9 @@
             const badge = statusBadges[cell.status]
             return h(
               'div',
-              { class: 'w-full h-full p-2 flex flex-col items-center justify-center text-center min-h-[65px]' },
+              {
+                class: `w-full h-full p-2 flex flex-col items-center justify-center text-center min-h-[65px] ${cell.bgClass || 'bg-white'}`,
+              },
               [
                 h('span', { class: 'font-bold text-neutral-700' }, cell.value),
                 badge && h('span', { class: `badge ${badge.class} badge-xs mt-1` }, badge.label),
@@ -284,7 +294,7 @@
             h(
               'div',
               {
-                class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center',
+                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center ${cell.bgClass || 'bg-white'}`,
               },
               cell.value
             ),
@@ -296,7 +306,7 @@
             h(
               'div',
               {
-                class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center',
+                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center ${cell.bgClass || 'bg-white'}`,
               },
               cell.value
             ),
@@ -308,7 +318,7 @@
             h(
               'div',
               {
-                class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center',
+                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center ${cell.bgClass || 'bg-white'}`,
               },
               cell.value
             ),
@@ -320,7 +330,7 @@
             h(
               'div',
               {
-                class: 'w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center',
+                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center ${cell.bgClass || 'bg-white'}`,
               },
               cell.value
             ),
@@ -458,27 +468,27 @@
   #student-grid :global(.gridjs-wrapper) {
     max-height: calc(100vh - 220px);
     overflow: auto;
-    contain: strict;
+    contain: layout;
+    will-change: scroll-position;
   }
 
   /* Fix padding and alignment */
   #student-grid :global(td) {
     padding: 0 !important;
-    vertical-align: middle !important;
+    vertical-align: stretch;
   }
-
+  /* 
   #student-grid :global(.gridjs-table td > div) {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
     min-height: 65px;
-  }
+  } */
 
   #student-grid :global(th) {
     position: sticky;
     top: 0;
     z-index: 20;
-    box-shadow: 0 1px 0 #ddd;
     background-color: #484b4f;
     color: #ffffff;
     text-align: center;
@@ -491,13 +501,10 @@
     position: sticky;
     left: 0;
     z-index: 15;
-    box-shadow: inset -1px 0 0 #ddd;
-    background-color: white;
   }
 
   #student-grid :global(th:nth-child(1)) {
     z-index: 25;
-    background-color: #484b4f;
   }
 
   #student-grid :global(th:nth-child(2)),
@@ -505,13 +512,10 @@
     position: sticky;
     left: 180px;
     z-index: 10;
-    box-shadow: inset -1px 0 0 #ddd;
-    background-color: white;
   }
 
   #student-grid :global(th:nth-child(2)) {
     z-index: 25;
-    background-color: #484b4f;
   }
 
   #student-grid :global(th:nth-child(3)),
@@ -519,13 +523,10 @@
     position: sticky;
     left: 320px;
     z-index: 10;
-    box-shadow: inset -1px 0 0 #ddd;
-    background-color: white;
   }
 
   #student-grid :global(th:nth-child(3)) {
     z-index: 25;
-    background-color: #484b4f;
   }
 
   #student-grid :global(th:nth-child(4)),
@@ -533,13 +534,10 @@
     position: sticky;
     left: 440px;
     z-index: 10;
-    box-shadow: inset -1px 0 0 #ddd;
-    background-color: white;
   }
 
   #student-grid :global(th:nth-child(4)) {
     z-index: 25;
-    background-color: #484b4f;
   }
 
   #student-grid :global(th:nth-child(5)),
@@ -547,19 +545,15 @@
     position: sticky;
     left: 560px;
     z-index: 10;
-    box-shadow: inset -1px 0 0 #ddd;
-    background-color: white;
   }
 
   #student-grid :global(th:nth-child(5)) {
     z-index: 25;
-    background-color: #484b4f;
   }
 
-  /* Hover effect for cells */
-  #student-grid :global(.gridjs-table td:hover > div) {
-    background-color: #d1fae5 !important;
-    transition: background-color 0.2s ease;
-    cursor: pointer;
+  /* stronger table border */
+  #student-grid :global(.gridjs-table td),
+  #student-grid :global(.gridjs-table th) {
+    outline: 1px solid #e2e6eb;
   }
 </style>

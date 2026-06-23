@@ -200,17 +200,22 @@
     const subjectName = first.subject?.name || 'No Subject'
     const teacherName = first.teacher?.name || 'No Teacher'
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
+    const status = first.status
+    const statusClass = status === 'show' ? 'badge-success' : 'badge-warning'
 
     return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ${bgClass}` }, [
-      h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full' }, [
+      h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-500 mb-1 pb-1 w-full' }, [
         h('div', {}, subjectName),
         h('div', { class: 'text-[10px] uppercase mt-1' }, teacherName),
       ]),
       h(
         'div',
-        { class: 'flex flex-wrap justify-center gap-1' },
+        { class: 'flex flex-wrap justify-center gap-1 flex-1' },
         allStudents.map((name) => h('span', { class: 'badge badge-ghost badge-xs whitespace-nowrap' }, name))
       ),
+      h('div', { class: 'flex justify-start w-full mt-1' }, [
+        h('span', { class: `badge badge-xs ${statusClass}` }, status),
+      ]),
     ])
   }
 
@@ -232,6 +237,7 @@
         teacher: s.expand?.teacher,
         start: s.start?.split(' ')[0],
         end: s.end?.split(' ')[0],
+        status: s.status,
       }))
   }
 
@@ -641,13 +647,15 @@
   #daily-grid :global(.gridjs-wrapper) {
     max-height: calc(100vh - 220px);
     overflow: auto;
-    contain: strict;
+    contain: layout;
+    will-change: scroll-position;
   }
 
   /* Let cell background divs fill the full td area */
   #daily-grid :global(td) {
     padding: 0 !important;
     vertical-align: stretch;
+    position: relative;
   }
 
   /* Sticky header row */
@@ -655,7 +663,6 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    box-shadow: 0 1px 0 #ddd;
     background-color: #484b4f;
     color: #ffffff;
   }
@@ -666,7 +673,6 @@
     position: sticky;
     left: 0;
     z-index: 15;
-    box-shadow: inset -1px 0 0 #ddd;
   }
 
   #daily-grid :global(th:nth-child(1)) {
@@ -679,10 +685,21 @@
     position: sticky;
     left: 120px;
     z-index: 10;
-    box-shadow: inset -1px 0 0 #ddd;
   }
 
   #daily-grid :global(th:nth-child(2)) {
     z-index: 25;
+  }
+
+  #daily-grid :global(td:nth-child(1) div),
+  #daily-grid :global(td:nth-child(2) div) {
+    font-size: 0.85rem;
+    font-weight: bold;
+  }
+
+  /* stronger table border */
+  #daily-grid :global(.gridjs-table td),
+  #daily-grid :global(.gridjs-table th) {
+    outline: 1px solid #e2e6eb;
   }
 </style>

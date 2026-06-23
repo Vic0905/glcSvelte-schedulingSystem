@@ -391,7 +391,9 @@
     for (let i = 0; i < records.length; i += CREATE_BATCH_SIZE) {
       const batch = records.slice(i, i + CREATE_BATCH_SIZE)
       const settled = await Promise.allSettled(
-        batch.map(({ _roomName, _studentName, ...rec }) => pb.collection(COLLECTIONS.schedule).create(rec))
+        batch.map(({ _roomName, _studentName, ...rec }) =>
+          pb.collection(COLLECTIONS.schedule).create({ ...rec, status: 'draft' })
+        )
       )
       settled.forEach((res, idx) => {
         if (res.status === 'fulfilled') {

@@ -187,6 +187,53 @@
     rangeEnd
     fetchPreview()
   })
+
+  // ─────────────────────────────────────────────
+  // One-time fix: set status = 'draft' on records missing it
+  // ─────────────────────────────────────────────
+  // let isFixing = $state(false)
+  // let fixResult = $state(null) // { updated: number, errors: number }
+
+  // async function handleFixMissingStatus() {
+  //   isFixing = true
+  //   fixResult = null
+  //   try {
+  //     const records = await pb.collection('schedule').getFullList({
+  //       filter: 'status = ""',
+  //       fields: 'id',
+  //     })
+
+  //     if (!records.length) {
+  //       toast.info('No records with missing status found.')
+  //       isFixing = false
+  //       return
+  //     }
+
+  //     let updated = 0
+  //     let errors = 0
+  //     const chunkSize = 50
+  //     for (let i = 0; i < records.length; i += chunkSize) {
+  //       const chunk = records.slice(i, i + chunkSize)
+  //       const settled = await Promise.allSettled(
+  //         chunk.map((r) => pb.collection('schedule').update(r.id, { status: 'draft' }))
+  //       )
+  //       settled.forEach((res) => {
+  //         if (res.status === 'fulfilled') updated++
+  //         else errors++
+  //       })
+  //     }
+
+  //     fixResult = { updated, errors }
+  //     toast.success(`Fixed ${updated} record${updated !== 1 ? 's' : ''} → draft.`)
+  //     fetchPreview()
+  //     onrefresh?.()
+  //   } catch (err) {
+  //     console.error(err)
+  //     toast.error('Fix failed.')
+  //   } finally {
+  //     isFixing = false
+  //   }
+  // }
 </script>
 
 <dialog bind:this={dialog} class="modal">
@@ -263,6 +310,20 @@
       Only schedules whose <strong>start date</strong> falls within the selected range will be shown. Records already
       set to <strong>show</strong> are not affected.
     </p>
+
+    <!-- Fix missing status -->
+    <!-- <div class="border border-base-300 rounded-lg p-3 mb-4 text-sm">
+      <p class="text-base-content/70 mb-2 text-xs">
+        One-time fix: set <code>status = draft</code> on all schedule records that have no status set.
+      </p>
+      <button class="btn btn-sm btn-warning" onclick={handleFixMissingStatus} disabled={isFixing || isLoading}>
+        {#if isFixing}<span class="loading loading-spinner loading-xs"></span>{/if}
+        Fix Missing Status → Draft
+      </button>
+      {#if fixResult}
+        <p class="mt-2 text-xs text-success">Updated: {fixResult.updated} &nbsp;|&nbsp; Errors: {fixResult.errors}</p>
+      {/if}
+    </div> -->
 
     <!-- Actions -->
     <div class="modal-action mt-0">

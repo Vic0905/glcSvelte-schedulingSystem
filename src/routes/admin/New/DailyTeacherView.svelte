@@ -104,9 +104,9 @@
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
 
     return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ${bgClass}` }, [
-      h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-300 mb-1 pb-1 w-full' }, [
+      h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-500 mb-1 pb-1 w-full' }, [
         h('div', {}, subjectName),
-        h('div', { class: 'text-[10px] uppercase mt-1 text-neutral-500' }, roomName),
+        h('div', { class: 'text-[10px] uppercase mt-1' }, roomName),
       ]),
       h(
         'div',
@@ -212,8 +212,8 @@
         })
 
       // Build grid data: rows = teachers, columns = teacher name, room, then timeslots
-      const data = teachers.map((teacher) => {
-        const bgClass = 'bg-white text-neutral-800'
+      const data = teachers.map((teacher, i) => {
+        const bgClass = i % 2 === 0 ? 'bg-white text-neutral-800' : 'bg-neutral-100 text-neutral-800'
 
         const row = [
           { value: teacher.name, id: teacher.id, status: teacher.status, bgClass },
@@ -434,7 +434,8 @@
   #teacher-grid :global(.gridjs-wrapper) {
     max-height: calc(100vh - 220px);
     overflow: auto;
-    contain: strict;
+    contain: layout;
+    will-change: scroll-position;
   }
 
   /* Zero out padding on td to let background divs fill full width/height completely */
@@ -447,7 +448,6 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    box-shadow: 0 1px 0 #ddd;
     background-color: #484b4f;
     color: #ffffff;
   }
@@ -458,11 +458,6 @@
     position: sticky;
     left: 0;
     z-index: 15;
-    box-shadow: inset -1px 0 0 #ddd;
-  }
-
-  #teacher-grid :global(td:nth-child(1)) {
-    background-color: white;
   }
 
   #teacher-grid :global(th:nth-child(1)) {
@@ -475,11 +470,6 @@
     position: sticky;
     left: 150px;
     z-index: 10;
-    box-shadow: inset -1px 0 0 #ddd;
-  }
-
-  #teacher-grid :global(td:nth-child(2)) {
-    background-color: white;
   }
 
   #teacher-grid :global(th:nth-child(2)) {
@@ -491,5 +481,11 @@
     background-color: #d1fae5 !important;
     transition: background-color 0.2s ease;
     cursor: pointer;
+  }
+
+  /* stronger table border */
+  #teacher-grid :global(.gridjs-table td),
+  #teacher-grid :global(.gridjs-table th) {
+    outline: 1px solid #e2e6eb;
   }
 </style>
