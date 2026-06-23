@@ -104,7 +104,7 @@
           'div',
           { class: 'flex flex-col gap-1 w-full' },
           [
-            h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-500 mb-1 pb-1 w-full text-center' }, [
+            h('div', { class: 'font-bold text-neutral-900 border-b border-neutral-500 mb-1 pb-1 w-full text-center' }, [
               h('div', {}, item.subject?.name || 'No Subject'),
               h('div', { class: 'text-[10px] uppercase mt-1' }, item.teacher?.name || 'No Teacher'),
             ]),
@@ -112,7 +112,7 @@
               h(
                 'div',
                 { class: 'flex justify-center' },
-                h('span', { class: 'badge badge-ghost badge-xs whitespace-nowrap' }, item.room.name)
+                h('span', { class: 'badge badge-ghost badge-xs font-semibold whitespace-nowrap' }, item.room.name)
               ),
           ].filter(Boolean)
         )

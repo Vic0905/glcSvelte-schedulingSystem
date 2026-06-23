@@ -204,14 +204,16 @@
     const statusClass = status === 'show' ? 'badge-success' : 'badge-warning'
 
     return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ${bgClass}` }, [
-      h('div', { class: 'font-bold text-neutral-700 border-b border-neutral-500 mb-1 pb-1 w-full' }, [
+      h('div', { class: 'font-bold text-neutral-900 border-b border-neutral-500 mb-1 pb-1 w-full' }, [
         h('div', {}, subjectName),
         h('div', { class: 'text-[10px] uppercase mt-1' }, teacherName),
       ]),
       h(
         'div',
         { class: 'flex flex-wrap justify-center gap-1 flex-1' },
-        allStudents.map((name) => h('span', { class: 'badge badge-ghost badge-xs whitespace-nowrap' }, name))
+        allStudents.map((name) =>
+          h('span', { class: 'badge badge-ghost font-semibold badge-xs whitespace-nowrap' }, name)
+        )
       ),
       h('div', { class: 'flex justify-start w-full mt-1' }, [
         h('span', { class: `badge badge-xs ${statusClass}` }, status),

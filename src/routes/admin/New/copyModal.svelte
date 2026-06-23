@@ -104,31 +104,32 @@
     const graduatedIds = new Set(preview.graduatedStudents.map((s) => s.id))
 
     try {
-      const sourceDateStr = toDbDate(sourceDate)
       const adjacentEndStr = toDbDate(dayBefore(targetStart))
 
-      const teacherIds = [...new Set(sourceSchedules.map((s) => s.expand?.teacher?.id || s.teacher).filter(Boolean))]
-      const timeslotIds = [...new Set(sourceSchedules.map((s) => s.expand?.timeslot?.id || s.timeslot).filter(Boolean))]
+      // ── Fetch adjacent + existing WITHOUT teacher/timeslot filters ──
+      const [adjacentRecords, existingRecords] = await Promise.all([
+        pb.collection('schedule').getFullList({
+          filter: `end = "${adjacentEndStr}"`,
+        }),
+        pb.collection('schedule').getFullList({
+          filter: `start <= "${toDbDate(targetEnd)}" && end >= "${toDbDate(targetStart)}"`,
+        }),
+      ])
 
-      const teacherFilter = teacherIds.map((id) => `teacher = "${id}"`).join(' || ')
-      const timeslotFilter = timeslotIds.map((id) => `timeslot = "${id}"`).join(' || ')
-
-      const adjacentRecords = await pb.collection('schedule').getFullList({
-        filter: `end = "${adjacentEndStr}" && (${teacherFilter}) && (${timeslotFilter})`,
-      })
-
-      const existingRecords = await pb.collection('schedule').getFullList({
-        filter: `start <= "${toDbDate(targetEnd)}" && end >= "${toDbDate(targetStart)}" && (${teacherFilter}) && (${timeslotFilter})`,
-      })
+      // Build sets of teacher/timeslot IDs from source to narrow in-memory
+      const teacherIds = new Set(sourceSchedules.map((s) => s.expand?.teacher?.id || s.teacher).filter(Boolean))
+      const timeslotIds = new Set(sourceSchedules.map((s) => s.expand?.timeslot?.id || s.timeslot).filter(Boolean))
 
       const adjacentMap = new Map()
       for (const r of adjacentRecords) {
+        if (!teacherIds.has(r.teacher) || !timeslotIds.has(r.timeslot)) continue
         const key = makeKey(r.teacher, r.subject, r.room, r.timeslot, r.student || null)
         adjacentMap.set(key, r)
       }
 
       const existingMap = new Map()
       for (const r of existingRecords) {
+        if (!teacherIds.has(r.teacher) || !timeslotIds.has(r.timeslot)) continue
         const key = makeKey(r.teacher, r.subject, r.room, r.timeslot, r.student || null)
         existingMap.set(key, r)
       }
@@ -138,7 +139,7 @@
       let skipped = 0
       let graduated = 0
 
-      const batch = pb.createBatch()
+      const batchOps = []
 
       for (const src of sourceSchedules) {
         const teacherId = src.expand?.teacher?.id || src.teacher
@@ -162,26 +163,38 @@
 
         const adjacent = adjacentMap.get(key)
         if (adjacent) {
-          batch.collection('schedule').update(adjacent.id, { end: toDbDate(targetEnd) })
+          batchOps.push({ type: 'update', id: adjacent.id, data: { end: toDbDate(targetEnd) } })
           extended++
         } else if (existingMap.has(key)) {
           skipped++
         } else {
-          batch.collection('schedule').create({
-            teacher: teacherId,
-            subject: subjectId,
-            room: roomId,
-            timeslot: timeslotId,
-            student: studentId,
-            start: toDbDate(targetStart),
-            end: toDbDate(targetEnd),
-            status: 'draft',
+          batchOps.push({
+            type: 'create',
+            data: {
+              teacher: teacherId,
+              subject: subjectId,
+              room: roomId,
+              timeslot: timeslotId,
+              student: studentId,
+              start: toDbDate(targetStart),
+              end: toDbDate(targetEnd),
+              status: 'draft',
+            },
           })
           created++
         }
       }
 
-      await batch.send()
+      // Send in chunks of 50
+      for (let i = 0; i < batchOps.length; i += 50) {
+        const chunk = batchOps.slice(i, i + 50)
+        const b = pb.createBatch()
+        for (const op of chunk) {
+          if (op.type === 'update') b.collection('schedule').update(op.id, op.data)
+          else b.collection('schedule').create(op.data)
+        }
+        await b.send()
+      }
 
       summary = { extended, created, skipped, graduated }
       preview = null
