@@ -267,12 +267,11 @@
                   value={selectedDate}
                   onchange={onDateChange}
                   disabled={isRefreshing}
-                  max={maxFridayString}
                 />
                 <button
                   class="join-item btn btn-xs btn-ghost border border-base-300"
                   onclick={() => changeDay(1)}
-                  disabled={isRefreshing || selectedDate >= maxFridayString}>&rarr;</button
+                  disabled={isRefreshing}>&rarr;</button
                 >
               </div>
 
