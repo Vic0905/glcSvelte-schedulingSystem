@@ -8,7 +8,7 @@
   let isSaving = $state(false)
   let targetStart = $state('')
   let targetEnd = $state('')
-  let summary = $state(null) // { extended, created, skipped, graduated }
+  let summary = $state(null) // { created, skipped, graduated }
   let preview = $state(null) // { graduatedStudents: [...] } — shown before confirm
 
   export function open() {
@@ -22,12 +22,6 @@
   export function close() {
     isOpen = false
     preview = null
-  }
-
-  function dayBefore(dateStr) {
-    const d = new Date(dateStr)
-    d.setDate(d.getDate() - 1)
-    return d.toISOString().split('T')[0]
   }
 
   function toDbDate(dateStr) {
@@ -65,7 +59,6 @@
       const studentIds = [...new Set(sourceSchedules.map((s) => s.expand?.student?.id || s.student).filter(Boolean))]
 
       // Fetch student records to check end dates
-      // Replace the studentIds fetch block with this
       let studentMap = new Map()
       if (studentIds.length) {
         const studentRecords = await pb.collection('student').getFullList({
@@ -100,32 +93,18 @@
     isSaving = true
     summary = null
 
-    const { sourceSchedules, studentMap } = preview
+    const { sourceSchedules } = preview
     const graduatedIds = new Set(preview.graduatedStudents.map((s) => s.id))
 
     try {
-      const adjacentEndStr = toDbDate(dayBefore(targetStart))
-
-      // ── Fetch adjacent + existing WITHOUT teacher/timeslot filters ──
-      const [adjacentRecords, existingRecords] = await Promise.all([
-        pb.collection('schedule').getFullList({
-          filter: `end = "${adjacentEndStr}"`,
-        }),
-        pb.collection('schedule').getFullList({
-          filter: `start <= "${toDbDate(targetEnd)}" && end >= "${toDbDate(targetStart)}"`,
-        }),
-      ])
+      // ── Fetch existing records in the target range WITHOUT teacher/timeslot filters ──
+      const existingRecords = await pb.collection('schedule').getFullList({
+        filter: `start <= "${toDbDate(targetEnd)}" && end >= "${toDbDate(targetStart)}"`,
+      })
 
       // Build sets of teacher/timeslot IDs from source to narrow in-memory
       const teacherIds = new Set(sourceSchedules.map((s) => s.expand?.teacher?.id || s.teacher).filter(Boolean))
       const timeslotIds = new Set(sourceSchedules.map((s) => s.expand?.timeslot?.id || s.timeslot).filter(Boolean))
-
-      const adjacentMap = new Map()
-      for (const r of adjacentRecords) {
-        if (!teacherIds.has(r.teacher) || !timeslotIds.has(r.timeslot)) continue
-        const key = makeKey(r.teacher, r.subject, r.room, r.timeslot, r.student || null)
-        adjacentMap.set(key, r)
-      }
 
       const existingMap = new Map()
       for (const r of existingRecords) {
@@ -134,7 +113,6 @@
         existingMap.set(key, r)
       }
 
-      let extended = 0
       let created = 0
       let skipped = 0
       let graduated = 0
@@ -161,11 +139,9 @@
 
         const key = makeKey(teacherId, subjectId, roomId, timeslotId, studentId)
 
-        const adjacent = adjacentMap.get(key)
-        if (adjacent) {
-          batchOps.push({ type: 'update', id: adjacent.id, data: { end: toDbDate(targetEnd) } })
-          extended++
-        } else if (existingMap.has(key)) {
+        if (existingMap.has(key)) {
+          // A schedule already covers this teacher/subject/room/timeslot/student combo
+          // in the target range — never mutate an existing record's status/date span.
           skipped++
         } else {
           batchOps.push({
@@ -190,17 +166,14 @@
         const chunk = batchOps.slice(i, i + 50)
         const b = pb.createBatch()
         for (const op of chunk) {
-          if (op.type === 'update') b.collection('schedule').update(op.id, op.data)
-          else b.collection('schedule').create(op.data)
+          b.collection('schedule').create(op.data)
         }
         await b.send()
       }
 
-      summary = { extended, created, skipped, graduated }
+      summary = { created, skipped, graduated }
       preview = null
-      toast.success(
-        `Done — ${extended} extended, ${created} created, ${skipped} skipped, ${graduated} graduated skipped`
-      )
+      toast.success(`Done — ${created} created, ${skipped} skipped, ${graduated} graduated skipped`)
       onrefresh?.()
     } catch (err) {
       console.error(err)
@@ -313,10 +286,6 @@
 
       {#if summary}
         <div class="rounded-lg bg-base-200 p-3 text-sm flex flex-col gap-1">
-          <div class="flex justify-between">
-            <span class="text-success font-medium">Extended</span>
-            <span class="font-bold">{summary.extended}</span>
-          </div>
           <div class="flex justify-between">
             <span class="text-info font-medium">Created</span>
             <span class="font-bold">{summary.created}</span>
