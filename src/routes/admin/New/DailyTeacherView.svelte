@@ -381,7 +381,11 @@
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">Teacher Daily View</h2>
-    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
+    <div class="w-6 h-6 flex items-center justify-center">
+      {#if isLoading}
+        <div class="loading loading-spinner loading-sm"></div>
+      {/if}
+    </div>
   </div>
 
   <div class="mb-2 grid grid-cols-3 items-center">

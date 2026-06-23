@@ -573,9 +573,11 @@
   <!-- Header -->
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">Daily MTM Schedule</h2>
-    {#if isLoading}
-      <div class="loading loading-spinner loading-sm"></div>
-    {/if}
+    <div class="w-6 h-6 flex items-center justify-center">
+      {#if isLoading}
+        <div class="loading loading-spinner loading-sm"></div>
+      {/if}
+    </div>
   </div>
 
   <!-- Date bar -->
@@ -712,6 +714,6 @@
   /* stronger table border */
   #daily-grid :global(.gridjs-table td),
   #daily-grid :global(.gridjs-table th) {
-    outline: 1px solid #e2e6eb;
+    outline: 1px solid #b4bdc7;
   }
 </style>

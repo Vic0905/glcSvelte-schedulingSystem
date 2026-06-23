@@ -152,7 +152,7 @@
       // Fetch students active on selected date (same filter as modal)
       cachedStudents = await pb.collection('student').getFullList({
         filter: `status != "graduated" && start <= "${endDateStr}" && end >= "${startDateStr}"`,
-        fields: 'id,name,englishName,course,level,groupName,status,start,created,remarks',
+        fields: 'id,studentId,name,englishName,course,level,groupName,status,start,created,remarks',
       })
 
       let schedules = await pb.collection('schedule').getFullList({
@@ -242,7 +242,7 @@
         const aIsNew = a.status === 'new' ? 1 : 0
         const bIsNew = b.status === 'new' ? 1 : 0
         if (aIsNew !== bIsNew) return aIsNew - bIsNew
-        return new Date(a.created) - new Date(b.created)
+        return (a.studentId || '').localeCompare(b.studentId || '')
       })
 
       const data = students.map((student, i) => {
@@ -415,7 +415,11 @@
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <h2 class="text-center flex-1">Student Daily View</h2>
-    {#if isLoading}<div class="loading loading-spinner loading-sm"></div>{/if}
+    <div class="w-6 h-6 flex items-center justify-center">
+      {#if isLoading}
+        <div class="loading loading-spinner loading-sm"></div>
+      {/if}
+    </div>
   </div>
 
   <div class="mb-2 grid grid-cols-3 items-center">
