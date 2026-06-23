@@ -175,6 +175,7 @@
             student: studentId,
             start: toDbDate(targetStart),
             end: toDbDate(targetEnd),
+            status: 'draft',
           })
           created++
         }
