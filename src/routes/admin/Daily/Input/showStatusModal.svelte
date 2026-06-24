@@ -1,6 +1,6 @@
 <script>
-  import { pb } from '../../../lib/Pocketbase.svelte'
   import { toast } from 'svelte-sonner'
+  import { pb } from '../../../../lib/Pocketbase.svelte'
 
   // ─────────────────────────────────────────────
   // Props
@@ -70,19 +70,14 @@
     const endStr = `${end} 23:59:59`
 
     try {
-      const records = await pb.collection('schedule').getFullList({
-        filter: `start <= "${endStr}" && end >= "${startStr}"${roomType ? ` && room.roomType = "${roomType}"` : ''}`,
-        fields: 'id,status,start,end',
-      })
-
-      const inRange = records.filter((r) => {
-        const recStart = r.start?.split(' ')[0]
-        return recStart >= start && recStart <= end
+      const records = await pb.collection('dailySchedule').getFullList({
+        filter: `date >= "${startStr}" && date <= "${endStr}"${roomType ? ` && room.roomType = "${roomType}"` : ''}`,
+        fields: 'id,status,date',
       })
 
       preview = {
-        draft: inRange.filter((r) => r.status === 'draft').length,
-        show: inRange.filter((r) => r.status === 'show').length,
+        draft: records.filter((r) => r.status === 'draft').length,
+        show: records.filter((r) => r.status === 'show').length,
       }
     } catch (err) {
       console.error(err)
@@ -133,14 +128,9 @@
 
     isLoading = true
     try {
-      const records = await pb.collection('schedule').getFullList({
-        filter: `start <= "${endStr}" && end >= "${startStr}" && status = "${fromStatus}"${roomType ? ` && room.roomType = "${roomType}"` : ''}`,
-        fields: 'id,start',
-      })
-
-      const toUpdate = records.filter((r) => {
-        const recStart = r.start?.split(' ')[0]
-        return recStart >= start && recStart <= end
+      const toUpdate = await pb.collection('dailySchedule').getFullList({
+        filter: `date >= "${startStr}" && date <= "${endStr}" && status = "${fromStatus}"${roomType ? ` && room.roomType = "${roomType}"` : ''}`,
+        fields: 'id,date',
       })
 
       if (!toUpdate.length) {
@@ -152,7 +142,7 @@
       const chunkSize = 50
       for (let i = 0; i < toUpdate.length; i += chunkSize) {
         const chunk = toUpdate.slice(i, i + chunkSize)
-        await Promise.all(chunk.map((r) => pb.collection('schedule').update(r.id, { status: toStatus })))
+        await Promise.all(chunk.map((r) => pb.collection('dailySchedule').update(r.id, { status: toStatus })))
       }
 
       if (action === 'show') {
@@ -297,10 +287,10 @@
     <!-- Info note -->
     <p class="text-xs text-base-content/50 mb-4">
       {#if action === 'show'}
-        Only <strong>draft</strong> schedules whose start date falls within the selected range will be moved to
+        Only <strong>draft</strong> schedules whose date falls within the selected range will be moved to
         <strong>show</strong>.
       {:else}
-        Only <strong>shown</strong> schedules whose start date falls within the selected range will be reverted to
+        Only <strong>shown</strong> schedules whose date falls within the selected range will be reverted to
         <strong>draft</strong>. Use this to undo a mistaken release.
       {/if}
     </p>

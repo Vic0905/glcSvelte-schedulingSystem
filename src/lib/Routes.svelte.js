@@ -117,6 +117,18 @@ export const adminRoutes = {
   '/new/activitylog': wrap({
     asyncComponent: () => import('../routes/admin/New/ActivityLog.svelte'),
   }),
+  '/daily/input/mtmschedule': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Input/MtmSchedule.svelte'),
+  }),
+  '/daily/input/grpschedule': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Input/GrpSchedule.svelte'),
+  }),
+  '/daily/views/teacherview': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/views/TeacherView.svelte'),
+  }),
+  '/daily/views/studentview': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/views/StudentView.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),
