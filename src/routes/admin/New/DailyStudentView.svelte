@@ -106,13 +106,13 @@
           [
             h('div', { class: 'font-bold text-neutral-900 border-b border-neutral-500 mb-1 pb-1 w-full text-center' }, [
               h('div', {}, item.subject?.name || 'No Subject'),
-              h('div', { class: 'text-[10px] uppercase mt-1' }, item.teacher?.name || 'No Teacher'),
+              h('div', { class: 'text-xs uppercase mt-1' }, item.teacher?.name || 'No Teacher'),
             ]),
             item.room &&
               h(
                 'div',
                 { class: 'flex justify-center' },
-                h('span', { class: 'badge badge-ghost badge-xs font-semibold whitespace-nowrap' }, item.room.name)
+                h('span', { class: 'text-xs font-bold whitespace-nowrap' }, item.room.name)
               ),
           ].filter(Boolean)
         )
@@ -294,7 +294,7 @@
             h(
               'div',
               {
-                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center ${cell.bgClass || 'bg-white'}`,
+                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-center ${cell.bgClass || 'bg-white'}`,
               },
               cell.value
             ),
@@ -306,7 +306,7 @@
             h(
               'div',
               {
-                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center ${cell.bgClass || 'bg-white'}`,
+                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-center ${cell.bgClass || 'bg-white'}`,
               },
               cell.value
             ),
@@ -318,7 +318,7 @@
             h(
               'div',
               {
-                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center ${cell.bgClass || 'bg-white'}`,
+                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-center ${cell.bgClass || 'bg-white'}`,
               },
               cell.value
             ),
@@ -330,7 +330,7 @@
             h(
               'div',
               {
-                class: `w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center ${cell.bgClass || 'bg-white'}`,
+                class: `w-full h-full p-2 flex items-center justify-center font-bold text-center ${cell.bgClass || 'bg-white'}`,
               },
               cell.value
             ),
@@ -361,8 +361,18 @@
         gridInstance = new Grid({
           columns,
           data,
+          fixedHeader: true,
           height: 'calc(100vh - 220px)',
-          search: false,
+          search: {
+            selector: (cell) => {
+              if (!cell || typeof cell !== 'object') return String(cell ?? '')
+              if ('value' in cell) return cell.value ?? ''
+              if (!cell.schedules?.length) return ''
+              return cell.schedules
+                .flatMap((s) => [s.subject?.name ?? '', s.teacher?.name ?? '', s.room?.name ?? ''])
+                .join(' ')
+            },
+          },
           sort: false,
           pagination: false,
           className: {
@@ -461,7 +471,7 @@
     </div>
   </div>
 
-  <div id="student-grid" class="border rounded-lg"></div>
+  <div id="student-grid" class="rounded-md"></div>
 </div>
 
 <style>
@@ -493,7 +503,7 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    background-color: #484b4f;
+    background-color: #434446;
     color: #ffffff;
     text-align: center;
     vertical-align: middle;
@@ -555,9 +565,19 @@
     z-index: 25;
   }
 
+  /* font bold for teacher and room td */
+  #student-grid :global(td:nth-child(1) div),
+  #student-grid :global(td:nth-child(2) div),
+  #student-grid :global(td:nth-child(3) div),
+  #student-grid :global(td:nth-child(4) div),
+  #student-grid :global(td:nth-child(55) div) {
+    font-size: 0.85rem;
+    font-weight: bold;
+  }
+
   /* stronger table border */
   #student-grid :global(.gridjs-table td),
   #student-grid :global(.gridjs-table th) {
-    outline: 1px solid #e2e6eb;
+    outline: 1px solid #434446;
   }
 </style>

@@ -247,11 +247,10 @@
             let grpCount = 0
             for (const ts of cachedTimeslots) {
               const entries = scheduleMap.get(`${cell.id}-${ts.id}`) || []
-              for (const entry of entries) {
-                const roomName = (entry.roomName || '').toUpperCase()
-                if (roomName.startsWith('A') || roomName.startsWith('ST') || roomName.startsWith('B')) mtmCount++
-                else if (roomName.startsWith('G') || roomName.startsWith('H')) grpCount++
-              }
+              if (!entries.length) continue
+              const roomName = (entries[0].roomName || '').toUpperCase()
+              if (roomName.startsWith('A') || roomName.startsWith('ST') || roomName.startsWith('B')) mtmCount++
+              else if (roomName.startsWith('G') || roomName.startsWith('H')) grpCount++
             }
 
             return h(
@@ -322,6 +321,28 @@
         gridInstance = new Grid({
           columns,
           data,
+          search: {
+            selector: (cell) => {
+              if (!cell || typeof cell !== 'object') return String(cell ?? '')
+
+              // Teacher / Room columns → use the `.value` property
+              if ('value' in cell) return cell.value ?? ''
+
+              // Separator rows → skip
+              if (cell.isSeparator) return ''
+
+              // Schedule cells → build a searchable string from all relevant fields
+              if (!cell.schedules?.length) return ''
+
+              const first = cell.schedules[0]
+              const parts = [
+                first.subject?.name ?? '',
+                first.teacher?.name ?? '',
+                ...cell.schedules.flatMap((s) => s.students.map((std) => std.name)),
+              ]
+              return parts.join(' ')
+            },
+          },
           height: 'calc(100vh - 220px)',
           className: {
             table: 'w-full border text-xs !border-collapse',
@@ -492,6 +513,6 @@
   /* stronger table border */
   #teacher-grid :global(.gridjs-table td),
   #teacher-grid :global(.gridjs-table th) {
-    outline: 1px solid #e2e6eb;
+    outline: 1px solid #434446;
   }
 </style>

@@ -19,6 +19,7 @@
   let teachers = $state([])
   let rooms = $state([])
   let timeslots = $state([])
+  let customSchedules = $state([])
 
   // Form
   let form = $state({
@@ -28,6 +29,7 @@
     teacher: null,
     room: null,
     timeslot: null,
+    customSchedules: null,
     startDate: null,
     endDate: null,
   })
@@ -90,7 +92,7 @@
 
   async function loadDropdowns() {
     try {
-      const [subj, stu, teach, room, ts] = await Promise.all([
+      const [subj, stu, teach, room, ts, cs] = await Promise.all([
         pb.collection('subject').getFullList({ sort: 'name' }),
         pb.collection('student').getFullList({
           sort: 'englishName',
@@ -102,12 +104,14 @@
         }),
         pb.collection('roomType').getFullList({ sort: 'name' }),
         pb.collection('timeslot').getFullList({ sort: 'start' }),
+        pb.collection('customSchedule').getFullList({ sort: 'name' }),
       ])
       subjects = subj
       students = stu
       teachers = teach
       rooms = room
       timeslots = ts
+      customSchedules = cs
     } catch {
       toast.error('Failed to load dropdown options')
     }
@@ -138,6 +142,7 @@
       teacher: findById(teachers, existing?.teacher?.id || data.teacher?.id),
       room: findById(rooms, existing?.roomId || data.room?.id),
       timeslot: findById(timeslots, existing?.timeslotId || data.timeslot?.id),
+      customSchedule: findById(customSchedules, existing?.customSchedule?.id || existing?.customScheduleId),
       startDate: data.startDate,
       endDate: data.endDate,
     }
@@ -364,6 +369,7 @@
           start: `${startDate} 00:00:00.000Z`,
           end: `${endDate} 00:00:00.000Z`,
           status: 'draft',
+          customSchedule: form.customSchedule?.id ?? null,
         })
       })
 
@@ -596,6 +602,19 @@
                 {/each}
               </select>
             </div>
+          </div>
+          <div class="form-control">
+            <label class="label text-xs font-bold" for="customSchedule">Custom Schedule</label>
+            <select
+              id="customSchedule"
+              bind:value={form.customSchedule}
+              class="select select-bordered select-sm w-full"
+            >
+              <option value={null}>Select Custom Schedule</option>
+              {#each customSchedules as cs (cs.id)}
+                <option value={cs}>{cs.name}</option>
+              {/each}
+            </select>
           </div>
         </div>
 

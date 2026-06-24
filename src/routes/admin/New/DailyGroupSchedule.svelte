@@ -204,16 +204,14 @@
     const statusClass = status === 'show' ? 'badge-success' : 'badge-warning'
 
     return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ${bgClass}` }, [
-      h('div', { class: 'font-bold text-neutral-900 border-b border-neutral-500 mb-1 pb-1 w-full' }, [
+      h('div', { class: 'font-bold border-b border-neutral-500 mb-1 pb-1 w-full' }, [
         h('div', {}, subjectName),
-        h('div', { class: 'text-[10px] uppercase mt-1' }, teacherName),
+        h('div', { class: 'text-xs font-bold uppercase mt-1' }, teacherName),
       ]),
       h(
         'div',
         { class: 'flex flex-wrap justify-center gap-1 flex-1' },
-        allStudents.map((name) =>
-          h('span', { class: 'badge badge-ghost font-semibold badge-xs whitespace-nowrap' }, name)
-        )
+        allStudents.map((name) => h('span', { class: 'badge badge-ghost font-bold badge-xs whitespace-nowrap' }, name))
       ),
       h('div', { class: 'flex justify-start w-full mt-1' }, [
         h('span', { class: `badge badge-xs ${statusClass}` }, status),
@@ -384,6 +382,29 @@
       gridInstance = new Grid({
         columns,
         data,
+        search: {
+          // ← ADD THIS
+          selector: (cell) => {
+            if (!cell || typeof cell !== 'object') return String(cell ?? '')
+
+            // Teacher / Room columns → use the `.value` property
+            if ('value' in cell) return cell.value ?? ''
+
+            // Separator rows → skip
+            if (cell.isSeparator) return ''
+
+            // Schedule cells → build a searchable string
+            if (!cell.schedules?.length) return ''
+
+            const first = cell.schedules[0]
+            const parts = [
+              first.subject?.name ?? '',
+              first.teacher?.name ?? '',
+              ...cell.schedules.flatMap((s) => s.students.map((std) => std.name)),
+            ]
+            return parts.join(' ')
+          },
+        },
         height: 'calc(100vh - 220px)',
         className: {
           table: 'w-full text-xs',
@@ -613,7 +634,7 @@
   </div>
 
   <!-- Grid container — gridjs renders into this div -->
-  <div id="daily-grid" class="border rounded-lg"></div>
+  <div id="daily-grid" class="rounded-md"></div>
 </div>
 
 {#key selectedDate}
@@ -667,7 +688,7 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    background-color: #484b4f;
+    background-color: #434446;
     color: #ffffff;
   }
 
@@ -694,7 +715,7 @@
   #daily-grid :global(th:nth-child(2)) {
     z-index: 25;
   }
-
+  /* font bold for teacher and room td */
   #daily-grid :global(td:nth-child(1) div),
   #daily-grid :global(td:nth-child(2) div) {
     font-size: 0.85rem;
@@ -704,6 +725,6 @@
   /* stronger table border */
   #daily-grid :global(.gridjs-table td),
   #daily-grid :global(.gridjs-table th) {
-    outline: 1px solid #b4bdc7;
+    outline: 1px solid #434446;
   }
 </style>
