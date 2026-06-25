@@ -157,7 +157,7 @@
       }
 
       // Send in chunks of 50 to stay within PocketBase batch limits
-      const CHUNK_SIZE = 50
+      const CHUNK_SIZE = 5000
       for (let i = 0; i < toCreate.length; i += CHUNK_SIZE) {
         const chunk = toCreate.slice(i, i + CHUNK_SIZE)
         const b = pb.createBatch()
@@ -166,6 +166,25 @@
         }
         await b.send()
       }
+
+      // ─── ACTIVITY LOG ───
+      try {
+        await pb.collection('activityLog').create({
+          action: 'copy',
+          performedBy: pb.authStore.record?.id,
+          targetId: `${targetStart}_${targetEnd}`,
+          details: {
+            sourceDate: sourceDate,
+            rangeStart: targetStart,
+            rangeEnd: targetEnd,
+            roomType: roomType || 'all',
+            count: created,
+          },
+        })
+      } catch (err) {
+        console.error('Failed to write activity log:', err)
+      }
+      // ────────────────────
 
       summary = { created, skipped, graduated }
       preview = null

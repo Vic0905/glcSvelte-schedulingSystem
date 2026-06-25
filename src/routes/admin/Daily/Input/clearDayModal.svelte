@@ -16,7 +16,6 @@
   let preview = $state(null) // { records, count }
   let summary = $state(null) // { deleted, failed }
 
-  const CHUNK_SIZE = 50
   const roomTypeLabel = roomType ? roomType.toUpperCase() : 'ALL'
 
   // ─────────────────────────────────────────────
@@ -84,46 +83,50 @@
     let deleted = 0
     let failed = 0
 
+    const b = pb.createBatch()
+    records.forEach((booking) => {
+      b.collection('dailySchedule').delete(booking.id)
+    })
+
     try {
-      for (let i = 0; i < records.length; i += CHUNK_SIZE) {
-        const chunk = records.slice(i, i + CHUNK_SIZE)
+      await b.send()
 
-        const b = pb.createBatch()
-        for (const rec of chunk) {
-          b.collection('dailySchedule').delete(rec.id)
-        }
-
-        try {
-          await b.send()
-          deleted += chunk.length
-        } catch (batchErr) {
-          // Batch failed — fall back to individual deletes for this chunk
-          console.warn('Batch delete failed, falling back to individual:', batchErr)
-          const settled = await Promise.allSettled(chunk.map((rec) => pb.collection('dailySchedule').delete(rec.id)))
-          settled.forEach((res) => {
-            if (res.status === 'fulfilled') deleted++
-            else failed++
-          })
-        }
-
-        progress = Math.round(((i + chunk.length) / records.length) * 100)
+      // ─── ACTIVITY LOG ───
+      try {
+        await pb.collection('activityLog').create({
+          action: 'clear',
+          performedBy: pb.authStore.record?.id,
+          targetId: selectedDate,
+          details: {
+            rangeStart: selectedDate,
+            rangeEnd: selectedDate,
+            roomType: roomType || 'all',
+            count: records.length,
+          },
+        })
+      } catch (err) {
+        console.error('Failed to write activity log:', err)
       }
+      // ────────────────────
 
-      summary = { deleted, failed }
-      preview = null
-
-      if (deleted) {
-        toast.success(`Cleared ${deleted} schedule${deleted === 1 ? '' : 's'} from ${selectedDate}`)
-        onrefresh?.()
-      }
-      if (failed) {
-        toast.error(`${failed} record${failed === 1 ? '' : 's'} could not be deleted`)
-      }
+      deleted = records.length
     } catch (err) {
+      failed = records.length
       console.error(err)
       toast.error('Delete failed — ' + (err.message || String(err)))
     } finally {
       isDeleting = false
+    }
+
+    summary = { deleted, failed }
+    preview = null
+
+    if (deleted) {
+      toast.success(`Cleared ${deleted} schedule${deleted === 1 ? '' : 's'} from ${selectedDate}`)
+      onrefresh?.()
+    }
+    if (failed) {
+      toast.error(`${failed} record${failed === 1 ? '' : 's'} could not be deleted`)
     }
   }
 </script>

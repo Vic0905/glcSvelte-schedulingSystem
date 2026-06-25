@@ -138,11 +138,14 @@
         close()
         return
       }
-
-      const chunkSize = 50
+      const chunkSize = 5000
       for (let i = 0; i < toUpdate.length; i += chunkSize) {
         const chunk = toUpdate.slice(i, i + chunkSize)
-        await Promise.all(chunk.map((r) => pb.collection('dailySchedule').update(r.id, { status: toStatus })))
+        const batch = pb.createBatch()
+        for (const r of chunk) {
+          batch.collection('dailySchedule').update(r.id, { status: toStatus })
+        }
+        await batch.send()
       }
 
       if (action === 'show') {
@@ -152,7 +155,7 @@
       // ─── ACTIVITY LOG ───
       try {
         await pb.collection('activityLog').create({
-          action: action === 'show' ? 'show' : 'revertToDraft',
+          action: action === 'show' ? 'show' : 'draft',
           performedBy: pb.authStore.record?.id,
           targetId: `${start}_${end}`,
           details: {

@@ -172,6 +172,19 @@
       </ul>
     {/if}
   </li>
+  <li>
+    <details>
+      <summary>Dev</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/daily/input/mtmschedule">MTM Table</a></li>
+        <li><a href="/#/daily/input/grpschedule">GRP Table</a></li>
+        <li><a href="/#/daily/views/teacherview">Teacher view</a></li>
+        <li><a href="/#/daily/views/studentview">Student View</a></li>
+        <li><a href="/#/daily/information/student/studentinfo">Student Info</a></li>
+        <li><a href="/#/daily/information/log/activitylog">Activity Log</a></li>
+      </ul>
+    </details>
+  </li>
 {:else if current.user && current.user.role === 'teacher'}
   <!-- teacher routes -->
   <!-- <li>
