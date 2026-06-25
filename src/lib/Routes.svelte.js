@@ -132,8 +132,20 @@ export const adminRoutes = {
   '/daily/information/student/studentinfo': wrap({
     asyncComponent: () => import('../routes/admin/Daily/Information/Student/studentInfo.svelte'),
   }),
+  '/daily/information/teacher/teacherinfo': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Information/Teacher/TeacherInfo.svelte'),
+  }),
+  '/daily/information/room/room': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Information/Room/Room.svelte'),
+  }),
+  '/daily/information/subject/subject': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Information/Subject/Subject.svelte'),
+  }),
   '/daily/information/log/activitylog': wrap({
     asyncComponent: () => import('../routes/admin/Daily/Information/Log/ActivityLog.svelte'),
+  }),
+  '/daily/information/custom/customsched': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Information/Custom/customSched.svelte'),
   }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),

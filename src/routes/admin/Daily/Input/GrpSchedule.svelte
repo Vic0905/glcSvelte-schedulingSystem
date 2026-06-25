@@ -242,6 +242,7 @@
         teacher: s.expand?.teacher,
         date: s.date?.split(' ')[0],
         status: s.status,
+        customSchedule: s.expand?.customSchedule || null,
       }))
   }
 
@@ -409,6 +410,7 @@
           date: isCreate ? selectedDate : firstSched?.date || selectedDate,
           mode: isCreate ? 'create' : 'edit',
           schedules: data.schedules,
+          customSchedule: isCreate ? null : firstSched?.customSchedule || null, // ← ADD
         })
       })
     }
@@ -439,7 +441,7 @@
           }),
       pb.collection('dailySchedule').getFullList({
         filter: `date >= "${date} 00:00:00" && date <= "${dateStr}"`,
-        expand: 'teacher,student,subject,room,timeslot',
+        expand: 'teacher,student,subject,room,timeslot,customSchedule',
       }),
     ])
 

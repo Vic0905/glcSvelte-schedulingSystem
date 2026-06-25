@@ -174,14 +174,25 @@
   </li>
   <li>
     <details>
-      <summary>Dev</summary>
+      <summary>Dev view & input</summary>
       <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/daily/input/mtmschedule">MTM Table</a></li>
         <li><a href="/#/daily/input/grpschedule">GRP Table</a></li>
         <li><a href="/#/daily/views/teacherview">Teacher view</a></li>
         <li><a href="/#/daily/views/studentview">Student View</a></li>
-        <li><a href="/#/daily/information/student/studentinfo">Student Info</a></li>
+      </ul>
+    </details>
+  </li>
+  <li>
+    <details>
+      <summary>Dev info</summary>
+      <ul class="relative z-50 text-xs p-2">
         <li><a href="/#/daily/information/log/activitylog">Activity Log</a></li>
+        <li><a href="/#/daily/information/student/studentinfo">Student Info</a></li>
+        <li><a href="/#/daily/information/teacher/teacherinfo">Teacher Info</a></li>
+        <li><a href="/#/daily/information/room/room">Room Info</a></li>
+        <li><a href="/#/daily/information/subject/subject">Subject Info</a></li>
+        <li><a href="/#/daily/information/custom/customsched">Custom Sched</a></li>
       </ul>
     </details>
   </li>

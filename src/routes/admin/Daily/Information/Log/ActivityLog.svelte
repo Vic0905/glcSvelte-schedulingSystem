@@ -58,9 +58,13 @@
 
   function formatDetails(log) {
     if (!log.details) return '—'
-    const { teacherName, roomName, timeslot, students, rangeStart, rangeEnd, roomType, count, sourceDate } = log.details
+    const { teacherName, roomName, timeslot, students, rangeStart, rangeEnd, roomType, count, sourceDate, date } =
+      log.details
+
     const studentList = Array.isArray(students) ? students.map((s) => s.name).join(', ') : 'No students'
-    const range = rangeStart && rangeEnd ? (rangeStart === rangeEnd ? rangeStart : `${rangeStart} → ${rangeEnd}`) : '?'
+
+    const range =
+      rangeStart && rangeEnd ? (rangeStart === rangeEnd ? rangeStart : `${rangeStart} → ${rangeEnd}`) : (date ?? '?') // ← fall back to `date` if no range
 
     if (log.action === 'show') return `Date: ${range} | Room type: ${roomType || 'all'} | Count: ${count}`
     if (log.action === 'draft') return `Date: ${range} | Room type: ${roomType || 'all'} | Count: ${count}`
@@ -71,9 +75,11 @@
       return `From: ${sourceDate || '?'} | To: ${target} | Room type: ${roomType || 'all'} | Count: ${count}`
     }
     if (log.action === 'delete')
-      return `Date: ${range} | Timeslot: ${timeslot || '?'} | Room: ${roomName || '?'} | Teacher: ${teacherName || '?'} | Students: ${studentList}`
+      return `Date: ${date ?? sourceDate ?? '?'} | Timeslot: ${timeslot || '?'} | Room: ${roomName || '?'} | Teacher: ${teacherName || '?'} | Students: ${studentList}`
     if (log.details.type === 'skip_day')
       return `Skipped student: ${log.details.studentId} on ${log.details.skippedDate}`
+
+    // add / update
     return `Date: ${range} | Timeslot: ${timeslot || '?'} | Room: ${roomName || '?'} | Teacher: ${teacherName || '?'} | Students: ${studentList}`
   }
 

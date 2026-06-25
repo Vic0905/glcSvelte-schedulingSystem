@@ -219,8 +219,23 @@
           h('span', { class: 'badge badge-ghost font-semibold badge-xs whitespace-nowrap' }, name)
         )
       ),
-      h('div', { class: 'flex justify-start w-full mt-1' }, [
+      h('div', { class: 'flex justify-start w-full mt-1 gap-1 flex-wrap' }, [
         h('span', { class: `badge badge-xs ${statusClass}` }, status),
+        // AFTER
+        ...(first.customSchedule
+          ? [
+              h(
+                'span',
+                {
+                  class: 'badge badge-xs',
+                  style: first.customSchedule.color
+                    ? `background:${first.customSchedule.color}20; color:${first.customSchedule.color}; border-color:${first.customSchedule.color}80;`
+                    : '',
+                },
+                first.customSchedule.name || 'Custom'
+              ),
+            ]
+          : []),
       ]),
     ])
   }
@@ -243,6 +258,7 @@
       teacher: s.expand?.teacher,
       date: s.date?.split(' ')[0],
       status: s.status,
+      customSchedule: s.expand?.customSchedule || null, // ← ADD
     }))
   }
 
@@ -410,6 +426,7 @@
           date: isCreate ? selectedDate : firstSched?.date || selectedDate,
           mode: isCreate ? 'create' : 'edit',
           schedules: data.schedules,
+          customSchedule: isCreate ? null : firstSched?.customSchedule || null, // ← ADD
         })
       })
     }
@@ -441,7 +458,7 @@
           }),
       pb.collection('dailySchedule').getFullList({
         filter: `date >= "${startDateStr}" && date <= "${endDateStr}"`,
-        expand: 'teacher,student,subject,room,timeslot',
+        expand: 'teacher,student,subject,room,timeslot,customSchedule',
       }),
     ])
 

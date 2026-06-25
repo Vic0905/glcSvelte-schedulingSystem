@@ -1,7 +1,6 @@
 <script>
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../../lib/Pocketbase.svelte'
-  //   import { pb } from '../../../lib/Pocketbase.svelte'
 
   let { onrefresh, selectedDate = new Date().toISOString().split('T')[0] } = $props()
 
@@ -20,6 +19,7 @@
   let teachers = $state([])
   let rooms = $state([])
   let timeslots = $state([])
+  let customSchedules = $state([]) // ← NEW
 
   // Form
   let form = $state({
@@ -30,12 +30,12 @@
     room: null,
     timeslot: null,
     date: null,
+    customSchedule: null, // ← NEW
   })
 
   let originalState = $state({ timeslotId: null, roomId: null, date: null })
 
-  // Students — just a list of selected student IDs. Every dailySchedule
-  // record is a single day now, so there's no per-student date range to track.
+  // Students
   let searchQuery = $state('')
   let selectedStudents = $state([])
   let filterChanged = $state(false)
@@ -52,7 +52,6 @@
   let filteredStudents = $derived.by(() => {
     const query = searchQuery.toLowerCase()
 
-    // Deduplicate: keep only the latest-starting record per name
     const latest = new Map()
     for (const s of students) {
       const existing = latest.get(s.englishName)
@@ -90,7 +89,8 @@
 
   async function loadDropdowns() {
     try {
-      const [subj, stu, teach, room, ts] = await Promise.all([
+      const [subj, stu, teach, room, ts, cs] = await Promise.all([
+        // ← cs added
         pb.collection('subject').getFullList({ sort: 'name' }),
         pb.collection('student').getFullList({
           sort: 'englishName',
@@ -102,12 +102,14 @@
         }),
         pb.collection('roomType').getFullList({ sort: 'name' }),
         pb.collection('timeslot').getFullList({ sort: 'start' }),
+        pb.collection('customSchedule').getFullList({ sort: 'name' }), // ← NEW
       ])
       subjects = subj
       students = stu
       teachers = teach
       rooms = room
       timeslots = ts
+      customSchedules = cs // ← NEW
     } catch {
       toast.error('Failed to load dropdown options')
     }
@@ -139,6 +141,7 @@
       room: findById(rooms, existing?.roomId || data.room?.id),
       timeslot: findById(timeslots, existing?.timeslotId || data.timeslot?.id),
       date: data.date,
+      customSchedule: findById(customSchedules, existing?.customSchedule?.id || data.customSchedule?.id) || null,
     }
 
     originalState = {
@@ -181,16 +184,6 @@
   // STUDENT SELECTION
   // ═══════════════════════════════════
 
-  // function toggleStatusFilter(filter) {
-  //   if (filter === 'changed') {
-  //     filterChanged = !filterChanged
-  //     if (filterChanged) filterExtended = false
-  //   } else {
-  //     filterExtended = !filterExtended
-  //     if (filterExtended) filterChanged = false
-  //   }
-  // }
-
   function toggleStudent(id) {
     if (selectedStudents.includes(id)) {
       selectedStudents = selectedStudents.filter((sid) => sid !== id)
@@ -225,8 +218,6 @@
 
   function filterEditModeRecords(records) {
     if (form.mode !== 'edit') return records
-    // Exclude the records that belong to the cell we're currently editing —
-    // they're about to be deleted and recreated by save(), not a real conflict.
     return records.filter((s) => s.room !== originalState.roomId)
   }
 
@@ -309,6 +300,7 @@
           student: studentId,
           date: `${form.date} 00:00:00.000Z`,
           status: 'draft',
+          customSchedule: form.customSchedule?.id || null, // ← NEW
         })
       })
 
@@ -320,6 +312,7 @@
         roomName: form.room?.name,
         timeslot: form.timeslot ? `${form.timeslot.start} - ${form.timeslot.end}` : null,
         date: form.date,
+        customSchedule: form.customSchedule?.name || null, // ← NEW
         students: selectedStudents.map((id) => ({
           id,
           name: students.find((st) => st.id === id)?.englishName || id,
@@ -364,6 +357,7 @@
         teacherName: form.teacher?.name,
         timeslot: form.timeslot ? `${form.timeslot.start} - ${form.timeslot.end}` : null,
         date: originalState.date,
+        customSchedule: form.customSchedule?.name || null, // ← NEW
         students: selectedStudents.map((id) => ({
           id,
           name: students.find((st) => st.id === id)?.englishName || id,
@@ -437,6 +431,23 @@
               </select>
             </div>
           </div>
+
+          <!-- ← NEW: Custom Schedule -->
+          <div class="form-control">
+            <label class="label text-xs font-bold" for="customSchedule"
+              >Custom Schedule <span class="font-normal opacity-50">(optional)</span></label
+            >
+            <select
+              id="customSchedule"
+              bind:value={form.customSchedule}
+              class="select select-bordered select-sm w-full"
+            >
+              <option value={null}>None</option>
+              {#each customSchedules as cs (cs.id)}
+                <option value={cs}>{cs.name}</option>
+              {/each}
+            </select>
+          </div>
         </div>
 
         <!-- Right Column: Student Selection -->
@@ -448,21 +459,6 @@
               {currentCount} / {maxCapacity || '∞'}
             </span>
           </div>
-
-          <!-- <div class="flex gap-2 mb-2">
-            <button
-              class="btn btn-xs {filterChanged ? 'btn-error' : 'btn-ghost'}"
-              onclick={() => toggleStatusFilter('changed')}
-            >
-              Changed
-            </button>
-            <button
-              class="btn btn-xs {filterExtended ? 'btn-secondary' : 'btn-ghost'}"
-              onclick={() => toggleStatusFilter('extended')}
-            >
-              Extended
-            </button>
-          </div> -->
 
           <input
             type="text"
