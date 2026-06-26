@@ -42,6 +42,14 @@
   let filterExtended = $state(false)
 
   // ═══════════════════════════════════
+  // BREAK TIME & LUNCH BREAK
+  // ═══════════════════════════════════
+
+  const BREAK_SCHEDULES = ['lunch break', 'break time']
+
+  let isBreakSchedule = $derived(BREAK_SCHEDULES.includes(form.customSchedule?.name?.toLowerCase().trim()))
+
+  // ═══════════════════════════════════
   // DERIVED
   // ═══════════════════════════════════
 
@@ -203,6 +211,12 @@
   // ═══════════════════════════════════
 
   function validateForm() {
+    if (isBreakSchedule) {
+      if (!form.room || !form.timeslot || !form.teacher)
+        return 'Please select a room, timeslot, and teacher for the break'
+      return null
+    }
+
     if (!form.subject || !form.teacher || !form.room || !form.timeslot) {
       return 'Please fill all required fields'
     }
@@ -291,18 +305,29 @@
         idsToDelete.forEach((id) => batch.collection('dailySchedule').delete(id))
       }
 
-      selectedStudents.forEach((studentId) => {
-        batch.collection('dailySchedule').create({
-          timeslot: form.timeslot.id,
-          teacher: form.teacher.id,
-          subject: form.subject.id,
-          room: form.room.id,
-          student: studentId,
-          date: `${form.date} 00:00:00.000Z`,
-          status: 'draft',
-          customSchedule: form.customSchedule?.id || null, // ← NEW
-        })
-      })
+      selectedStudents.length
+        ? selectedStudents.forEach((studentId) => {
+            batch.collection('dailySchedule').create({
+              timeslot: isBreakSchedule ? null : form.timeslot.id,
+              teacher: isBreakSchedule ? null : form.teacher.id,
+              subject: isBreakSchedule ? null : form.subject.id,
+              room: isBreakSchedule ? null : form.room.id,
+              student: studentId,
+              date: `${form.date} 00:00:00.000Z`,
+              status: 'draft',
+              customSchedule: form.customSchedule?.id || null,
+            })
+          })
+        : batch.collection('dailySchedule').create({
+            timeslot: form.timeslot?.id || null, // ← keep it
+            teacher: form.teacher?.id || null,
+            subject: null,
+            room: form.room?.id || null, // ← keep it
+            student: null,
+            date: `${form.date} 00:00:00.000Z`,
+            status: 'draft',
+            customSchedule: form.customSchedule?.id || null,
+          })
 
       await batch.send()
 
@@ -385,9 +410,7 @@
           {form.mode === 'edit' ? 'Edit' : 'Create'}
           {maxCapacity > 1 ? 'Group' : 'MTM'} Schedule
         </h3>
-        <p class="text-xs opacity-60 uppercase tracking-widest">
-          {form.date}
-        </p>
+        <p class="text-xs opacity-60 uppercase tracking-widest">{form.date}</p>
       </header>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -395,7 +418,12 @@
         <div class="space-y-4">
           <div class="form-control">
             <label class="label text-xs font-bold" for="subject">Subject</label>
-            <select id="subject" bind:value={form.subject} class="select select-bordered select-sm w-full">
+            <select
+              id="subject"
+              bind:value={form.subject}
+              class="select select-bordered select-sm w-full"
+              disabled={isBreakSchedule}
+            >
               <option value={null}>Select Subject</option>
               {#each subjects as s (s.id)}
                 <option value={s}>{s.name}</option>
@@ -432,11 +460,10 @@
             </div>
           </div>
 
-          <!-- ← NEW: Custom Schedule -->
           <div class="form-control">
-            <label class="label text-xs font-bold" for="customSchedule"
-              >Custom Schedule <span class="font-normal opacity-50">(optional)</span></label
-            >
+            <label class="label text-xs font-bold" for="customSchedule">
+              Custom Schedule <span class="font-normal opacity-50">(optional)</span>
+            </label>
             <select
               id="customSchedule"
               bind:value={form.customSchedule}
@@ -448,10 +475,17 @@
               {/each}
             </select>
           </div>
+
+          {#if isBreakSchedule}
+            <div class="alert alert-info alert-soft text-sm py-2">
+              <span>Break schedules don't require a subject or students.</span>
+            </div>
+          {/if}
         </div>
+        <!-- END Left Column -->
 
         <!-- Right Column: Student Selection -->
-        <div class="flex flex-col">
+        <div class="flex flex-col" class:opacity-40={isBreakSchedule} class:pointer-events-none={isBreakSchedule}>
           <div class="flex justify-between items-center mb-2">
             <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="text-xs font-bold uppercase">Students</label>
@@ -473,7 +507,6 @@
             {:else}
               {#each filteredStudents as s (s.id)}
                 {@const isSelected = selectedStudents.includes(s.id)}
-
                 <div class="mb-1 rounded-md {isSelected ? 'bg-base-300/60' : ''}">
                   <label class="flex items-center gap-3 p-2 hover:bg-base-300 rounded-md cursor-pointer">
                     <input
@@ -503,16 +536,18 @@
             <p class="text-xs text-error mt-1">Over room capacity ({maxCapacity} max)</p>
           {/if}
         </div>
+        <!-- END Right Column -->
       </div>
+      <!-- END grid -->
 
       <!-- Delete Confirmation -->
       {#if showDeleteConfirm}
         <div class="alert alert-soft alert-error mt-6 flex items-center justify-between gap-4">
-          <span class="text-sm font-medium"> Delete all records for this schedule? This cannot be undone. </span>
+          <span class="text-sm font-medium">Delete all records for this schedule? This cannot be undone.</span>
           <div class="flex gap-2 shrink-0">
-            <button class="btn btn-sm btn-ghost" onclick={() => (showDeleteConfirm = false)} disabled={loading}>
-              Cancel
-            </button>
+            <button class="btn btn-sm btn-ghost" onclick={() => (showDeleteConfirm = false)} disabled={loading}
+              >Cancel</button
+            >
             <button class="btn btn-sm btn-ghost" onclick={deleteSchedule} disabled={loading}>
               {#if loading}
                 <span class="loading loading-spinner loading-xs"></span>
@@ -535,8 +570,7 @@
             Delete Schedule
           </button>
         {/if}
-
-        <button class="btn btn-soft btn-ghost" onclick={close} disabled={loading}> Cancel </button>
+        <button class="btn btn-soft btn-ghost" onclick={close} disabled={loading}>Cancel</button>
         <button class="btn btn-soft btn-info min-w-[140px]" onclick={save} disabled={loading || isOverCapacity}>
           {#if loading}
             <span class="loading loading-spinner"></span>
@@ -546,7 +580,6 @@
         </button>
       </div>
     </div>
-
     <div class="modal-backdrop bg-black/40" role="presentation" onclick={close}></div>
   </dialog>
 {/if}

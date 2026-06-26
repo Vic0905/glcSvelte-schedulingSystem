@@ -134,7 +134,8 @@
       </ul>
     </details>
   </li> -->
-  <li class="relative">
+
+  <!-- <li class="relative">
     <button
       onclick={() => (openMenus.daily = !openMenus.daily)}
       class="flex items-center justify-between px-4 py-2 hover:bg-base-200 rounded-lg"
@@ -162,7 +163,6 @@
     </button>
     {#if openMenus.management}
       <ul class="absolute left-full top-0 text-xs flex flex-row p-2 z-50 whitespace-nowrap">
-        <!-- <li><a href="/#/new/releaselog">Release Logs</a></li> -->
         <li><a href="/#/new/activitylog">Activity Logs</a></li>
         <li><a href="/#/new/holidaypicker">Special Days</a></li>
         <li><a href="/#/management/subject">Subject</a></li>
@@ -171,8 +171,47 @@
         <li><a href="/#/new/studentinfo">Student</a></li>
       </ul>
     {/if}
+  </li> -->
+
+  <li class="relative">
+    <button
+      onclick={() => (openMenus.daily = !openMenus.daily)}
+      class="flex items-center justify-between px-4 py-2 hover:bg-base-200 rounded-lg"
+    >
+      <span class="text-xs mr-2">{openMenus.daily ? '▶' : '◀'}</span>
+      Daily Booking
+    </button>
+    {#if openMenus.daily}
+      <ul class="absolute right-full top-0 mr-40 text-xs flex flex-row p-2 z-50 whitespace-nowrap">
+        <li><a href="/#/daily/input/mtmschedule">MTM Table</a></li>
+        <li><a href="/#/daily/input/grpschedule">GRP Table</a></li>
+        <li><a href="/#/daily/views/teacherview">Teacher view</a></li>
+        <li><a href="/#/daily/views/studentview">Student View</a></li>
+        <li><a href="/#/daily/input/graduatingstudent">Graduating Student</a></li>
+      </ul>
+    {/if}
   </li>
-  <li>
+  <li class="relative">
+    <button
+      onclick={() => (openMenus.management = !openMenus.management)}
+      class="flex items-center justify-between px-4 py-2 hover:bg-base-200 rounded-lg"
+    >
+      Management
+      <span class="text-xs ml-2">{openMenus.management ? '◀' : '▶'}</span>
+    </button>
+    {#if openMenus.management}
+      <ul class="absolute left-full top-0 text-xs flex flex-row p-2 z-50 whitespace-nowrap">
+        <li><a href="/#/daily/information/log/activitylog">Activity Log</a></li>
+        <li><a href="/#/daily/information/student/studentinfo">Student Info</a></li>
+        <li><a href="/#/daily/information/teacher/teacherinfo">Teacher Info</a></li>
+        <li><a href="/#/daily/information/room/room">Room Info</a></li>
+        <li><a href="/#/daily/information/subject/subject">Subject Info</a></li>
+        <li><a href="/#/daily/information/custom/customsched">Custom Sched</a></li>
+      </ul>
+    {/if}
+  </li>
+
+  <!-- <li>
     <details>
       <summary>Dev view & input</summary>
       <ul class="relative z-50 text-xs p-2">
@@ -195,7 +234,7 @@
         <li><a href="/#/daily/information/custom/customsched">Custom Sched</a></li>
       </ul>
     </details>
-  </li>
+  </li> -->
 {:else if current.user && current.user.role === 'teacher'}
   <!-- teacher routes -->
   <!-- <li>

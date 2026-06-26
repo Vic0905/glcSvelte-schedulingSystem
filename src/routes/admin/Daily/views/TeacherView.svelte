@@ -100,6 +100,22 @@
 
     const { schedules } = cell
     const firstSched = schedules[0]
+
+    // Break check
+    const BREAK_SCHEDULES = ['lunch break', 'break time']
+    if (BREAK_SCHEDULES.includes(firstSched?.customSchedule?.name?.toLowerCase().trim())) {
+      const cs = firstSched.customSchedule
+      const style = cs.color ? `background:${cs.color}20; color:${cs.color};` : 'background:#f3f4f6; color:#6b7280;'
+      return h(
+        'div',
+        {
+          class: `w-full h-full min-h-[55px] flex items-center justify-center font-bold text-sm tracking-wide ${bgClass}`,
+          style,
+        },
+        cs.name.toUpperCase()
+      )
+    }
+
     const subjectName = firstSched.subject?.name || 'No Subject'
     const roomName = firstSched.roomName || 'No Room'
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
@@ -112,10 +128,24 @@
       h(
         'div',
         { class: 'flex flex-wrap justify-center gap-1' },
-        allStudents.map((name) =>
-          h('span', { class: 'badge badge-ghost font-semibold badge-xs whitespace-nowrap' }, name)
-        )
+        allStudents.map((name) => h('span', { class: 'text-xs font-semibold whitespace-nowrap' }, name))
       ),
+      ...(firstSched.customSchedule
+        ? [
+            h('div', { class: 'flex justify-start w-full mt-1' }, [
+              h(
+                'span',
+                {
+                  class: 'text-xs font-bold',
+                  style: firstSched.customSchedule.color
+                    ? `background:${firstSched.customSchedule.color}20; color:${firstSched.customSchedule.color}; border-color:${firstSched.customSchedule.color}80;`
+                    : '',
+                },
+                firstSched.customSchedule.name || 'Custom'
+              ),
+            ]),
+          ]
+        : []),
     ])
   }
 
@@ -157,7 +187,7 @@
       // Fetch dailySchedule records for the selected day
       let schedules = await pb.collection('dailySchedule').getFullList({
         filter: `date >= "${selectedDate} 00:00:00" && date <= "${selectedDate} 23:59:59"`,
-        expand: 'teacher,student,subject,room,timeslot',
+        expand: 'teacher,student,subject,room,timeslot,customSchedule',
       })
 
       // On a holiday, only show records whose date exactly matches
@@ -183,6 +213,7 @@
           subject: s.expand?.subject,
           students: s.expand?.student ? [{ id: s.expand.student.id, name: s.expand.student.englishName }] : [],
           roomName: s.expand?.room?.name || null,
+          customSchedule: s.expand?.customSchedule || null,
         })
       }
 
@@ -241,11 +272,15 @@
             let grpCount = 0
             for (const ts of cachedTimeslots) {
               const entries = scheduleMap.get(`${cell.id}-${ts.id}`) || []
-              for (const entry of entries) {
-                const roomName = (entry.roomName || '').toUpperCase()
-                if (roomName.startsWith('A') || roomName.startsWith('ST') || roomName.startsWith('B')) mtmCount++
-                else if (roomName.startsWith('G') || roomName.startsWith('H')) grpCount++
-              }
+              if (!entries.length) continue
+
+              // Skip break schedules
+              const BREAK_SCHEDULES = ['lunch break', 'break time']
+              if (BREAK_SCHEDULES.includes(entries[0]?.customSchedule?.name?.toLowerCase().trim())) continue
+
+              const roomName = (entries[0].roomName || '').toUpperCase()
+              if (roomName.startsWith('A') || roomName.startsWith('ST') || roomName.startsWith('B')) mtmCount++
+              else if (roomName.startsWith('G') || roomName.startsWith('H')) grpCount++
             }
 
             return h(

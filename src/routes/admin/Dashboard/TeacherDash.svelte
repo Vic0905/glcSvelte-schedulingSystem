@@ -129,7 +129,7 @@
         {randomMessage}
       </p>
       <a
-        href="#/new/teachertable"
+        href="#/daily/views/teachertable"
         class="group flex w-fit items-center gap-2 rounded-2xl bg-sky-600 px-7 py-4 text-sm font-medium text-white transition-all hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400"
       >
         Get started
@@ -182,7 +182,7 @@
           {#each calCells as cell}
             {#if cell.day !== null}
               <a
-                href="#/new/dailyschedule?date={getDateKey(cell.day)}"
+                href="#/daily/views/teachertable?date={getDateKey(cell.day)}"
                 class="flex aspect-square items-center justify-center rounded-lg text-xs transition-all cursor-pointer {getDayClass(
                   cell.day
                 )}"

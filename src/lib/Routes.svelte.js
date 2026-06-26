@@ -123,6 +123,9 @@ export const adminRoutes = {
   '/daily/input/grpschedule': wrap({
     asyncComponent: () => import('../routes/admin/Daily/Input/GrpSchedule.svelte'),
   }),
+  '/daily/input/graduatingstudent': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Input/GraduatingStudent.svelte'),
+  }),
   '/daily/views/teacherview': wrap({
     asyncComponent: () => import('../routes/admin/Daily/views/TeacherView.svelte'),
   }),
@@ -284,6 +287,9 @@ export const teacherRoutes = {
   }),
   '/new/teachertable': wrap({
     asyncComponent: () => import('../routes/admin/New/TeacherTable.svelte'),
+  }),
+  '/daily/views/teachertable': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/views/TeacherTable.svelte'),
   }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),

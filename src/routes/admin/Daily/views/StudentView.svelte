@@ -4,6 +4,7 @@
   import 'gridjs/dist/theme/mermaid.css'
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../../lib/Pocketbase.svelte'
+  import CustomSched from '../Information/Custom/customSched.svelte'
   //   import { pb } from '../../../lib/Pocketbase.svelte'
 
   // --- State Runes ---
@@ -97,6 +98,21 @@
       )
     }
 
+    // Break check
+    const BREAK_SCHEDULES = ['lunch break', 'break time']
+    if (BREAK_SCHEDULES.includes(items[0]?.customSchedule?.name?.toLowerCase().trim())) {
+      const cs = items[0].customSchedule
+      const style = cs.color ? `background:${cs.color}20; color:${cs.color};` : 'background:#f3f4f6; color:#6b7280;'
+      return h(
+        'div',
+        {
+          class: `w-full h-full min-h-[55px] flex items-center justify-center font-bold text-sm tracking-wide ${bgClass}`,
+          style,
+        },
+        cs.name.toUpperCase()
+      )
+    }
+
     return h(
       'div',
       { class: `flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full ${bgClass}` },
@@ -105,15 +121,30 @@
           'div',
           { class: 'flex flex-col gap-1 w-full' },
           [
-            h('div', { class: 'font-bold text-neutral-900 border-b border-neutral-500 mb-1 pb-1 w-full text-center' }, [
+            h('div', { class: 'font-bold border-b border-neutral-500 mb-1 pb-1 w-full text-center' }, [
               h('div', {}, item.subject?.name || 'No Subject'),
-              h('div', { class: 'text-[10px] uppercase mt-1' }, item.teacher?.name || 'No Teacher'),
+              h('div', { class: 'text-xs uppercase mt-1' }, item.teacher?.name || 'No Teacher'),
             ]),
             item.room &&
               h(
                 'div',
                 { class: 'flex justify-center' },
-                h('span', { class: 'badge badge-ghost badge-xs font-semibold whitespace-nowrap' }, item.room.name)
+                h('span', { class: 'text-xs font-semibold whitespace-nowrap' }, item.room.name)
+              ),
+            item.customSchedule &&
+              h(
+                'div',
+                { class: 'flex mt-1' },
+                h(
+                  'span',
+                  {
+                    class: 'text-xs font-bold',
+                    style: item.customSchedule.color
+                      ? `background:${item.customSchedule.color}20; color:${item.customSchedule.color}; border-color:${item.customSchedule.color}80;`
+                      : '',
+                  },
+                  item.customSchedule.name || 'Custom'
+                )
               ),
           ].filter(Boolean)
         )
@@ -159,7 +190,7 @@
       // Fetch dailySchedule records for the selected day
       let schedules = await pb.collection('dailySchedule').getFullList({
         filter: `date >= "${startDateStr}" && date <= "${endDateStr}"`,
-        expand: 'teacher,student,subject,room,timeslot',
+        expand: 'teacher,student,subject,room,timeslot,customSchedule',
       })
 
       // On a holiday, only show records whose date exactly matches
@@ -181,6 +212,7 @@
           subject: s.expand?.subject,
           teacher: s.expand?.teacher,
           room: s.expand?.room,
+          customSchedule: s.expand?.customSchedule || null,
         }
 
         const studentList = Array.isArray(s.expand?.student)
@@ -550,9 +582,19 @@
     z-index: 25;
   }
 
+  /* font bold for teacher and room td */
+  #student-grid :global(td:nth-child(1) div),
+  #student-grid :global(td:nth-child(2) div),
+  #student-grid :global(td:nth-child(3) div),
+  #student-grid :global(td:nth-child(4) div),
+  #student-grid :global(td:nth-child(5) div) {
+    font-size: 0.85rem;
+    font-weight: bold;
+  }
+
   /* stronger table border */
   #student-grid :global(.gridjs-table td),
   #student-grid :global(.gridjs-table th) {
-    outline: 1px solid #949b9b;
+    outline: 1px solid #535252;
   }
 </style>

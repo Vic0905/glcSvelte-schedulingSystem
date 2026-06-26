@@ -126,7 +126,16 @@
           const timeslotId = src.expand?.timeslot?.id || src.timeslot
           const studentId = src.expand?.student?.id || src.student || null
 
-          if (!teacherId || !subjectId || !roomId || !timeslotId) {
+          const customScheduleId = src.customSchedule || null
+
+          const isBreak = !!customScheduleId && !subjectId
+
+          if (!isBreak && (!teacherId || !subjectId || !roomId || !timeslotId)) {
+            skipped++
+            continue
+          }
+
+          if (!roomId || !timeslotId) {
             skipped++
             continue
           }
@@ -151,6 +160,7 @@
             timeslot: timeslotId,
             student: studentId,
             status: 'draft',
+            customSchedule: customScheduleId,
           })
           created++
         }

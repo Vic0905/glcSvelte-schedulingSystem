@@ -195,6 +195,20 @@
         '—'
       )
     }
+    const BREAK_SCHEDULES = ['lunch break', 'break time']
+    const firstSched = cell.schedules[0]
+    if (BREAK_SCHEDULES.includes(firstSched?.customSchedule?.name?.toLowerCase().trim())) {
+      const cs = firstSched.customSchedule
+      const style = cs.color ? `background:${cs.color}20; color:${cs.color};` : 'background:#f3f4f6; color:#6b7280;'
+      return h(
+        'div',
+        {
+          class: `w-full h-full min-h-[55px] flex items-center justify-center font-bold text-sm tracking-wide ${bgClass}`,
+          style,
+        },
+        cs.name.toUpperCase()
+      )
+    }
 
     const { schedules } = cell
     const first = schedules[0]
@@ -216,8 +230,22 @@
           h('span', { class: 'badge badge-ghost font-semibold badge-xs whitespace-nowrap' }, name)
         )
       ),
-      h('div', { class: 'flex justify-start w-full mt-1' }, [
+      h('div', { class: 'flex justify-start w-full mt-1 gap-1 flex-wrap' }, [
         h('span', { class: `badge badge-xs ${statusClass}` }, status),
+        ...(first.customSchedule
+          ? [
+              h(
+                'span',
+                {
+                  class: 'text-xs font-bold',
+                  style: first.customSchedule.color
+                    ? `background:${first.customSchedule.color}20; color:${first.customSchedule.color}; border-color:${first.customSchedule.color}80;`
+                    : '',
+                },
+                first.customSchedule.name || 'Custom'
+              ),
+            ]
+          : []),
       ]),
     ])
   }
@@ -249,6 +277,7 @@
   function buildScheduleMap(normalizedSchedules) {
     const map = new Map()
     for (const s of normalizedSchedules) {
+      if (!s.roomId || !s.timeslotId) continue // ← ADD THIS
       const key = `${s.roomId}-${s.timeslotId}`
       if (!map.has(key)) map.set(key, [])
       map.get(key).push(s)
