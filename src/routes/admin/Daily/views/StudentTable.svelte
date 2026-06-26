@@ -1,7 +1,7 @@
 <script>
   import { onDestroy, onMount } from 'svelte'
   import { toast } from 'svelte-sonner'
-  import { pb } from '../../../lib/Pocketbase.svelte'
+  import { pb } from '../../../../lib/Pocketbase.svelte'
 
   let selectedDate = $state(new Date().toISOString().split('T')[0])
   let todayHoliday = $state(null)
@@ -73,17 +73,15 @@
 
       todayHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate) ?? null
 
-      let scheduleFilter = `start <= "${endStr}" && end >= "${startStr}" && status = "show"`
+      let scheduleFilter = `date >= "${startStr}" && date <= "${endStr}" && status = "show"`
       if (!isAdmin) scheduleFilter += ` && student.user = "${pb.authStore.model?.id}"`
-      let schedules = await pb.collection('schedule').getFullList({
+      let schedules = await pb.collection('dailySchedule').getFullList({
         filter: scheduleFilter,
         expand: 'teacher,student,subject,room,timeslot',
       })
 
       if (todayHoliday) {
-        schedules = schedules.filter(
-          (s) => s.start?.split(' ')[0] === selectedDate && s.end?.split(' ')[0] === selectedDate
-        )
+        schedules = schedules.filter((s) => s.date?.split(' ')[0] === selectedDate)
       }
 
       const newMap = new Map()
@@ -105,7 +103,7 @@
           if (!newMap.has(student.id)) newMap.set(student.id, new Map())
           const slots = newMap.get(student.id)
           if (!slots.has(timeslotId)) slots.set(timeslotId, [])
-          slots.get(timeslotId).push(entry)
+          slots.get(timeslotId).push({ ...entry, remarks: student.remarks })
         }
       }
       scheduleMap = newMap
@@ -158,7 +156,7 @@
 
   onMount(async () => {
     await initialLoad()
-    unsubSchedule = await pb.collection('schedule').subscribe('*', debounceRefresh)
+    unsubSchedule = await pb.collection('dailySchedule').subscribe('*', debounceRefresh)
   })
 
   onDestroy(() => {
@@ -281,6 +279,7 @@
                 <col class="w-100" />
                 <col class="w-100" />
                 <col class="w-100" />
+                <col class="w-100" />
                 <col />
               </colgroup>
               <thead class="text-center border border-neutral-focus py-3">
@@ -290,6 +289,7 @@
                   <th>TEACHER</th>
                   <th>CUBICLE / ROOM</th>
                   <th>SUBJECT</th>
+                  <th>REMARKS</th>
                 </tr>
               </thead>
               <tbody>
@@ -322,6 +322,15 @@
                       {#if entries.length}
                         <div class="flex flex-col gap-0.5">
                           {#each entries as e}<span>{e.subject?.name || '—'}</span>{/each}
+                        </div>
+                      {:else}
+                        <span class="text-base-content/20">—</span>
+                      {/if}
+                    </td>
+                    <td class="text-center text-sm font-bold border border-base-300">
+                      {#if entries.length}
+                        <div class="flex flex-col gap-0.5">
+                          {#each entries as e}<span>{e.remarks || '—'}</span>{/each}
                         </div>
                       {:else}
                         <span class="text-base-content/20">—</span>

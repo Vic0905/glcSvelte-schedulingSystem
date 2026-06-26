@@ -130,7 +130,7 @@
         {randomMessage}
       </p>
       <a
-        href="#/new/studenttable"
+        href="#/daily/views/studenttable"
         class="group flex w-fit items-center gap-2 rounded-2xl bg-sky-600 px-7 py-4 text-sm font-medium text-white transition-all hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400"
       >
         Get started
