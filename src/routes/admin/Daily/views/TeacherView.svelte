@@ -102,7 +102,7 @@
     const firstSched = schedules[0]
 
     // Break check
-    const BREAK_SCHEDULES = ['lunch break', 'break time']
+    const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
     if (BREAK_SCHEDULES.includes(firstSched?.customSchedule?.name?.toLowerCase().trim())) {
       const cs = firstSched.customSchedule
       const style = cs.color ? `background:${cs.color}20; color:${cs.color};` : 'background:#f3f4f6; color:#6b7280;'
@@ -120,33 +120,37 @@
     const roomName = firstSched.roomName || 'No Room'
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
 
-    return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ${bgClass}` }, [
-      h('div', { class: 'font-bold text-neutral-900 border-b border-neutral-500 mb-1 pb-1 w-full' }, [
-        h('div', {}, subjectName),
-        h('div', { class: 'text-[10px] uppercase mt-1' }, roomName),
-      ]),
-      h(
-        'div',
-        { class: 'flex flex-wrap justify-center gap-1' },
-        allStudents.map((name) => h('span', { class: 'text-xs font-semibold whitespace-nowrap' }, name))
-      ),
-      ...(firstSched.customSchedule
-        ? [
-            h('div', { class: 'flex justify-start w-full mt-1' }, [
-              h(
-                'span',
-                {
-                  class: 'text-xs font-bold',
-                  style: firstSched.customSchedule.color
-                    ? `background:${firstSched.customSchedule.color}20; color:${firstSched.customSchedule.color}; border-color:${firstSched.customSchedule.color}80;`
-                    : '',
-                },
-                firstSched.customSchedule.name || 'Custom'
-              ),
-            ]),
-          ]
-        : []),
-    ])
+    return h(
+      'div',
+      { class: `flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full ${bgClass}` },
+      [
+        h('div', { class: 'font-bold border-b border-neutral-500 mb-1 pb-1 w-full' }, [
+          h('div', {}, subjectName),
+          h('div', { class: 'text-xs uppercase mt-1' }, roomName),
+        ]),
+        h(
+          'div',
+          { class: 'flex flex-wrap justify-center gap-1' },
+          allStudents.map((name) => h('span', { class: 'text-xs font-semibold whitespace-nowrap' }, name))
+        ),
+        ...(firstSched.customSchedule
+          ? [
+              h('div', { class: 'flex justify-start w-full mt-1' }, [
+                h(
+                  'span',
+                  {
+                    class: 'text-xs font-bold',
+                    style: firstSched.customSchedule.color
+                      ? `background:${firstSched.customSchedule.color}20; color:${firstSched.customSchedule.color}; border-color:${firstSched.customSchedule.color}80;`
+                      : '',
+                  },
+                  firstSched.customSchedule.name || 'Custom'
+                ),
+              ]),
+            ]
+          : []),
+      ]
+    )
   }
 
   async function loadStaticData() {
@@ -275,7 +279,7 @@
               if (!entries.length) continue
 
               // Skip break schedules
-              const BREAK_SCHEDULES = ['lunch break', 'break time']
+              const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
               if (BREAK_SCHEDULES.includes(entries[0]?.customSchedule?.name?.toLowerCase().trim())) continue
 
               const roomName = (entries[0].roomName || '').toUpperCase()
@@ -351,6 +355,25 @@
         gridInstance = new Grid({
           columns,
           data,
+          search: {
+            selector: (cell) => {
+              if (!cell || typeof cell !== 'object') return String(cell ?? '')
+              // Teacher / Room columns → use the `.value` property
+              if ('value' in cell) return cell.value ?? ''
+              // Separator rows → skip
+              if (cell.isSeparator) return ''
+              // Schedule cells → build a searchable string from all relevant fields
+              if (!cell.schedules?.length) return ''
+
+              const first = cell.schedules[0]
+              const parts = [
+                first.subject?.name ?? '',
+                first.teacher?.name ?? '',
+                ...cell.schedules.flatMap((s) => s.students.map((std) => std.name)),
+              ]
+              return parts.join(' ')
+            },
+          },
           height: 'calc(100vh - 220px)',
           className: {
             table: 'w-full border text-xs !border-collapse',
@@ -460,7 +483,7 @@
     </div>
   </div>
 
-  <div id="teacher-grid" class="border rounded-lg"></div>
+  <div id="teacher-grid" class="rounded-lg"></div>
 </div>
 
 <style>
@@ -485,7 +508,7 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    background-color: #484b4f;
+    background-color: #535252;
     color: #ffffff;
   }
 
@@ -513,16 +536,16 @@
     z-index: 25;
   }
 
-  /* Hover effect for cells */
-  #teacher-grid :global(.gridjs-table td:hover > div) {
-    background-color: #d1fae5 !important;
-    transition: background-color 0.2s ease;
-    cursor: pointer;
+  /* font bold for teacher and room td */
+  #teacher-grid :global(td:nth-child(1) div),
+  #teacher-grid :global(td:nth-child(2) div) {
+    font-size: 0.85rem;
+    font-weight: bold;
   }
 
   /* stronger table border */
   #teacher-grid :global(.gridjs-table td),
   #teacher-grid :global(.gridjs-table th) {
-    outline: 1px solid #949b9b;
+    outline: 1px solid #535252;
   }
 </style>

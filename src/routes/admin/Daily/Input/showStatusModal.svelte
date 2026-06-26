@@ -207,10 +207,10 @@
     </div>
 
     <!-- Action tabs -->
-    <div role="tablist" class="tabs tabs-boxed mb-3">
+    <div role="tablist" class="tabs tabs-boxed mb-3 font-semibold">
       <button
         role="tab"
-        class="tab {action === 'show' ? 'tab-active' : ''}"
+        class="tab {action === 'show' ? 'tab-active !bg-success !text-success-content' : 'text-success/60'}"
         onclick={() => (action = 'show')}
         disabled={isLoading}
       >
@@ -218,7 +218,7 @@
       </button>
       <button
         role="tab"
-        class="tab {action === 'draft' ? 'tab-active' : ''}"
+        class="tab {action === 'draft' ? 'tab-active !bg-warning !text-warning-content' : 'text-warning/60'}"
         onclick={() => (action = 'draft')}
         disabled={isLoading}
       >

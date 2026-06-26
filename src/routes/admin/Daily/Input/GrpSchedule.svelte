@@ -32,6 +32,7 @@
   let selectedDate = $state(getInitialDate())
   let todayHoliday = $state(null)
   let isLoading = $state(false)
+  let scheduleStatusSummary = $state({ total: 0, showCount: 0, draftCount: 0 })
 
   // ─────────────────────────────────────────────
   // SECTION 3: Pure helper functions
@@ -195,7 +196,7 @@
         '—'
       )
     }
-    const BREAK_SCHEDULES = ['lunch break', 'break time']
+    const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
     const firstSched = cell.schedules[0]
     if (BREAK_SCHEDULES.includes(firstSched?.customSchedule?.name?.toLowerCase().trim())) {
       const cs = firstSched.customSchedule
@@ -499,6 +500,17 @@
       todayHoliday = holiday
 
       const normalized = normalizeSchedules(schedules, selectedDate, holiday)
+
+      const grpRoomIds = new Set(rooms.map((r) => r.id))
+      const grpSchedules = normalized.filter((s) => grpRoomIds.has(s.roomId))
+
+      const showCount = grpSchedules.filter((s) => s.status === 'show').length
+      scheduleStatusSummary = {
+        total: grpSchedules.length,
+        showCount,
+        draftCount: grpSchedules.length - showCount,
+      }
+
       const scheduleMap = buildScheduleMap(normalized)
       const emptyCountMap = buildEmptyCountMapBySection(timeslots, rooms, scheduleMap)
       const { columns, data } = buildGridConfig(rooms, timeslots, scheduleMap, emptyCountMap)
@@ -588,11 +600,28 @@
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <!-- Header -->
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
-    <h2 class="text-center flex-1">Daily GRP Schedule</h2>
-    <div class="w-6 h-6 flex items-center justify-center">
-      {#if isLoading}
-        <div class="loading loading-spinner loading-sm"></div>
+    <div class="flex-1 flex flex-col items-start justify-center gap-0.5">
+      {#if scheduleStatusSummary.showCount > 0}
+        <span class="text-lg font-bold text-success">The teacher's schedule is now showing.</span>
+      {:else if scheduleStatusSummary.total > 0}
+        <span class="text-lg font-bold text-warning">The teachers' schedule is now hidden.</span>
       {/if}
+
+      {#if scheduleStatusSummary.draftCount > 0}
+        <span class="text-xs font-bold text-error">
+          {scheduleStatusSummary.draftCount} schedule{scheduleStatusSummary.draftCount === 1 ? '' : 's'} still in draft
+        </span>
+      {/if}
+    </div>
+
+    <h2 class="text-center flex-1">Daily GRP Schedule</h2>
+
+    <div class="flex-1 flex justify-end">
+      <div class="w-6 h-6 flex items-center justify-center">
+        {#if isLoading}
+          <div class="loading loading-spinner loading-sm"></div>
+        {/if}
+      </div>
     </div>
   </div>
 

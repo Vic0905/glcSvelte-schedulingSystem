@@ -30,6 +30,7 @@
   let selectedDate = $state(getInitialDate())
   let todayHoliday = $state(null)
   let isLoading = $state(false)
+  let scheduleStatusSummary = $state({ tota: 0, showCount: 0, draftCount: 0 })
 
   // ─────────────────────────────────────────────
   // SECTION 3: Pure helper functions
@@ -196,7 +197,7 @@
         '—'
       )
     }
-    const BREAK_SCHEDULES = ['lunch break', 'break time']
+    const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
     const firstSched = cell.schedules[0]
     if (BREAK_SCHEDULES.includes(firstSched?.customSchedule?.name?.toLowerCase().trim())) {
       const cs = firstSched.customSchedule
@@ -221,37 +222,41 @@
     // status badge class
     const statusClass = status === 'show' ? 'badge-success' : 'badge-warning'
 
-    return h('div', { class: `flex flex-col gap-1 p-2 items-center text-center w-full h-full ${bgClass}` }, [
-      h('div', { class: 'font-bold text-neutral-900 border-b border-neutral-500 mb-1 pb-1 w-full' }, [
-        h('div', {}, subjectName),
-        h('div', { class: 'text-[10px] uppercase mt-1' }, teacherName),
-      ]),
-      h(
-        'div',
-        { class: 'flex flex-wrap justify-center gap-1' },
-        allStudents.map((name) =>
-          h('span', { class: 'badge badge-ghost font-semibold badge-xs whitespace-nowrap' }, name)
-        )
-      ),
-      h('div', { class: 'flex justify-start w-full mt-1 gap-1 flex-wrap' }, [
-        h('span', { class: `badge badge-xs ${statusClass}` }, status),
-        // AFTER
-        ...(first.customSchedule
-          ? [
-              h(
-                'span',
-                {
-                  class: 'text-xs font-bold',
-                  style: first.customSchedule.color
-                    ? `background:${first.customSchedule.color}20; color:${first.customSchedule.color}; border-color:${first.customSchedule.color}80;`
-                    : '',
-                },
-                first.customSchedule.name || 'Custom'
-              ),
-            ]
-          : []),
-      ]),
-    ])
+    return h(
+      'div',
+      { class: `flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full ${bgClass}` },
+      [
+        h('div', { class: 'font-bold text-neutral-900 border-b border-neutral-500 mb-1 pb-1 w-full' }, [
+          h('div', {}, subjectName),
+          h('div', { class: 'text-[10px] uppercase mt-1' }, teacherName),
+        ]),
+        h(
+          'div',
+          { class: 'flex flex-wrap justify-center gap-1' },
+          allStudents.map((name) =>
+            h('span', { class: 'badge badge-ghost font-semibold badge-xs whitespace-nowrap' }, name)
+          )
+        ),
+        h('div', { class: 'flex justify-start w-full mt-1 gap-1 flex-wrap' }, [
+          h('span', { class: `badge badge-xs ${statusClass}` }, status),
+          // AFTER
+          ...(first.customSchedule
+            ? [
+                h(
+                  'span',
+                  {
+                    class: 'text-xs font-bold',
+                    style: first.customSchedule.color
+                      ? `background:${first.customSchedule.color}20; color:${first.customSchedule.color}; border-color:${first.customSchedule.color}80;`
+                      : '',
+                  },
+                  first.customSchedule.name || 'Custom'
+                ),
+              ]
+            : []),
+        ]),
+      ]
+    )
   }
 
   // ─────────────────────────────────────────────
@@ -417,6 +422,28 @@
       gridInstance = new Grid({
         columns,
         data,
+        search: {
+          selector: (cell) => {
+            if (!cell || typeof cell !== 'object') return String(cell ?? '')
+
+            // Teacher / Room columns → use the `.value` property
+            if ('value' in cell) return cell.value ?? ''
+
+            // Separator rows → skip
+            if (cell.isSeparator) return ''
+
+            // Schedule cells → build a searchable string from all relevant fields
+            if (!cell.schedules?.length) return ''
+
+            const first = cell.schedules[0]
+            const parts = [
+              first.subject?.name ?? '',
+              first.teacher?.name ?? '',
+              ...cell.schedules.flatMap((s) => s.students.map((std) => std.name)),
+            ]
+            return parts.join(' ')
+          },
+        },
         height: 'calc(100vh - 220px)',
         className: {
           table: 'w-full text-xs ',
@@ -513,6 +540,17 @@
       todayHoliday = holiday
 
       const normalized = normalizeSchedules(schedules)
+
+      const mtmRoomIds = new Set(rooms.map((r) => r.id))
+      const mtmSchedules = normalized.filter((s) => mtmRoomIds.has(s.roomId))
+
+      const showCount = mtmSchedules.filter((s) => s.status === 'show').length
+      scheduleStatusSummary = {
+        total: mtmSchedules.length,
+        showCount,
+        draftCount: mtmSchedules.length - showCount,
+      }
+
       const scheduleMap = buildScheduleMap(normalized)
       const emptyCountMap = buildEmptyCountMapBySection(timeslots, rooms, scheduleMap)
       const { columns, data } = buildGridConfig(rooms, timeslots, scheduleMap, emptyCountMap)
@@ -602,11 +640,28 @@
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <!-- Header -->
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
-    <h2 class="text-center flex-1">Daily MTM Schedule</h2>
-    <div class="w-6 h-6 flex items-center justify-center">
-      {#if isLoading}
-        <div class="loading loading-spinner loading-sm"></div>
+    <div class="flex-1 flex flex-col items-start justify-center gap-0.5">
+      {#if scheduleStatusSummary.showCount > 0}
+        <span class="text-lg font-bold text-success">The teacher's schedule is now showing.</span>
+      {:else if scheduleStatusSummary.total > 0}
+        <span class="text-lg font-bold text-warning">The teachers' schedule is now hidden.</span>
       {/if}
+
+      {#if scheduleStatusSummary.draftCount > 0}
+        <span class="text-sm font-bold text-error">
+          {scheduleStatusSummary.draftCount} schedule{scheduleStatusSummary.draftCount === 1 ? '' : 's'} still in draft
+        </span>
+      {/if}
+    </div>
+
+    <h2 class="text-center flex-1">Daily MTM Schedule</h2>
+
+    <div class="flex-1 flex justify-end">
+      <div class="w-6 h-6 flex items-center justify-center">
+        {#if isLoading}
+          <div class="loading loading-spinner loading-sm"></div>
+        {/if}
+      </div>
     </div>
   </div>
 
@@ -658,7 +713,7 @@
   </div>
 
   <!-- Grid container — gridjs renders into this div -->
-  <div id="daily-grid" class="border rounded-lg"></div>
+  <div id="daily-grid" class="rounded-lg"></div>
 </div>
 
 {#key selectedDate}

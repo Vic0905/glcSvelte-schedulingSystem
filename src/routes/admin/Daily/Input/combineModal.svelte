@@ -12,6 +12,8 @@
   let show = $state(false)
   let loading = $state(false)
   let showDeleteConfirm = $state(false)
+  let showCustomScheduleConfirm = $state(false)
+  let confirmedCustomScheduleName = $state('')
 
   // Dropdown data
   let subjects = $state([])
@@ -45,7 +47,7 @@
   // BREAK TIME & LUNCH BREAK
   // ═══════════════════════════════════
 
-  const BREAK_SCHEDULES = ['lunch break', 'break time']
+  const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
 
   let isBreakSchedule = $derived(BREAK_SCHEDULES.includes(form.customSchedule?.name?.toLowerCase().trim()))
 
@@ -169,6 +171,12 @@
     showDeleteConfirm = false
     selectedStudents = []
     searchQuery = ''
+  }
+  function handleCustomScheduleChange() {
+    if (form.customSchedule) {
+      confirmedCustomScheduleName = form.customSchedule.name
+      showCustomScheduleConfirm = true
+    }
   }
 
   // ═══════════════════════════════════
@@ -467,6 +475,7 @@
             <select
               id="customSchedule"
               bind:value={form.customSchedule}
+              onchange={handleCustomScheduleChange}
               class="select select-bordered select-sm w-full"
             >
               <option value={null}>None</option>
@@ -581,5 +590,24 @@
       </div>
     </div>
     <div class="modal-backdrop bg-black/40" role="presentation" onclick={close}></div>
+
+    {#if showCustomScheduleConfirm}
+      <dialog class="modal modal-open z-[60]">
+        <div class="modal-box max-w-sm text-center">
+          <h3 class="font-bold text-lg mb-2">Custom Schedule Selected</h3>
+          <p class="text-sm opacity-70 mb-4">
+            This schedule is now set to <span class="font-semibold">{confirmedCustomScheduleName}</span>.
+          </p>
+          <div class="modal-action justify-center">
+            <button class="btn btn-sm btn-info" onclick={() => (showCustomScheduleConfirm = false)}> Got it </button>
+          </div>
+        </div>
+        <div
+          class="modal-backdrop bg-black/40"
+          role="presentation"
+          onclick={() => (showCustomScheduleConfirm = false)}
+        ></div>
+      </dialog>
+    {/if}
   </dialog>
 {/if}

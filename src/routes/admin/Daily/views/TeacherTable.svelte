@@ -45,7 +45,7 @@
   }
 
   // Same break/lunch detection used in the Teacher Daily View grid
-  const BREAK_SCHEDULES = ['lunch break', 'break time']
+  const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
   function isBreakSchedule(cs) {
     return BREAK_SCHEDULES.includes(cs?.name?.toLowerCase().trim())
   }

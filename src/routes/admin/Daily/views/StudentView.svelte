@@ -99,7 +99,7 @@
     }
 
     // Break check
-    const BREAK_SCHEDULES = ['lunch break', 'break time']
+    const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
     if (BREAK_SCHEDULES.includes(items[0]?.customSchedule?.name?.toLowerCase().trim())) {
       const cs = items[0].customSchedule
       const style = cs.color ? `background:${cs.color}20; color:${cs.color};` : 'background:#f3f4f6; color:#6b7280;'
@@ -394,7 +394,16 @@
           columns,
           data,
           height: 'calc(100vh - 220px)',
-          search: false,
+          search: {
+            selector: (cell) => {
+              if (!cell || typeof cell !== 'object') return String(cell ?? '')
+              if ('value' in cell) return cell.value ?? ''
+              if (!cell.schedules?.length) return ''
+              return cell.schedules
+                .flatMap((s) => [s.subject?.name ?? '', s.teacher?.name ?? '', s.room?.name ?? ''])
+                .join(' ')
+            },
+          },
           sort: false,
           pagination: false,
           className: {
@@ -495,7 +504,7 @@
     </div>
   </div>
 
-  <div id="student-grid" class="border rounded-lg"></div>
+  <div id="student-grid" class="rounded-lg"></div>
 </div>
 
 <style>
@@ -520,7 +529,7 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    background-color: #484b4f;
+    background-color: #535252;
     color: #ffffff;
     text-align: center;
     vertical-align: middle;
