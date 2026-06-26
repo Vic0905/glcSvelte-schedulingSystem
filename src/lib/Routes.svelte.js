@@ -147,6 +147,9 @@ export const adminRoutes = {
   '/daily/information/custom/customsched': wrap({
     asyncComponent: () => import('../routes/admin/Daily/Information/Custom/customSched.svelte'),
   }),
+  '/daily/information/print/printtable': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Information/Print/printTable.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),

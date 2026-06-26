@@ -207,6 +207,7 @@
         <li><a href="/#/daily/information/room/room">Room Info</a></li>
         <li><a href="/#/daily/information/subject/subject">Subject Info</a></li>
         <li><a href="/#/daily/information/custom/customsched">Custom Sched</a></li>
+        <li><a href="/#/daily/information/print/printtable">Print Table</a></li>
       </ul>
     {/if}
   </li>
