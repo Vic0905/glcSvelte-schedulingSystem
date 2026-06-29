@@ -209,12 +209,64 @@
             <span class="label-text font-semibold text-base-content">Color</span>
           </label>
           <div class="flex items-center gap-3">
+            <!-- Color wheel picker -->
             <input
               id="schedule-color"
               bind:value={formData.color}
               type="color"
               class="w-12 h-10 rounded-lg border border-base-300 cursor-pointer p-0.5 bg-base-100"
             />
+
+            <!-- Editable hex input -->
+            <input
+              type="text"
+              value={formData.color}
+              maxlength="7"
+              class="input input-bordered input-sm w-28 font-mono text-sm focus:input-primary"
+              placeholder="#4f8ef7"
+              oninput={(e) => {
+                const val = e.target.value
+                if (/^#[0-9a-fA-F]{6}$/.test(val)) formData.color = val
+              }}
+              onblur={(e) => {
+                if (!/^#[0-9a-fA-F]{6}$/.test(e.target.value)) e.target.value = formData.color
+              }}
+            />
+
+            <!-- Eyedropper button (Chromium only) -->
+            {#if typeof EyeDropper !== 'undefined'}
+              <button
+                type="button"
+                class="btn btn-sm btn-ghost btn-square"
+                title="Pick color from screen"
+                onclick={async () => {
+                  try {
+                    const dropper = new EyeDropper()
+                    const result = await dropper.open()
+                    formData.color = result.sRGBHex
+                  } catch {}
+                }}
+              >
+                <!-- pipette icon -->
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m2 22 1-1h3l9-9" />
+                  <path d="M3 21v-3l9-9" />
+                  <path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8z" />
+                </svg>
+              </button>
+            {/if}
+
+            <!-- Live preview badge -->
             <span
               class="badge badge-lg font-medium"
               style="background:{formData.color}20; color:{formData.color}; border:none;"
@@ -222,7 +274,6 @@
               <span class="inline-block w-2.5 h-2.5 rounded-full mr-1.5" style="background:{formData.color};"></span>
               {formData.name || 'Preview'}
             </span>
-            <span class="text-xs text-base-content/50 font-mono">{formData.color}</span>
           </div>
         </div>
       </div>
