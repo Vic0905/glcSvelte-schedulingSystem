@@ -184,7 +184,7 @@
       // student collection keeps its own start/end range fields — no change here
       cachedStudents = await pb.collection('student').getFullList({
         filter: `status != "graduated" && start <= "${endDateStr}" && end >= "${startDateStr}"`,
-        fields: 'id,studentId,name,englishName,course,level,groupName,status,start,created,remarks',
+        fields: 'id,studentId,name,englishName,course,level,groupName,status,start,created,remarks,colorRemark',
       })
 
       // Fetch dailySchedule records for the selected day
@@ -286,7 +286,7 @@
           { value: student.englishName || '', bgClass },
           { value: student.course || '', bgClass },
           { value: student.level || '', bgClass },
-          { value: student.remarks || '', bgClass },
+          { value: student.remarks || '', bgClass, colorRemark: student.colorRemark || null },
         ]
 
         for (const ts of cachedTimeslots) {
@@ -358,14 +358,17 @@
         {
           name: 'Remarks',
           width: '120px',
-          formatter: (cell) =>
-            h(
+          formatter: (cell) => {
+            const style = cell.colorRemark ? `background:${cell.colorRemark}20; color:${cell.colorRemark};` : ''
+            return h(
               'div',
               {
                 class: `w-full h-full p-2 flex items-center justify-center font-semibold text-neutral-700 text-center ${cell.bgClass || 'bg-white'}`,
+                style,
               },
               cell.value
-            ),
+            )
+          },
         },
         ...cachedTimeslots.map((ts) => ({
           id: ts.id,

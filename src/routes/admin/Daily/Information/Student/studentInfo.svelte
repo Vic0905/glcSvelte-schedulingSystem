@@ -5,8 +5,6 @@
   import { toast } from 'svelte-sonner'
   import Papa from 'papaparse'
   import { pb } from '../../../../../lib/Pocketbase.svelte'
-  import StudentFormModal from './StudentFormModal.svelte'
-  import StudentBulkModal from './StudentBulkModal.svelte'
 
   // ── Constants ─────────────────────────────────────────────────────────────
   const STATUS_OPTIONS = ['new', 'old', 'graduated', 'changed', 'extended']
@@ -25,6 +23,7 @@
     course: '',
     level: '',
     remarks: '',
+    colorRemark: '', // ← add this
     status: 'new',
     start: '',
     end: '',
@@ -70,6 +69,9 @@
     return [...map.values()].sort((a, b) => a.start.localeCompare(b.start))
   })
 
+  // ── Derived for edit mode ──────────────────────────────────────────────────
+  let editMode = $derived(formData.isChanged ? 'changed' : formData.isExtended ? 'extended' : 'normal')
+
   // ── Derived ───────────────────────────────────────────────────────────────
   let stats = $derived({
     total: students.length,
@@ -80,7 +82,28 @@
     changed: students.filter((s) => s.status === 'changed').length,
   })
 
+  let bulkPreview = $derived(
+    bulkRawInput
+      .split('\n')
+      .map((line) => {
+        const delimiter = line.includes('\t') ? '\t' : ','
+        const [name = '', englishName = '', course = '', level = '', remarks = '', start = '', end = ''] = line
+          .split(delimiter)
+          .map((s) => s.trim())
+        return { englishName, name, course, level, remarks, start: parseDateToISO(start), end: parseDateToISO(end) }
+      })
+      .filter(
+        (row, i, arr) =>
+          row.englishName.length > 0 &&
+          arr.findIndex((r) => r.englishName.toLowerCase() === row.englishName.toLowerCase()) === i
+      )
+  )
+
   let hasDraft = $derived(!!localStorage.getItem(BULK_DRAFT_KEY) && !bulkRawInput.trim())
+
+  $effect(() => {
+    bulkRawInput.trim() ? localStorage.setItem(BULK_DRAFT_KEY, bulkRawInput) : localStorage.removeItem(BULK_DRAFT_KEY)
+  })
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getId = (rel) => (!rel ? null : Array.isArray(rel) ? rel[0] : typeof rel === 'object' ? rel.id : rel)
@@ -120,6 +143,22 @@
     return allResults
   }
 
+  // ── ADDED: get friday of the date range helper ─────────────────────────────────────────────
+
+  //   function getFridayOfWeek(dateStr) {
+  //     const d = new Date(dateStr + 'T00:00:00')
+  //     const dow = d.getDay() // 0=Sun..6=Sat
+  //     const monday = new Date(d)
+  //     monday.setDate(d.getDate() + (dow === 0 ? 1 : 1 - dow))
+  //     const friday = new Date(monday)
+  //     friday.setDate(monday.getDate() + 4)
+
+  //     const y = friday.getFullYear()
+  //     const m = String(friday.getMonth() + 1).padStart(2, '0')
+  //     const day = String(friday.getDate()).padStart(2, '0')
+  //     return `${y}-${m}-${day}`
+  //   }
+
   function getScheduleEndDate(student) {
     if (!student?.end) return null
     const d = new Date(student.end)
@@ -127,13 +166,18 @@
     while (d.getDay() !== 5) {
       d.setDate(d.getDate() - 1)
     }
+
+    // if that Friday is before start, there's no Friday in range
     if (d < startD) return null
+
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }
 
-  // ── User account helper ────────────────────────────────────────────────────
+  // ── ADDED: User account helper ─────────────────────────────────────────────
   async function createStudentUser(englishName) {
     const trimmedName = englishName.trim()
+
+    // Check if a user already exists for this student name
     try {
       const existing = await pb.collection('users').getFirstListItem(`firstName="${trimmedName}"`)
       return existing.id
@@ -211,7 +255,18 @@
       s.name || '-',
       s.course || '-',
       s.level || '-',
-      s.remarks || '-',
+      // With this:
+      s.remarks
+        ? h(
+            'span',
+            {
+              style: s.colorRemark
+                ? `display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;letter-spacing:0.03em;background:${s.colorRemark};color:#fff;box-shadow:0 1px 3px ${s.colorRemark}66;`
+                : `display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:500;background:rgba(0,0,0,0.06);color:inherit;`,
+            },
+            s.remarks
+          )
+        : h('span', { style: 'color:rgba(0,0,0,0.25);font-size:12px;' }, '—'),
       s.start ? s.start.slice(0, 10) : '-',
       s.end ? s.end.slice(0, 10) : '-',
       h('span', { className: `badge badge-sm ${STATUS_BADGE[s.status] ?? 'badge-neutral'}` }, s.status ?? 'new'),
@@ -222,7 +277,8 @@
             className: `btn btn-xs btn-outline ${viewedStudent?.id === s.id ? 'btn-primary' : 'btn-ghost'}`,
             onclick: (e) => {
               const btn = e.target
-              loadStudentSchedules(s)
+              loadStudentSchedules(s) // updates state & fetches schedule
+              // Immediately update the button text (DOM only)
               if (viewedStudent?.id === s.id) {
                 btn.textContent = 'Hide'
               } else {
@@ -306,6 +362,7 @@
           course: formData.course.trim(),
           level: original.level,
           remarks: original.remarks,
+          colorRemark: original.colorRemark,
           status: 'changed',
           start: formData.start || null,
           end: original.end || null,
@@ -322,6 +379,7 @@
           course: formData.course.trim(),
           level: original.level,
           remarks: original.remarks,
+          colorRemark: original.colorRemark,
           status: 'extended',
           start: formData.start || null,
           end: formData.end || null,
@@ -339,6 +397,7 @@
           course: formData.course.trim(),
           level: formData.level.trim(),
           remarks: formData.remarks.trim(),
+          colorRemark: formData.colorRemark,
           status: formData.status,
           start: formData.start || null,
           end: formData.end || null,
@@ -383,12 +442,15 @@
     try {
       const student = await pb.collection('student').getOne(id)
 
+      // delete schedules first (if still needed)
       const allSchedules = await pb.collection('lessonSchedule').getFullList()
       const targets = allSchedules.filter((item) => getId(item.student) === id)
       await Promise.all(targets.map((item) => pb.collection('lessonSchedule').delete(item.id)))
 
+      // delete student
       await pb.collection('student').delete(id)
 
+      // ✅ delete linked user (same as teacher)
       if (student.user) {
         await pb.collection('users').delete(student.user)
       }
@@ -400,7 +462,7 @@
     }
   }
 
-  async function saveBulkStudents(bulkPreview) {
+  async function saveBulkStudents() {
     if (!bulkPreview.length) return toast.error('No names entered')
 
     isProcessing = true
@@ -426,6 +488,7 @@
       const added = results.filter((r) => r.status >= 200 && r.status < 300).length
       const failed = results.filter((r) => r.status < 200 || r.status >= 300).length
 
+      // ── ADDED: create a user account for each successfully created student
       const successful = toCreate
         .map((row, i) => ({ row, result: results[i] }))
         .filter(({ result }) => result.status >= 200 && result.status < 300)
@@ -473,11 +536,18 @@
         filter: ids.map((id) => `id="${id}"`).join(' || '),
       })
 
+      const nameMap = Object.fromEntries(records.map((r) => [r.id, r.englishName || r.name || 'Unknown']))
+
+      // delete schedules
       const allSchedules = await pb.collection('lessonSchedule').getFullList()
       const targets = allSchedules.filter((item) => ids.includes(getId(item.student)))
 
       await Promise.all(targets.map((item) => pb.collection('lessonSchedule').delete(item.id)))
+
+      // delete students
       await Promise.all(ids.map((id) => pb.collection('student').delete(id)))
+
+      // ✅ delete linked users (same pattern as teacher)
       await Promise.allSettled(records.filter((s) => s.user).map((s) => pb.collection('users').delete(s.user)))
 
       toast.success(`${ids.length} student(s) deleted`)
@@ -564,6 +634,7 @@
           const added = results.filter((r) => r.status >= 200 && r.status < 300).length
           const failed = results.filter((r) => r.status < 200 || r.status >= 300).length
 
+          // ── ADDED: create a user account for each successfully created student
           const successful = toCreate
             .map((row, i) => ({ row, result: results[i] }))
             .filter(({ result }) => result.status >= 200 && result.status < 300)
@@ -599,6 +670,7 @@
       course: s.course || '',
       level: s.level || '',
       remarks: s.remarks || '',
+      colorRemark: s.colorRemark || '', // ← add this
       status: s.status || 'new',
       start: s.start ? s.start.slice(0, 10) : '',
       end: s.end ? s.end.slice(0, 10) : '',
@@ -607,6 +679,7 @@
     }
     showModal = true
   }
+
   const closeModal = () => {
     showModal = false
     formData = { ...BLANK_FORM }
@@ -644,7 +717,7 @@
     viewSchedules = []
     isLoadingSchedule = true
 
-    const targetDate = getScheduleEndDate(student)
+    const targetDate = getScheduleEndDate(student) // ← replaces the inline ternary
     if (!targetDate) {
       isLoadingSchedule = false
       return
@@ -695,15 +768,6 @@
         {#if hasDraft}<span
             class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-warning rounded-full border-2 border-base-100"
           ></span>{/if}
-      </button>
-      <button
-        class="btn btn-primary shadow-sm"
-        onclick={() => {
-          formData = { ...BLANK_FORM }
-          showModal = true
-        }}
-      >
-        Add Student
       </button>
     </div>
   </header>
@@ -828,19 +892,348 @@
 
 <!-- Add / Edit Modal -->
 {#if showModal}
-  <StudentFormModal bind:formData {isProcessing} onSave={saveStudent} onClose={closeModal} />
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus -->
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <div class="modal modal-open bg-black/40" role="dialog" onclick={(e) => e.target === e.currentTarget && closeModal()}>
+    <div class="modal-box max-w-lg border border-base-300 p-6">
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="font-bold text-xl">{formData.id ? 'Update' : 'Add'} Student</h3>
+        <button class="btn btn-sm btn-circle btn-ghost" onclick={closeModal}>✕</button>
+      </div>
+
+      <div class="flex flex-col gap-5">
+        <!-- Primary Information -->
+        <div>
+          <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide mb-3">Primary Information</p>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="form-control">
+              <label class="label py-1" for="english-name">
+                <span class="label-text font-semibold">
+                  English Name <span class="opacity-40 font-normal text-xs">(required)</span>
+                </span>
+              </label>
+              <input
+                id="english-name"
+                bind:value={formData.englishName}
+                type="text"
+                disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
+                class="input input-bordered w-full focus:input-primary disabled:opacity-50"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label py-1" for="student-name">
+                <span class="label-text font-semibold">
+                  Name <span class="opacity-40 font-normal text-xs">(optional)</span>
+                </span>
+              </label>
+              <input
+                id="student-name"
+                bind:value={formData.name}
+                type="text"
+                disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
+                class="input input-bordered w-full focus:input-primary disabled:opacity-50"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Academic Information -->
+        <div>
+          <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide mb-3">Academic Information</p>
+          <div class="grid grid-cols-3 gap-4">
+            <div class="form-control">
+              <label class="label py-1" for="course"><span class="label-text font-semibold">Course</span></label>
+              <input
+                id="course"
+                bind:value={formData.course}
+                type="text"
+                class="input input-bordered w-full focus:input-primary"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label py-1" for="level"><span class="label-text font-semibold">Level</span></label>
+              <input
+                id="level"
+                bind:value={formData.level}
+                type="text"
+                disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
+                class="input input-bordered w-full focus:input-primary disabled:opacity-50"
+              />
+            </div>
+            <div class="form-control">
+              <label class="label py-1" for="remarks"><span class="label-text font-semibold">Remarks</span></label>
+              <input
+                id="remarks"
+                bind:value={formData.remarks}
+                type="text"
+                disabled={!!formData.id && (formData.isChanged || formData.isExtended)}
+                class="input input-bordered w-full focus:input-primary disabled:opacity-50"
+              />
+            </div>
+            <!-- Remark Color -->
+            <div class="form-control col-span-3">
+              <label class="label py-1" for="color-remark">
+                <span class="label-text font-semibold">Remark Color</span>
+              </label>
+              <div class="flex items-center gap-3">
+                <input
+                  id="color-remark"
+                  bind:value={formData.colorRemark}
+                  type="color"
+                  class="w-12 h-10 rounded-lg border border-base-300 cursor-pointer p-0.5 bg-base-100"
+                />
+                <input
+                  type="text"
+                  value={formData.colorRemark}
+                  maxlength="7"
+                  class="input input-bordered input-sm w-28 font-mono text-sm focus:input-primary"
+                  placeholder="#ffffff"
+                  oninput={(e) => {
+                    const val = e.target.value
+                    if (/^#[0-9a-fA-F]{6}$/.test(val)) formData.colorRemark = val
+                  }}
+                  onblur={(e) => {
+                    if (!/^#[0-9a-fA-F]{6}$/.test(e.target.value)) e.target.value = formData.colorRemark
+                  }}
+                />
+                {#if typeof EyeDropper !== 'undefined'}
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-ghost btn-square"
+                    title="Pick color from screen"
+                    onclick={async () => {
+                      try {
+                        const dropper = new EyeDropper()
+                        const result = await dropper.open()
+                        formData.colorRemark = result.sRGBHex
+                      } catch {}
+                    }}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m2 22 1-1h3l9-9" /><path d="M3 21v-3l9-9" />
+                      <path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8z" />
+                    </svg>
+                  </button>
+                {/if}
+                <!-- Live preview -->
+                {#if formData.colorRemark}
+                  <span
+                    class="badge badge-lg font-medium"
+                    style="background:{formData.colorRemark}; color:#fff; border:none;"
+                  >
+                    {formData.remarks || 'Preview'}
+                  </span>
+                {/if}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit Mode (only in edit, not add) -->
+        {#if formData.id}
+          <div class="rounded-lg border border-base-300 bg-base-200/50 px-4 py-3 flex flex-col gap-3">
+            <p class="text-xs font-semibold text-base-content/40 uppercase tracking-wide">Edit Mode</p>
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm checkbox-error mt-0.5"
+                checked={formData.isChanged}
+                onchange={(e) => {
+                  formData.isChanged = e.target.checked
+                  if (e.target.checked) formData.isExtended = false
+                }}
+              />
+              <div>
+                <p class="font-semibold text-sm">Change</p>
+                <p class="text-xs text-base-content/50">
+                  Creates a new record with an updated Course. Original is preserved.
+                </p>
+              </div>
+            </label>
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm checkbox-secondary mt-0.5"
+                checked={formData.isExtended}
+                onchange={(e) => {
+                  formData.isExtended = e.target.checked
+                  if (e.target.checked) formData.isChanged = false
+                }}
+              />
+              <div>
+                <p class="font-semibold text-sm">Extend</p>
+                <p class="text-xs text-base-content/50">
+                  Creates a new record with updated Course, Start & End dates. Original is preserved.
+                </p>
+              </div>
+            </label>
+          </div>
+        {/if}
+
+        <!-- Start & End Dates -->
+        <div class="grid grid-cols-2 gap-4">
+          <div class="form-control">
+            <label class="label py-1" for="start-date"><span class="label-text font-semibold">Start Date</span></label>
+            <input
+              id="start-date"
+              bind:value={formData.start}
+              type="date"
+              disabled={false}
+              class="input input-bordered w-full focus:input-primary disabled:opacity-50"
+            />
+          </div>
+          <div class="form-control">
+            <label class="label py-1" for="end-date"><span class="label-text font-semibold">End Date</span></label>
+            <input
+              id="end-date"
+              bind:value={formData.end}
+              type="date"
+              disabled={!!formData.id && formData.isChanged}
+              class="input input-bordered w-full focus:input-primary disabled:opacity-50"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-action mt-8 gap-2">
+        <button class="btn btn-ghost px-6" onclick={closeModal} disabled={isProcessing}>Cancel</button>
+        <button class="btn btn-primary px-6 shadow-sm" onclick={saveStudent} disabled={isProcessing}>
+          {#if isProcessing}
+            <span class="loading loading-spinner loading-sm"></span>
+          {:else}
+            {formData.id ? 'Save Changes' : 'Add Student'}
+          {/if}
+        </button>
+      </div>
+    </div>
+  </div>
 {/if}
 
 <!-- Bulk Add Modal -->
 {#if showBulkModal}
-  <StudentBulkModal
-    {students}
-    bind:bulkRawInput
-    bind:bulkDefaultStatus
-    {isProcessing}
-    onSave={saveBulkStudents}
-    onClose={closeBulkModal}
-  />
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus -->
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <div
+    class="modal modal-open bg-black/40"
+    role="dialog"
+    onclick={(e) => e.target === e.currentTarget && closeBulkModal()}
+  >
+    <div class="modal-box max-w-2xl border border-base-300 p-6">
+      <div class="flex justify-between items-center mb-1">
+        <h3 class="font-bold text-xl">Add Multiple Students</h3>
+        <button class="btn btn-sm btn-circle btn-ghost" onclick={closeBulkModal}>✕</button>
+      </div>
+      <p class="text-sm text-base-content/50 mb-2">One student per line. Duplicates are skipped automatically.</p>
+      <div class="alert alert-info py-2 px-3 mb-4 text-xs">
+        Paste from <strong>Google Sheets</strong> or type manually with commas. Column order:
+        <code class="font-mono font-bold mx-1">Name · EnglishName · Course · Level · Remarks · Start · End</code>
+        — only <strong>English Name</strong> is required.
+      </div>
+
+      <div class="flex flex-col gap-5">
+        <div class="form-control">
+          <label class="label py-1" for="bulk-names">
+            <span class="label-text font-semibold">Student Lines</span>
+            <span class="label-text-alt flex gap-2">
+              {#if bulkPreview.length}<span class="text-base-content/50">{bulkPreview.length} detected</span>{/if}
+              {#if bulkRawInput.trim()}
+                <button
+                  class="text-error text-xs underline"
+                  onclick={() => {
+                    bulkRawInput = ''
+                    localStorage.removeItem(BULK_DRAFT_KEY)
+                  }}>Clear</button
+                >
+              {/if}
+            </span>
+          </label>
+          <textarea
+            id="bulk-names"
+            bind:value={bulkRawInput}
+            class="textarea textarea-bordered w-full h-40 resize-none focus:textarea-primary font-mono text-sm"
+            placeholder="Full name&#9;English name&#9;Course&#9;Level&#9;Remarks&#9;"
+          ></textarea>
+        </div>
+
+        <div class="bg-base-200 rounded-lg p-3">
+          <p class="text-xs font-semibold text-base-content/60 uppercase tracking-wide mb-2">Preview</p>
+          <div class="overflow-x-auto max-h-48 overflow-y-auto">
+            {#if bulkPreview.length > 0}
+              <table class="table table-xs w-full">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>English Name</th>
+                    <th>Course</th>
+                    <th>Level</th>
+                    <th>Remarks</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each bulkPreview as row}
+                    {@const isDupe = students.some(
+                      (s) => s.englishName?.toLowerCase() === row.englishName.toLowerCase()
+                    )}
+                    <tr class={isDupe ? 'opacity-40' : ''}>
+                      <td class="text-base-content/70">{row.name || '—'}</td>
+                      <td class={isDupe ? 'line-through' : 'font-medium'}>{row.englishName}</td>
+                      <td class="text-base-content/70">{row.course || '—'}</td>
+                      <td class="text-base-content/70">{row.level || '—'}</td>
+                      <td class="text-base-content/70">{row.remarks || '—'}</td>
+                      <td class="text-base-content/70">{row.start || '—'}</td>
+                      <td class="text-base-content/70">{row.end || '—'}</td>
+                      <td>
+                        {#if isDupe}
+                          <span class="badge badge-xs badge-warning">duplicate</span>
+                        {:else}
+                          <span class="badge badge-xs {STATUS_BADGE[bulkDefaultStatus]}">{bulkDefaultStatus}</span>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {:else}
+              <div class="text-center text-base-content/40 py-8 text-sm">
+                Enter student data above — preview will appear here
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-action mt-8 gap-2">
+        <button class="btn btn-ghost px-6" onclick={closeBulkModal} disabled={isProcessing}>Cancel</button>
+        <button
+          class="btn btn-primary px-6 shadow-sm"
+          onclick={saveBulkStudents}
+          disabled={!bulkPreview.length || isProcessing}
+        >
+          {#if isProcessing}
+            <span class="loading loading-spinner loading-sm"></span>
+          {:else}
+            {@const toAdd = bulkPreview.filter(
+              (row) => !students.some((s) => s.englishName?.toLowerCase() === row.englishName.toLowerCase())
+            ).length}
+            Add {toAdd} Student{toAdd !== 1 ? 's' : ''}
+          {/if}
+        </button>
+      </div>
+    </div>
+  </div>
 {/if}
 
 <style>
