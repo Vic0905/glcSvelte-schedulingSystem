@@ -162,7 +162,7 @@
 <main class="p-8 max-w-[90rem] mx-auto space-y-6">
   <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
     <div>
-      <h1 class="text-3xl font-extrabold tracking-tight text-base-content">Custom Schedule Information</h1>
+      <h1 class="text-3xl font-extrabold tracking-tight text-base-content">Memo Schedule Information</h1>
     </div>
     <div class="flex items-center gap-4">
       <button class="btn btn-outline btn-primary shadow-sm" onclick={() => (showModal = true)}>
