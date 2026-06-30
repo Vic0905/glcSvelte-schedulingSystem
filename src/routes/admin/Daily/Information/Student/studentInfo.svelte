@@ -255,17 +255,8 @@
       s.name || '-',
       s.course || '-',
       s.level || '-',
-      // With this:
       s.remarks
-        ? h(
-            'span',
-            {
-              style: s.colorRemark
-                ? `display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;letter-spacing:0.03em;background:${s.colorRemark};color:#fff;box-shadow:0 1px 3px ${s.colorRemark}66;`
-                : `display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:500;background:rgba(0,0,0,0.06);color:inherit;`,
-            },
-            s.remarks
-          )
+        ? h('span', { style: s.colorRemark ? `color:${s.colorRemark};font-weight:600;` : '' }, s.remarks)
         : h('span', { style: 'color:rgba(0,0,0,0.25);font-size:12px;' }, '—'),
       s.start ? s.start.slice(0, 10) : '-',
       s.end ? s.end.slice(0, 10) : '-',
@@ -310,10 +301,10 @@
       data,
       search: true,
       pagination: { limit: 10 },
-      className: { table: 'table w-full', th: 'text-center' },
-      style: {
-        th: { 'font-size': '0.7rem' },
-        td: { 'font-size': '0.75rem', 'white-space': 'normal' },
+      className: {
+        table: 'table w-full',
+        th: 'text-center text-xs',
+        td: 'text-xs whitespace-normal',
       },
     }).render(gridElement)
   }

@@ -761,7 +761,7 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    background-color: #484b4f;
+    background-color: #535252;
     color: #ffffff;
   }
 
@@ -799,6 +799,6 @@
   /* stronger table border */
   #daily-grid :global(.gridjs-table td),
   #daily-grid :global(.gridjs-table th) {
-    outline: 1px solid #b4bdc7;
+    outline: 1px solid #535252;
   }
 </style>

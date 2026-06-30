@@ -4,38 +4,72 @@
 
   let username = $state('')
   let password = $state('')
+  let isLoading = $state(false)
 
   const login = async (e) => {
     e.preventDefault()
-    if (!username || !password) {
-      toast.error('Username and Password Incorrect!')
+
+    const trimmedUsername = username.trim()
+
+    if (!trimmedUsername || !password) {
+      toast.error('Please enter both your username/email and password.')
       return
     }
-    toast.promise(pb.collection('users').authWithPassword(username, password), {
-      loading: 'Loggin in ...',
-      success: (data) => {
-        window.location.href = '/'
-        return `Welcome, ${username}`
-      },
-      error: (error) => {
-        return `Error: ${error.message}`
-      },
-    })
+
+    isLoading = true
+
+    try {
+      await toast.promise(pb.collection('users').authWithPassword(trimmedUsername, password), {
+        loading: 'Logging in…',
+        success: () => {
+          window.location.href = '/'
+          return `Welcome back, ${trimmedUsername}!`
+        },
+        error: (error) => `Login failed: ${error?.message ?? 'Please check your credentials and try again.'}`,
+      })
+    } finally {
+      isLoading = false
+    }
   }
 </script>
 
-<form class="fieldset bg-base-200 border-base-300 rounded-box w-xs border p-4" onsubmit={login}>
+<form class="fieldset bg-base-200 border-base-300 rounded-box w-xs border p-4" onsubmit={login} aria-busy={isLoading}>
   <legend class="fieldset-legend">Login</legend>
 
-  <!-- svelte-ignore a11y_label_has_associated_control -->
-  <label class="label">Username / Email</label>
-  <input type="text" class="input validator" placeholder="Username / Email" bind:value={username} />
+  <label class="label" for="username">Username / Email</label>
+  <input
+    id="username"
+    name="username"
+    type="text"
+    class="input validator"
+    placeholder="Username / Email"
+    autocomplete="username"
+    bind:value={username}
+    disabled={isLoading}
+    required
+  />
 
-  <!-- svelte-ignore a11y_label_has_associated_control -->
-  <label class="label">Password</label>
-  <input type="password" class="input validator" placeholder="Password" bind:value={password} />
+  <label class="label" for="password">Password</label>
+  <input
+    id="password"
+    name="password"
+    type="password"
+    class="input validator"
+    placeholder="Password"
+    autocomplete="current-password"
+    bind:value={password}
+    disabled={isLoading}
+    required
+  />
 
-  <button class="btn btn-info mt-4" type="submit">Login</button>
+  <button class="btn btn-info mt-4" type="submit" disabled={isLoading}>
+    {#if isLoading}
+      <span class="loading loading-spinner loading-sm"></span>
+      Logging in…
+    {:else}
+      Login
+    {/if}
+  </button>
 </form>
 
 <style>
