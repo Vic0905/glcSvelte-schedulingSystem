@@ -14,6 +14,7 @@
   let showDeleteConfirm = $state(false)
   let showCustomScheduleConfirm = $state(false)
   let confirmedCustomScheduleName = $state('')
+  let displaySub = $state(null)
 
   // Dropdown data
   let subjects = $state([])
@@ -129,6 +130,13 @@
     return list.find((item) => item.id === id) || null
   }
 
+  function findBreakScheduleId(csIds = []) {
+    return csIds.find((id) => {
+      const cs = customSchedules.find((c) => c.id === id)
+      return cs && BREAK_SCHEDULES.includes(cs.name?.toLowerCase().trim())
+    })
+  }
+
   // ═══════════════════════════════════
   // MODAL LIFECYCLE
   // ═══════════════════════════════════
@@ -143,6 +151,21 @@
 
     const existing = data.schedule || data.schedules?.[0]
 
+    // `existing.customSchedule` comes from the grid's `expand`, so each
+    // entry is already a full customSchedule record ({id, name, color}) —
+    // not a bare ID string. The old code did
+    //   csIds.find(id => customSchedules.find(c => c.id === id))
+    // which compared a string id against a whole object and could never
+    // match, so the dropdown never prefilled. Read the objects directly.
+    const csList = existing?.customSchedule?.length
+      ? existing.customSchedule
+      : data.customSchedule
+        ? [data.customSchedule]
+        : []
+
+    // Find the first custom schedule that IS NOT your background tag
+    const displayCs = csList.find((cs) => cs && cs.name?.toLowerCase().trim() !== 'sub class')
+
     form = {
       mode: data.mode,
       id: existing?.id || null,
@@ -151,7 +174,11 @@
       room: findById(rooms, existing?.roomId || data.room?.id),
       timeslot: findById(timeslots, existing?.timeslotId || data.timeslot?.id),
       date: data.date,
-      customSchedule: findById(customSchedules, existing?.customSchedule?.id || data.customSchedule?.id) || null,
+      // Re-resolve against the loaded `customSchedules` dropdown list
+      // (rather than using the expanded object as-is) so it's the exact
+      // same object instance the <select>'s <option> values are bound to —
+      // required for bind:value to show it as selected.
+      customSchedule: findById(customSchedules, displayCs?.id) || null,
     }
 
     originalState = {
@@ -162,6 +189,8 @@
 
     selectedStudents = data.mode === 'edit' && data.schedules ? extractStudentsFromSchedules(data.schedules) : []
 
+    await loadDisplaySub()
+
     showDeleteConfirm = false
   }
 
@@ -171,11 +200,73 @@
     showDeleteConfirm = false
     selectedStudents = []
     searchQuery = ''
+    displaySub = null
   }
   function handleCustomScheduleChange() {
     if (form.customSchedule) {
       confirmedCustomScheduleName = form.customSchedule.name
       showCustomScheduleConfirm = true
+    }
+  }
+
+  // ═══════════════════════════════════
+  // CUSTOM SCHEDULE MERGE (preserve tags like "Sub Class")
+  // ═══════════════════════════════════
+
+  async function getPreservedNonBreakIds() {
+    if (form.mode !== 'edit') return []
+
+    try {
+      const records = await pb.collection('dailySchedule').getFullList({
+        filter: [
+          `timeslot = "${originalState.timeslotId}"`,
+          `room = "${originalState.roomId}"`,
+          `date >= "${originalState.date} 00:00:00"`,
+          `date <= "${originalState.date} 23:59:59"`,
+        ].join(' && '),
+        fields: 'id,customSchedule',
+      })
+
+      const preserved = new Set()
+      for (const r of records) {
+        for (const csId of r.customSchedule || []) {
+          const cs = customSchedules.find((c) => c.id === csId)
+          // Only preserve explicit background system tags
+          if (cs && cs.name?.toLowerCase().trim() === 'sub class') {
+            preserved.add(csId)
+          }
+        }
+      }
+      return [...preserved]
+    } catch {
+      toast.error('Failed to check existing schedule tags')
+      return []
+    }
+  }
+
+  // ═══════════════════════════════════
+  // READ-ONLY SUB INFO
+  // ═══════════════════════════════════
+
+  async function loadDisplaySub() {
+    displaySub = null
+    if (form.mode !== 'edit' || !originalState.timeslotId || !originalState.roomId || !originalState.date) return
+
+    try {
+      const records = await pb.collection('dailySchedule').getFullList({
+        filter: [
+          `timeslot = "${originalState.timeslotId}"`,
+          `room = "${originalState.roomId}"`,
+          `date >= "${originalState.date} 00:00:00"`,
+          `date <= "${originalState.date} 23:59:59"`,
+        ].join(' && '),
+        expand: 'sub',
+      })
+
+      const withSub = records.find((r) => r.expand?.sub)
+      displaySub = withSub?.expand?.sub || null
+    } catch {
+      // silent — this is supplementary info, shouldn't block the modal
     }
   }
 
@@ -246,12 +337,11 @@
   function checkConflictTypes(records) {
     const teacherBusy = records.find((s) => s.teacher === form.teacher.id)
     if (teacherBusy) {
-      throw new Error(`${form.teacher.name} is busy in ${teacherBusy.expand?.room?.name || 'another room'}.`)
+      throw new Error(`Teacher is busy in ${teacherBusy.expand?.room?.name || 'another room'}.`)
     }
-
     const roomTaken = records.find((s) => s.room === form.room.id && s.teacher !== form.teacher.id)
     if (roomTaken) {
-      throw new Error(`${form.room.name} is occupied by ${roomTaken.expand?.teacher?.name || 'another teacher'}.`)
+      throw new Error(`Room is occupied by another teacher.`)
     }
 
     const studentBusy = records.find((s) => {
@@ -259,9 +349,7 @@
       return selectedStudents.includes(sid)
     })
     if (studentBusy) {
-      const sid = typeof studentBusy.student === 'object' ? studentBusy.student.id : studentBusy.student
-      const name = students.find((s) => s.id === sid)?.englishName || 'Student'
-      throw new Error(`${name} already has a class in ${studentBusy.expand?.room?.name}.`)
+      throw new Error(`Student already has a class in ${studentBusy.expand?.room?.name}.`)
     }
   }
 
@@ -306,6 +394,11 @@
     try {
       await checkConflicts()
 
+      // Preserve tags like "Sub Class" that this modal doesn't manage,
+      // then merge in the break-type tag currently selected (if any).
+      const preservedIds = await getPreservedNonBreakIds()
+      const finalCustomSchedule = form.customSchedule?.id ? [...preservedIds, form.customSchedule.id] : preservedIds
+
       const batch = pb.createBatch()
 
       if (form.mode === 'edit') {
@@ -323,18 +416,18 @@
               student: studentId,
               date: `${form.date} 00:00:00.000Z`,
               status: 'draft',
-              customSchedule: form.customSchedule?.id || null,
+              customSchedule: finalCustomSchedule,
             })
           })
         : batch.collection('dailySchedule').create({
-            timeslot: form.timeslot?.id || null, // ← keep it
+            timeslot: form.timeslot?.id || null,
             teacher: form.teacher?.id || null,
             subject: null,
-            room: form.room?.id || null, // ← keep it
+            room: form.room?.id || null,
             student: null,
             date: `${form.date} 00:00:00.000Z`,
             status: 'draft',
-            customSchedule: form.customSchedule?.id || null,
+            customSchedule: finalCustomSchedule,
           })
 
       await batch.send()
@@ -483,6 +576,15 @@
                 <option value={cs}>{cs.name}</option>
               {/each}
             </select>
+
+            {#if displaySub}
+              <div class="alert alert-error alert-soft text-xs py-2 mt-2">
+                <span>
+                  ⚡ Substitute assigned: <strong>{displaySub.name}</strong>
+                  <span class="">— manage via the Sub Class modal</span>
+                </span>
+              </div>
+            {/if}
           </div>
 
           {#if isBreakSchedule}

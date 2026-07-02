@@ -36,6 +36,10 @@
   // SECTION 3: Pure helper functions
   // ─────────────────────────────────────────────
 
+  // Hoisted to module scope (instead of living inside formatScheduleCell) so
+  // it can also be reused in the cellClick handler below.
+  const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
+
   function getInitialDate() {
     const hash = window.location.hash
     const queryString = hash.includes('?') ? hash.split('?')[1] : ''
@@ -197,23 +201,30 @@
         '—'
       )
     }
-    const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
-    const firstSched = cell.schedules[0]
-    if (BREAK_SCHEDULES.includes(firstSched?.customSchedule?.name?.toLowerCase().trim())) {
-      const cs = firstSched.customSchedule
-      const style = cs.color ? `background:${cs.color}20; color:${cs.color};` : 'background:#f3f4f6; color:#6b7280;'
+
+    const { schedules } = cell
+    const first = schedules[0]
+
+    // customSchedule is a multi-relation array, so search it for a
+    // break-type tag instead of assuming `first.customSchedule` is a
+    // single object.
+    const customSchedules = first?.customSchedule || []
+    const breakSchedule = customSchedules.find((cs) => BREAK_SCHEDULES.includes(cs.name?.toLowerCase().trim()))
+
+    if (breakSchedule) {
+      const style = breakSchedule.color
+        ? `background:${breakSchedule.color}20; color:${breakSchedule.color};`
+        : 'background:#f3f4f6; color:#6b7280;'
       return h(
         'div',
         {
           class: `w-full h-full min-h-[55px] flex items-center justify-center font-bold text-sm tracking-wide ${bgClass}`,
           style,
         },
-        cs.name.toUpperCase()
+        breakSchedule.name.toUpperCase()
       )
     }
 
-    const { schedules } = cell
-    const first = schedules[0]
     const subjectName = first.subject?.name || 'No Subject'
     const teacherName = first.teacher?.name || 'No Teacher'
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
@@ -239,21 +250,18 @@
         ),
         h('div', { class: 'flex justify-start w-full mt-1 gap-1 flex-wrap' }, [
           h('span', { class: `badge badge-xs ${statusClass}` }, status),
-          // AFTER
-          ...(first.customSchedule
-            ? [
-                h(
-                  'span',
-                  {
-                    class: 'text-xs font-bold',
-                    style: first.customSchedule.color
-                      ? `background:${first.customSchedule.color}20; color:${first.customSchedule.color}; border-color:${first.customSchedule.color}80;`
-                      : '',
-                  },
-                  first.customSchedule.name || 'Custom'
-                ),
-              ]
-            : []),
+          // render a badge for every remaining tag (e.g. a "Sub Class" tag
+          // alongside others), instead of only the single first tag
+          ...customSchedules.map((cs) =>
+            h(
+              'span',
+              {
+                class: 'text-xs font-bold',
+                style: cs.color ? `background:${cs.color}20; color:${cs.color}; border-color:${cs.color}80;` : '',
+              },
+              cs.name || 'Custom'
+            )
+          ),
         ]),
       ]
     )
@@ -277,7 +285,10 @@
       teacher: s.expand?.teacher,
       date: s.date?.split(' ')[0],
       status: s.status,
-      customSchedule: s.expand?.customSchedule || null, // ← ADD
+      // Keep the full array instead of unwrapping to a single object, so
+      // records with multiple tags (e.g. "Sub Class" + a break tag) don't
+      // silently lose data here.
+      customSchedule: s.expand?.customSchedule || [],
     }))
   }
 
@@ -467,7 +478,14 @@
           date: isCreate ? selectedDate : firstSched?.date || selectedDate,
           mode: isCreate ? 'create' : 'edit',
           schedules: data.schedules,
-          customSchedule: isCreate ? null : firstSched?.customSchedule || null, // ← ADD
+          // combineModal's dropdown is single-select and only manages the
+          // break-type tag, so pull just that one out of the array instead
+          // of passing the whole array (or a single object) to it.
+          customSchedule: isCreate
+            ? null
+            : (firstSched?.customSchedule || []).find((cs) =>
+                BREAK_SCHEDULES.includes(cs.name?.toLowerCase().trim())
+              ) || null,
         })
       })
     }

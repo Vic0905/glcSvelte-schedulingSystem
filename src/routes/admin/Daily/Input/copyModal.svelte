@@ -11,6 +11,10 @@
   let summary = $state(null) // { created, skipped, graduated }
   let preview = $state(null) // { graduatedStudents, sourceSchedules }
 
+  // The "Sub Class" customSchedule record id — resolved lazily and cached.
+  // Copied records should never carry forward a sub assignment or this tag.
+  let subClassScheduleId = $state(null)
+
   export function open() {
     targetStart = ''
     targetEnd = ''
@@ -36,6 +40,16 @@
     return dates
   }
 
+  async function resolveSubClassScheduleId() {
+    if (subClassScheduleId !== null) return // already resolved (possibly to '')
+    try {
+      const customSchedules = await pb.collection('customSchedule').getFullList({ fields: 'id,name' })
+      subClassScheduleId = customSchedules.find((cs) => cs.name.toLowerCase().trim() === 'sub class')?.id || ''
+    } catch {
+      subClassScheduleId = '' // fail safe — nothing will match, so nothing gets stripped by name
+    }
+  }
+
   async function previewCopy() {
     if (!targetStart || !targetEnd) return toast.error('Please select a target date range')
     if (targetEnd < targetStart) return toast.error('End date must be on or after start date')
@@ -46,6 +60,8 @@
     preview = null
 
     try {
+      await resolveSubClassScheduleId()
+
       // Fetch all dailySchedule records on the source date
       const sourceSchedules = await pb.collection('dailySchedule').getFullList({
         filter: [
@@ -102,14 +118,26 @@
     const dates = dateRange(targetStart, targetEnd)
 
     try {
+      await resolveSubClassScheduleId()
+
       // Fetch all existing dailySchedule records in the target range in one go
       const existingRecords = await pb.collection('dailySchedule').getFullList({
         filter: `date >= "${targetStart} 00:00:00" && date <= "${targetEnd} 23:59:59"`,
-        fields: 'date,room,timeslot',
+        fields: 'date,room,timeslot,student',
       })
 
-      // Conflict key: date + room + timeslot (one record per slot per day)
-      const existingSet = new Set(existingRecords.map((r) => `${r.date?.split(' ')[0]}|${r.room}|${r.timeslot}`))
+      // Conflict key: a student can only be in one class per timeslot per
+      // day, so uniqueness is per date+room+timeslot+student — NOT per
+      // date+room+timeslot alone (a GRP class legitimately has several
+      // students sharing the same room+timeslot, and each needs its own
+      // record). Records with no student (e.g. room-level breaks) fall
+      // back to date+room+timeslot.
+      const conflictKey = (date, roomId, timeslotId, studentId) =>
+        studentId ? `${date}|${roomId}|${timeslotId}|${studentId}` : `${date}|${roomId}|${timeslotId}`
+
+      const existingSet = new Set(
+        existingRecords.map((r) => conflictKey(r.date?.split(' ')[0], r.room, r.timeslot, r.student))
+      )
 
       let created = 0
       let skipped = 0
@@ -126,9 +154,19 @@
           const timeslotId = src.expand?.timeslot?.id || src.timeslot
           const studentId = src.expand?.student?.id || src.student || null
 
-          const customScheduleId = src.customSchedule || null
-
-          const isBreak = !!customScheduleId && !subjectId
+          // customSchedule is a multi-relation field, so the raw value is
+          // an array of ID strings (it isn't in the `expand` above). The
+          // old code did `src.customSchedule || null` and then compared
+          // that array to `subClassScheduleId` (a single string id) with
+          // `===`, which can never be true — an array is never strictly
+          // equal to a string. That silently defeated the "drop Sub Class"
+          // logic below. Read it as an array and filter it instead.
+          const rawCustomScheduleIds = Array.isArray(src.customSchedule)
+            ? src.customSchedule
+            : src.customSchedule
+              ? [src.customSchedule]
+              : []
+          const isBreak = rawCustomScheduleIds.length > 0 && !subjectId
 
           if (!isBreak && (!teacherId || !subjectId || !roomId || !timeslotId)) {
             skipped++
@@ -145,11 +183,17 @@
             continue
           }
 
-          const key = `${date}|${roomId}|${timeslotId}`
+          const key = conflictKey(date, roomId, timeslotId, studentId)
           if (existingSet.has(key)) {
             skipped++
             continue
           }
+
+          // Never carry forward a sub assignment. Drop the "Sub Class" tag
+          // too, but keep any other customSchedule tag (e.g. break/lunch).
+          const customScheduleIds = subClassScheduleId
+            ? rawCustomScheduleIds.filter((id) => id !== subClassScheduleId)
+            : rawCustomScheduleIds
 
           existingSet.add(key) // prevent duplicates within this batch
           toCreate.push({
@@ -160,7 +204,8 @@
             timeslot: timeslotId,
             student: studentId,
             status: 'draft',
-            customSchedule: customScheduleId,
+            customSchedule: customScheduleIds,
+            sub: null,
           })
           created++
         }
@@ -280,6 +325,10 @@
           from <span class="font-semibold text-base-content">{sourceDate}</span>
           into every day from <span class="font-semibold text-base-content">{targetStart}</span>
           to <span class="font-semibold text-base-content">{targetEnd}</span>.
+        </div>
+
+        <div class="text-xs text-base-content/50">
+          Sub teacher assignments and the "Sub Class" tag are never copied — every copied slot starts as a normal class.
         </div>
 
         {#if preview.graduatedStudents.length}

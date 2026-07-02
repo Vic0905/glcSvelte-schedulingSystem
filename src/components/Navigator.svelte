@@ -52,8 +52,9 @@
                sm:absolute sm:right-full sm:top-0 sm:mr-2 sm:flex-row sm:w-auto sm:mt-0 sm:whitespace-nowrap
                sm:max-w-[calc(100vw-2rem)] sm:overflow-x-auto"
       >
-        <li><a href="/#/daily/input/mtmschedule">MTM Table</a></li>
-        <li><a href="/#/daily/input/grpschedule">GRP Table</a></li>
+        <li><a href="/#/daily/input/mtmschedule">MTM Input</a></li>
+        <li><a href="/#/daily/input/grpschedule">GRP Input</a></li>
+        <li><a href="/#/daily/input/subclass">Sub Input</a></li>
         <li><a href="/#/daily/views/teacherview">Teacher view</a></li>
         <li><a href="/#/daily/views/studentview">Student View</a></li>
         <li><a href="/#/daily/input/graduatingstudent">Graduating Student</a></li>

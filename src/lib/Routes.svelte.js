@@ -119,6 +119,9 @@ export const adminRoutes = {
   '/daily/input/grpschedule': wrap({
     asyncComponent: () => import('../routes/admin/Daily/Input/GrpSchedule.svelte'),
   }),
+  '/daily/input/subclass': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Input/subClass.svelte'),
+  }),
   '/daily/input/graduatingstudent': wrap({
     asyncComponent: () => import('../routes/admin/Daily/Input/GraduatingStudent.svelte'),
   }),
