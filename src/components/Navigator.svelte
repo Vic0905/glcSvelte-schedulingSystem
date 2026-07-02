@@ -12,18 +12,8 @@
       }
     })
 
-    // also close the admin flyout menus if click is outside them
-    if (openMenus.daily || openMenus.management) {
-      const openLis = document.querySelectorAll('[data-admin-menu]')
-      let clickedInside = false
-      openLis.forEach((el) => {
-        if (el.contains(event.target)) clickedInside = true
-      })
-      if (!clickedInside) {
-        openMenus.daily = false
-        openMenus.management = false
-      }
-    }
+    // Admin flyout menus (Daily Booking / Management) are intentionally
+    // NOT closed here — they should only toggle via their own button.
   }
 
   onMount(() => {
