@@ -313,8 +313,8 @@
                   'div',
                   { class: 'flex gap-1 mt-1' },
                   [
-                    h('span', { class: 'badge badge-success badge-soft badge-xs' }, `MTM: ${mtmCount}`),
-                    h('span', { class: 'badge badge-info badge-soft badge-xs' }, `GRP: ${grpCount}`),
+                    h('span', { class: 'text-[10px]' }, `MTM: ${mtmCount}`),
+                    h('span', { class: 'text-[10px]' }, `GRP: ${grpCount}`),
                   ].filter(Boolean)
                 ),
               ]
