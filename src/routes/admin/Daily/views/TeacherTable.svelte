@@ -20,6 +20,7 @@
   let cachedHolidays = []
   let cachedRoomTypes = []
   let teacherRoomMap = new Map()
+  let periodNumberByTimeslotId = new Map()
 
   const today = () => new Date().toISOString().split('T')[0]
 
@@ -44,16 +45,40 @@
     return isNaN(num) ? Infinity : num
   }
 
+  const SUB_CLASS_TAG = 'Sub Class'
+  function withoutSubClassTag(customSchedule) {
+    return (customSchedule || []).filter((cs) => cs?.name !== SUB_CLASS_TAG)
+  }
+
   // Same break/lunch detection used in the Teacher Daily View grid
   const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
   function isBreakSchedule(cs) {
     return BREAK_SCHEDULES.includes(cs?.name?.toLowerCase().trim())
   }
 
+  // Timeslots starting before 08:00 are prep slots — not counted in PERIOD numbering
+  function computePeriodNumbers(timeslots) {
+    const map = new Map()
+    let counter = 0
+    for (const ts of timeslots) {
+      if (ts.start && ts.start < '08:00') {
+        map.set(ts.id, null)
+      } else {
+        counter++
+        map.set(ts.id, counter)
+      }
+    }
+    return map
+  }
+
   // customSchedule.color -> inline style, same formula used in the grid's badge/cell coloring
   function customScheduleStyle(cs) {
     if (!cs?.color) return ''
     return `background:${cs.color}20; color:${cs.color}; border-color:${cs.color}80;`
+  }
+  function remarkStyle(colorRemark) {
+    if (!colorRemark) return ''
+    return `background:${colorRemark}20; color:${colorRemark};`
   }
 
   // Loads timeslots, roomTypes, teachers, holidays — rebuilds teachers[] and teacherRoomMap
@@ -66,6 +91,7 @@
         pb.collection('holiday').getFullList({ fields: 'id,name,date' }),
       ])
       cachedTimeslots = timeslots
+      periodNumberByTimeslotId = computePeriodNumbers(timeslots)
       cachedRoomTypes = roomTypes
       cachedTeachers = allTeachers
       cachedHolidays = holidays
@@ -104,10 +130,11 @@
       todayHoliday = cachedHolidays.find((h) => h.date?.split(' ')[0] === selectedDate) ?? null
 
       let scheduleFilter = `date >= "${startStr}" && date <= "${endStr}" && status = "show"`
-      if (!isAdmin) scheduleFilter += ` && teacher.user = "${pb.authStore.model?.id}"`
+      if (!isAdmin)
+        scheduleFilter += ` && (teacher.user = "${pb.authStore.model?.id}" || sub.user = "${pb.authStore.model?.id}")`
       let schedules = await pb.collection('dailySchedule').getFullList({
         filter: scheduleFilter,
-        expand: 'teacher,student,subject,room,timeslot,customSchedule',
+        expand: 'teacher,sub,student,subject,room,timeslot,customSchedule',
       })
 
       if (todayHoliday) {
@@ -118,13 +145,10 @@
       const bookedTeacherIds = new Set()
 
       for (const s of schedules) {
-        const teacherId = s.expand?.teacher?.id
+        const originalTeacherId = s.expand?.teacher?.id
+        const subTeacherId = s.expand?.sub?.id
         const timeslotId = s.expand?.timeslot?.id
-        if (!teacherId || !timeslotId) continue
-        bookedTeacherIds.add(teacherId)
-        if (!newMap.has(teacherId)) newMap.set(teacherId, new Map())
-        const slots = newMap.get(teacherId)
-        if (!slots.has(timeslotId)) slots.set(timeslotId, [])
+        if (!originalTeacherId || !timeslotId) continue
 
         const studentList = Array.isArray(s.expand?.student)
           ? s.expand.student
@@ -132,12 +156,35 @@
             ? [s.expand.student]
             : []
 
-        slots.get(timeslotId).push({
+        const rawCustomSchedule = s.expand?.customSchedule || []
+
+        // Original teacher keeps the record, but without the "Sub Class" badge —
+        // they're absent, someone else is covering it.
+        bookedTeacherIds.add(originalTeacherId)
+        if (!newMap.has(originalTeacherId)) newMap.set(originalTeacherId, new Map())
+        const originalSlots = newMap.get(originalTeacherId)
+        if (!originalSlots.has(timeslotId)) originalSlots.set(timeslotId, [])
+        originalSlots.get(timeslotId).push({
           subject: s.expand?.subject,
           room: s.expand?.room,
-          customSchedule: s.expand?.customSchedule || null,
+          customSchedule: withoutSubClassTag(rawCustomSchedule),
           students: studentList,
         })
+
+        // Sub teacher also sees the same record on their own row, tag intact,
+        // so they know it's a class they're covering.
+        if (subTeacherId) {
+          bookedTeacherIds.add(subTeacherId)
+          if (!newMap.has(subTeacherId)) newMap.set(subTeacherId, new Map())
+          const subSlots = newMap.get(subTeacherId)
+          if (!subSlots.has(timeslotId)) subSlots.set(timeslotId, [])
+          subSlots.get(timeslotId).push({
+            subject: s.expand?.subject,
+            room: s.expand?.room,
+            customSchedule: rawCustomSchedule,
+            students: studentList,
+          })
+        }
       }
 
       scheduleMap = newMap
@@ -336,6 +383,7 @@
                 <col />
                 <col />
                 <col />
+                <col />
               </colgroup>
               <thead class="text-center border border-neutral-focus py-3">
                 <tr class="bg-neutral text-neutral-content text-xs tracking-widest h-10">
@@ -344,6 +392,7 @@
                   <th>ROOM</th>
                   <th>SUBJECT</th>
                   <th>STUDENTS</th>
+                  <th>LEVEL</th>
                   <th>MEMO</th>
                   <th>REMARKS</th>
                 </tr>
@@ -352,7 +401,9 @@
                 {#each cachedTimeslots as ts, i}
                   {@const entries = slots?.get(ts.id) || []}
                   <tr class="{i % 2 === 0 ? 'bg-base-100' : 'bg-base-200'} hover:bg-base-300 transition-colors">
-                    <td class="text-center font-extrabold text-base border border-base-900 bg-base-200">{i + 1}</td>
+                    <td class="text-center font-extrabold text-base border border-base-900 bg-base-200">
+                      {periodNumberByTimeslotId.get(ts.id) ?? '-'}
+                    </td>
                     <td class="text-center font-semibold text-sm border border-base-900 whitespace-nowrap"
                       >{ts.start} - {ts.end}</td
                     >
@@ -389,19 +440,36 @@
                         <span>—</span>
                       {/if}
                     </td>
+                    <td class="text-center text-sm font-semibold border border-base-900">
+                      {#if entries.length}
+                        <div class="flex flex-col gap-1 py-1">
+                          {#each entries as e}
+                            <div class="flex flex-wrap justify-center gap-1">
+                              {#each e.students as s}
+                                <span>{s.level || '—'}</span>
+                              {/each}
+                            </div>
+                          {/each}
+                        </div>
+                      {:else}
+                        <span>—</span>
+                      {/if}
+                    </td>
                     <td class="text-center text-sm font-bold border border-base-900">
                       {#if entries.length}
                         <div class="flex flex-col gap-1 items-center py-1">
                           {#each entries as e}
-                            {#if e.customSchedule}
-                              <span
-                                class="text-lg {isBreakSchedule(e.customSchedule) ? 'font-bold tracking-wide' : ''}"
-                                style={customScheduleStyle(e.customSchedule)}
-                              >
-                                {isBreakSchedule(e.customSchedule)
-                                  ? e.customSchedule.name.toUpperCase()
-                                  : e.customSchedule.name}
-                              </span>
+                            {#if e.customSchedule?.length}
+                              <div class="flex flex-wrap justify-center gap-1">
+                                {#each e.customSchedule as cs}
+                                  <span
+                                    class="text-lg {isBreakSchedule(cs) ? 'font-bold tracking-wide' : ''}"
+                                    style={customScheduleStyle(cs)}
+                                  >
+                                    {isBreakSchedule(cs) ? cs.name.toUpperCase() : cs.name}
+                                  </span>
+                                {/each}
+                              </div>
                             {:else}
                               <span>—</span>
                             {/if}
@@ -417,7 +485,7 @@
                           {#each entries as e}
                             <div class="flex flex-wrap justify-center gap-1">
                               {#each e.students as s}
-                                <span>{s.remarks || '—'}</span>
+                                <span style={remarkStyle(s.colorRemark)}>{s.remarks || '—'}</span>
                               {/each}
                             </div>
                           {/each}

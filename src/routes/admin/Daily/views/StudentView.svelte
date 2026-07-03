@@ -100,16 +100,20 @@
 
     // Break check
     const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
-    if (BREAK_SCHEDULES.includes(items[0]?.customSchedule?.name?.toLowerCase().trim())) {
-      const cs = items[0].customSchedule
-      const style = cs.color ? `background:${cs.color}20; color:${cs.color};` : 'background:#f3f4f6; color:#6b7280;'
+    const firstCustomSchedules = items[0]?.customSchedule || []
+    const breakSchedule = firstCustomSchedules.find((cs) => BREAK_SCHEDULES.includes(cs?.name?.toLowerCase().trim()))
+
+    if (breakSchedule) {
+      const style = breakSchedule.color
+        ? `background:${breakSchedule.color}20; color:${breakSchedule.color};`
+        : 'background:#f3f4f6; color:#6b7280;'
       return h(
         'div',
         {
           class: `w-full h-full min-h-[55px] flex items-center justify-center font-bold text-sm tracking-wide ${bgClass}`,
           style,
         },
-        cs.name.toUpperCase()
+        breakSchedule.name.toUpperCase()
       )
     }
 
@@ -131,19 +135,19 @@
                 { class: 'flex justify-center' },
                 h('span', { class: 'text-xs font-semibold whitespace-nowrap' }, item.room.name)
               ),
-            item.customSchedule &&
+            item.customSchedule?.length &&
               h(
                 'div',
-                { class: 'flex mt-1' },
-                h(
-                  'span',
-                  {
-                    class: 'text-xs font-bold',
-                    style: item.customSchedule.color
-                      ? `background:${item.customSchedule.color}20; color:${item.customSchedule.color}; border-color:${item.customSchedule.color}80;`
-                      : '',
-                  },
-                  item.customSchedule.name || 'Custom'
+                { class: 'flex flex-wrap justify-center gap-1 mt-1' },
+                item.customSchedule.map((cs) =>
+                  h(
+                    'span',
+                    {
+                      class: 'text-xs font-bold',
+                      style: cs.color ? `background:${cs.color}20; color:${cs.color}; border-color:${cs.color}80;` : '',
+                    },
+                    cs.name || 'Custom'
+                  )
                 )
               ),
           ].filter(Boolean)
@@ -212,7 +216,7 @@
           subject: s.expand?.subject,
           teacher: s.expand?.teacher,
           room: s.expand?.room,
-          customSchedule: s.expand?.customSchedule || null,
+          customSchedule: s.expand?.customSchedule || [],
         }
 
         const studentList = Array.isArray(s.expand?.student)

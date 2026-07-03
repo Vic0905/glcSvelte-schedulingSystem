@@ -103,16 +103,20 @@
 
     // Break check
     const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
-    if (BREAK_SCHEDULES.includes(firstSched?.customSchedule?.name?.toLowerCase().trim())) {
-      const cs = firstSched.customSchedule
-      const style = cs.color ? `background:${cs.color}20; color:${cs.color};` : 'background:#f3f4f6; color:#6b7280;'
+    const customSchedules = firstSched?.customSchedule || []
+    const breakSchedule = customSchedules.find((cs) => BREAK_SCHEDULES.includes(cs?.name?.toLowerCase().trim()))
+
+    if (breakSchedule) {
+      const style = breakSchedule.color
+        ? `background:${breakSchedule.color}20; color:${breakSchedule.color};`
+        : 'background:#f3f4f6; color:#6b7280;'
       return h(
         'div',
         {
           class: `w-full h-full min-h-[55px] flex items-center justify-center font-bold text-sm tracking-wide ${bgClass}`,
           style,
         },
-        cs.name.toUpperCase()
+        breakSchedule.name.toUpperCase()
       )
     }
 
@@ -133,20 +137,22 @@
           { class: 'flex flex-wrap justify-center gap-1' },
           allStudents.map((name) => h('span', { class: 'text-xs font-semibold whitespace-nowrap' }, name))
         ),
-        ...(firstSched.customSchedule
+        ...(customSchedules.length
           ? [
-              h('div', { class: 'flex justify-start w-full mt-1' }, [
-                h(
-                  'span',
-                  {
-                    class: 'text-xs font-bold',
-                    style: firstSched.customSchedule.color
-                      ? `background:${firstSched.customSchedule.color}20; color:${firstSched.customSchedule.color}; border-color:${firstSched.customSchedule.color}80;`
-                      : '',
-                  },
-                  firstSched.customSchedule.name || 'Custom'
-                ),
-              ]),
+              h(
+                'div',
+                { class: 'flex flex-wrap justify-center gap-1 w-full mt-1' },
+                customSchedules.map((cs) =>
+                  h(
+                    'span',
+                    {
+                      class: 'text-xs font-bold',
+                      style: cs.color ? `background:${cs.color}20; color:${cs.color}; border-color:${cs.color}80;` : '',
+                    },
+                    cs.name || 'Custom'
+                  )
+                )
+              ),
             ]
           : []),
       ]
@@ -217,7 +223,7 @@
           subject: s.expand?.subject,
           students: s.expand?.student ? [{ id: s.expand.student.id, name: s.expand.student.englishName }] : [],
           roomName: s.expand?.room?.name || null,
-          customSchedule: s.expand?.customSchedule || null,
+          customSchedule: s.expand?.customSchedule || [],
         })
       }
 
@@ -278,9 +284,11 @@
               const entries = scheduleMap.get(`${cell.id}-${ts.id}`) || []
               if (!entries.length) continue
 
-              // Skip break schedules
               const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
-              if (BREAK_SCHEDULES.includes(entries[0]?.customSchedule?.name?.toLowerCase().trim())) continue
+              const isBreak = (entries[0]?.customSchedule || []).some((cs) =>
+                BREAK_SCHEDULES.includes(cs?.name?.toLowerCase().trim())
+              )
+              if (isBreak) continue
 
               const roomName = (entries[0].roomName || '').toUpperCase()
               if (roomName.startsWith('A') || roomName.startsWith('ST') || roomName.startsWith('B')) mtmCount++
