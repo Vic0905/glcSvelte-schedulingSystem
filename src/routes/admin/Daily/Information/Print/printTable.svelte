@@ -11,6 +11,7 @@
 
   let cachedTimeslots = []
   let cachedHolidays = []
+  let periodNumberByTimeslotId = new Map()
 
   // 6 slots for the single print page
   let slots = $state(['', '', '', '', '', ''])
@@ -51,6 +52,21 @@
     return ''
   }
 
+  // Timeslots starting before 08:00 are prep slots — not counted in PERIOD numbering
+  function computePeriodNumbers(timeslots) {
+    const map = new Map()
+    let counter = 0
+    for (const ts of timeslots) {
+      if (ts.start && ts.start < '08:00') {
+        map.set(ts.id, null)
+      } else {
+        counter++
+        map.set(ts.id, counter)
+      }
+    }
+    return map
+  }
+
   async function loadData() {
     isLoading = true
     try {
@@ -59,6 +75,7 @@
         pb.collection('holiday').getFullList({ fields: 'id,name,date' }),
       ])
       cachedTimeslots = timeslots
+      periodNumberByTimeslotId = computePeriodNumbers(timeslots)
       cachedHolidays = holidays
 
       const startStr = `${selectedDate} 00:00:00`
@@ -111,7 +128,7 @@
           if (!newMap.has(student.id)) newMap.set(student.id, new Map())
           const slots = newMap.get(student.id)
           if (!slots.has(timeslotId)) slots.set(timeslotId, [])
-          slots.get(timeslotId).push({ ...entry, remarks: student.remarks }) // ← student.remarks
+          slots.get(timeslotId).push(entry)
         }
       }
 
@@ -138,71 +155,67 @@
     queries = queries.map((v, i) => (i === slotIndex ? '' : v))
   }
 
-  async function printSchedules() {
-    const chosen = selectedStudents.filter(Boolean)
-    if (chosen.length === 0) {
-      toast.warning('No students selected to print')
-      return
-    }
+  function buildCard(student, studentSlots) {
+    const statusBadge =
+      student.status === 'new'
+        ? '<span class="bdg-new">New</span>'
+        : student.status === 'extended'
+          ? '<span class="bdg-ext">Extended</span>'
+          : student.status === 'changed'
+            ? '<span class="bdg-chg">Changed</span>'
+            : ''
 
-    const cards = chosen.map((student) => {
-      const studentSlots = scheduleMap.get(student.id)
+    const tableRows = cachedTimeslots
+      .map((ts) => {
+        const entries = studentSlots?.get(ts.id) || []
+        const period = periodNumberByTimeslotId.get(ts.id) ?? '—'
+        if (entries.length) {
+          return `
+      <tr>
+        <td class="per">${period}</td>
+        <td class="tim">${ts.start}–${ts.end}</td>
+        <td>${entries.map((e) => e.teacher?.name || '—').join(' / ')}</td>
+        <td>${entries.map((e) => e.room?.name || '—').join(' / ')}</td>
+        <td>${entries.map((e) => e.subject?.name || '—').join(' / ')}</td>
+      </tr>`
+        } else {
+          return `
+      <tr>
+        <td class="per">${period}</td>
+        <td class="tim">${ts.start}–${ts.end}</td>
+        <td class="muted">—</td>
+        <td class="muted">—</td>
+        <td class="muted">—</td>
+      </tr>`
+        }
+      })
+      .join('')
 
-      const statusBadge =
-        student.status === 'new'
-          ? '<span class="bdg-new">New</span>'
-          : student.status === 'extended'
-            ? '<span class="bdg-ext">Extended</span>'
-            : student.status === 'changed'
-              ? '<span class="bdg-chg">Changed</span>'
-              : ''
-
-      const tableRows = cachedTimeslots
-        .map((ts, i) => {
-          const entries = studentSlots?.get(ts.id) || []
-          if (entries.length) {
-            return `
-          <tr>
-            <td class="per">${i + 1}</td>
-            <td class="tim">${ts.start}–${ts.end}</td>
-            <td>${entries.map((e) => e.teacher?.name || '—').join(' / ')}</td>
-            <td>${entries.map((e) => e.room?.name || '—').join(' / ')}</td>
-            <td>${entries.map((e) => e.subject?.name || '—').join(' / ')}</td>
-            <td>${entries.map((e) => e.remarks || '—').join(' / ')}</td>
-          </tr>`
-          } else {
-            return `
-          <tr>
-            <td class="per">${i + 1}</td>
-            <td class="tim">${ts.start}–${ts.end}</td>
-            <td class="muted">—</td>
-            <td class="muted">—</td>
-            <td class="muted">—</td>
-            <td class="muted">—</td>
-          </tr>`
-          }
-        })
-        .join('')
-
-      return `
+    return `
   <div class="student-card">
-    <div class="card-header">
-      STUDENT'S SCHEDULE ${statusBadge}
-    </div>
+    <div class="card-header">STUDENT'S SCHEDULE ${statusBadge}</div>
     <div class="card-info">
       <div class="card-info-cell">
-        <div class="cell-label">Name</div>
+        <div class="cell-label">Name:</div>
         <div class="cell-value">${student.name || '—'}</div>
       </div>
       <div class="card-info-cell">
-        <div class="cell-label">English Name</div>
+        <div class="cell-label">English Name:</div>
         <div class="cell-value">${student.englishName || '—'}</div>
+      </div>
+      <div class="card-info-cell">
+        <div class="cell-label">Course:</div>
+        <div class="cell-value">${student.course || '—'}</div>
+      </div>
+      <div class="card-info-cell">
+        <div class="cell-label">Level:</div>
+        <div class="cell-value">${student.level || '—'}</div>
       </div>
       ${
         getPrintDate(selectedDate)
           ? `
       <div class="card-info-cell">
-        <div class="cell-label">Date</div>
+        <div class="cell-label">Date:</div>
         <div class="cell-value red">${getPrintDate(selectedDate)}</div>
       </div>`
           : ''
@@ -212,13 +225,109 @@
       <thead>
         <tr>
           <th>NO.</th><th>TIME</th><th>TEACHER</th>
-          <th>CUBICLE/ROOM</th><th>SUBJECT</th><th>REMARKS</th>
+          <th>CUBICLE/ROOM</th><th>SUBJECT</th>
         </tr>
       </thead>
       <tbody>${tableRows}</tbody>
     </table>
   </div>`
-    })
+  }
+
+  const printStyles = `
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #000; }
+  @page { size: A4 landscape; margin: 5mm; }
+
+  .print-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 2.5mm;
+    width: 100%;
+    height: 100vh;
+  }
+
+  .student-card {
+    border: 2px solid #000;
+    overflow: hidden;
+    break-inside: avoid;
+    display: flex;
+    flex-direction: column;
+  }
+  .student-card.empty { background: #f0f0f0 !important; }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-weight: 900;
+    font-size: 7pt;
+    letter-spacing: 0.1em;
+    padding: 1mm 2mm;
+    border-bottom: 2px solid #000;
+    background: #cccccc !important;
+    flex-shrink: 0;
+    color: #000 !important;
+  }
+
+  .card-info { display: flex; border-bottom: 2px solid #000; flex-shrink: 0; }
+  .card-info-cell { flex: 1; padding: 0.8mm 1.5mm; border-right: 1.5px solid #000; }
+  .card-info-cell:last-child { border-right: none; }
+  .cell-label { font-size: 5pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #000 !important; }
+  .cell-value { font-weight: 900; font-size: 6pt; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #000 !important; }
+  .cell-value.red { color: #cc0000 !important; }
+
+  table { width: 100%; border-collapse: collapse; flex: 1; }
+  thead tr { background: #000 !important; }
+  th {
+    text-align: center;
+    padding: 1mm 0.3mm;
+    font-size: 5pt;
+    letter-spacing: 0.05em;
+    font-weight: 800;
+    color: #ffffff !important;
+    background: #000 !important;
+    border: 1px solid #000;
+  }
+  td {
+    border: 1px solid #000;
+    text-align: center;
+    padding: 0.5mm 0.3mm;
+    vertical-align: middle;
+    font-size: 5.5pt;
+    line-height: 1.3;
+    color: #000 !important;
+  }
+  td.per {
+    background: #bbbbbb !important;
+    font-weight: 900;
+    font-size: 7pt;
+    width: 5mm;
+    color: #000 !important;
+    border: 1px solid #000;
+  }
+  td.tim {
+    font-weight: 800;
+    white-space: nowrap;
+    font-size: 5pt;
+    color: #000 !important;
+  }
+  td.muted { color: #777 !important; }
+
+  .bdg-new { font-size: 5pt; font-weight: 900; background: #bbf7d0 !important; color: #14532d !important; border: 1px solid #166534; padding: 0.2mm 1.5mm; border-radius: 99px; }
+  .bdg-ext { font-size: 5pt; font-weight: 900; background: #e9d5ff !important; color: #581c87 !important; border: 1px solid #6b21a8; padding: 0.2mm 1.5mm; border-radius: 99px; }
+  .bdg-chg { font-size: 5pt; font-weight: 900; background: #fecaca !important; color: #7f1d1d !important; border: 1px solid #991b1b; padding: 0.2mm 1.5mm; border-radius: 99px; }
+  `
+
+  async function printSchedules() {
+    const chosen = selectedStudents.filter(Boolean)
+    if (chosen.length === 0) {
+      toast.warning('No students selected to print')
+      return
+    }
+
+    const cards = chosen.map((student) => buildCard(student, scheduleMap.get(student.id)))
 
     // Pad to 6 cards so the grid stays 3x2
     while (cards.length < 6) {
@@ -230,92 +339,7 @@
 <head>
   <meta charset="utf-8"/>
   <title>Student Schedules — ${formatDateShort(selectedDate)}</title>
-  <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-body { font-family: Arial, Helvetica, sans-serif; color: #000; }
-@page { size: A4 landscape; margin: 5mm; }
-
-.print-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(2, 1fr);
-  gap: 2.5mm;
-  width: 100%;
-  height: 100vh;
-}
-
-.student-card {
-  border: 2px solid #000;
-  overflow: hidden;
-  break-inside: avoid;
-  display: flex;
-  flex-direction: column;
-}
-.student-card.empty { background: #f0f0f0 !important; }
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  font-weight: 900;
-  font-size: 7pt;
-  letter-spacing: 0.1em;
-  padding: 1mm 2mm;
-  border-bottom: 2px solid #000;
-  background: #cccccc !important;
-  flex-shrink: 0;
-  color: #000 !important;
-}
-
-.card-info { display: flex; border-bottom: 2px solid #000; flex-shrink: 0; }
-.card-info-cell { flex: 1; padding: 0.8mm 1.5mm; border-right: 1.5px solid #000; }
-.card-info-cell:last-child { border-right: none; }
-.cell-label { font-size: 5pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #000 !important; }
-.cell-value { font-weight: 900; font-size: 6pt; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #000 !important; }
-.cell-value.red { color: #cc0000 !important; }
-
-table { width: 100%; border-collapse: collapse; flex: 1; }
-thead tr { background: #000 !important; }
-th {
-  text-align: center;
-  padding: 1mm 0.3mm;
-  font-size: 5pt;
-  letter-spacing: 0.05em;
-  font-weight: 800;
-  color: #ffffff !important;
-  background: #000 !important;
-  border: 1px solid #000;
-}
-td {
-  border: 1px solid #000;
-  text-align: center;
-  padding: 0.5mm 0.3mm;
-  vertical-align: middle;
-  font-size: 5.5pt;
-  line-height: 1.3;
-  color: #000 !important;
-}
-td.per {
-  background: #bbbbbb !important;
-  font-weight: 900;
-  font-size: 7pt;
-  width: 5mm;
-  color: #000 !important;
-  border: 1px solid #000;
-}
-td.tim {
-  font-weight: 800;
-  white-space: nowrap;
-  font-size: 5pt;
-  color: #000 !important;
-}
-td.muted { color: #777 !important; }
-
-.bdg-new { font-size: 5pt; font-weight: 900; background: #bbf7d0 !important; color: #14532d !important; border: 1px solid #166534; padding: 0.2mm 1.5mm; border-radius: 99px; }
-.bdg-ext { font-size: 5pt; font-weight: 900; background: #e9d5ff !important; color: #581c87 !important; border: 1px solid #6b21a8; padding: 0.2mm 1.5mm; border-radius: 99px; }
-.bdg-chg { font-size: 5pt; font-weight: 900; background: #fecaca !important; color: #7f1d1d !important; border: 1px solid #991b1b; padding: 0.2mm 1.5mm; border-radius: 99px; }
-  </style>
+  <style>${printStyles}</style>
 </head>
 <body>
   <div class="print-grid">
@@ -336,84 +360,11 @@ td.muted { color: #777 !important; }
       return
     }
 
-    const buildCard = (student) => {
-      const studentSlots = scheduleMap.get(student.id)
-
-      const statusBadge =
-        student.status === 'new'
-          ? '<span class="bdg-new">New</span>'
-          : student.status === 'extended'
-            ? '<span class="bdg-ext">Extended</span>'
-            : student.status === 'changed'
-              ? '<span class="bdg-chg">Changed</span>'
-              : ''
-
-      const tableRows = cachedTimeslots
-        .map((ts, i) => {
-          const entries = studentSlots?.get(ts.id) || []
-          if (entries.length) {
-            return `
-        <tr>
-          <td class="per">${i + 1}</td>
-          <td class="tim">${ts.start}–${ts.end}</td>
-          <td>${entries.map((e) => e.teacher?.name || '—').join(' / ')}</td>
-          <td>${entries.map((e) => e.room?.name || '—').join(' / ')}</td>
-          <td>${entries.map((e) => e.subject?.name || '—').join(' / ')}</td>
-          <td>${entries.map((e) => e.remarks || '—').join(' / ')}</td>
-        </tr>`
-          } else {
-            return `
-        <tr>
-          <td class="per">${i + 1}</td>
-          <td class="tim">${ts.start}–${ts.end}</td>
-          <td class="muted">—</td>
-          <td class="muted">—</td>
-          <td class="muted">—</td>
-          <td class="muted">—</td>
-        </tr>`
-          }
-        })
-        .join('')
-
-      return `
-  <div class="student-card">
-    <div class="card-header">STUDENT'S SCHEDULE ${statusBadge}</div>
-    <div class="card-info">
-      <div class="card-info-cell">
-        <div class="cell-label">Name</div>
-        <div class="cell-value">${student.name || '—'}</div>
-      </div>
-      <div class="card-info-cell">
-        <div class="cell-label">English Name</div>
-        <div class="cell-value">${student.englishName || '—'}</div>
-      </div>
-      ${
-        getPrintDate(selectedDate)
-          ? `
-      <div class="card-info-cell">
-        <div class="cell-label">Date</div>
-        <div class="cell-value red">${getPrintDate(selectedDate)}</div>
-      </div>`
-          : ''
-      }
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>NO.</th><th>TIME</th><th>TEACHER</th>
-          <th>CUBICLE/ROOM</th><th>SUBJECT</th><th>REMARKS</th>
-        </tr>
-      </thead>
-      <tbody>${tableRows}</tbody>
-    </table>
-  </div>`
-    }
-
     // Split all students into chunks of 6 (one page per chunk)
     const pages = []
     for (let i = 0; i < allStudents.length; i += 6) {
       const chunk = allStudents.slice(i, i + 6)
-      const cards = chunk.map(buildCard)
+      const cards = chunk.map((student) => buildCard(student, scheduleMap.get(student.id)))
       while (cards.length < 6) cards.push('<div class="student-card empty"></div>')
       pages.push(`
       <div class="print-grid">
@@ -427,40 +378,9 @@ td.muted { color: #777 !important; }
   <meta charset="utf-8"/>
   <title>All Student Schedules — ${formatDateShort(selectedDate)}</title>
   <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #000; }
-  @page { size: A4 landscape; margin: 5mm; }
-
-  .print-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(2, 1fr);
-    gap: 2.5mm;
-    width: 100%;
-    height: 100vh;
-    page-break-after: always;
-  }
+  ${printStyles}
+  .print-grid { page-break-after: always; }
   .print-grid:last-child { page-break-after: avoid; }
-
-  .student-card { border: 2px solid #000; overflow: hidden; break-inside: avoid; display: flex; flex-direction: column; }
-  .student-card.empty { background: #f0f0f0 !important; }
-  .card-header { display: flex; align-items: center; justify-content: center; gap: 3px; font-weight: 900; font-size: 7pt; letter-spacing: 0.1em; padding: 1mm 2mm; border-bottom: 2px solid #000; background: #cccccc !important; flex-shrink: 0; color: #000 !important; }
-  .card-info { display: flex; border-bottom: 2px solid #000; flex-shrink: 0; }
-  .card-info-cell { flex: 1; padding: 0.8mm 1.5mm; border-right: 1.5px solid #000; }
-  .card-info-cell:last-child { border-right: none; }
-  .cell-label { font-size: 5pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #000 !important; }
-  .cell-value { font-weight: 900; font-size: 6pt; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #000 !important; }
-  .cell-value.red { color: #cc0000 !important; }
-  table { width: 100%; border-collapse: collapse; flex: 1; }
-  thead tr { background: #000 !important; }
-  th { text-align: center; padding: 1mm 0.3mm; font-size: 5pt; letter-spacing: 0.05em; font-weight: 800; color: #ffffff !important; background: #000 !important; border: 1px solid #000; }
-  td { border: 1px solid #000; text-align: center; padding: 0.5mm 0.3mm; vertical-align: middle; font-size: 5.5pt; line-height: 1.3; color: #000 !important; }
-  td.per { background: #bbbbbb !important; font-weight: 900; font-size: 7pt; width: 5mm; color: #000 !important; border: 1px solid #000; }
-  td.tim { font-weight: 800; white-space: nowrap; font-size: 5pt; color: #000 !important; }
-  td.muted { color: #777 !important; }
-  .bdg-new { font-size: 5pt; font-weight: 900; background: #bbf7d0 !important; color: #14532d !important; border: 1px solid #166534; padding: 0.2mm 1.5mm; border-radius: 99px; }
-  .bdg-ext { font-size: 5pt; font-weight: 900; background: #e9d5ff !important; color: #581c87 !important; border: 1px solid #6b21a8; padding: 0.2mm 1.5mm; border-radius: 99px; }
-  .bdg-chg { font-size: 5pt; font-weight: 900; background: #fecaca !important; color: #7f1d1d !important; border: 1px solid #991b1b; padding: 0.2mm 1.5mm; border-radius: 99px; }
   </style>
 </head>
 <body>
@@ -615,15 +535,23 @@ td.muted { color: #777 !important; }
                 </div>
                 <div class="flex divide-x divide-base-300 border-b border-base-300 text-xs">
                   <div class="flex flex-col gap-0.5 px-2 py-1 flex-1 min-w-0">
-                    <span class="text-[9px] font-bold uppercase text-base-content/40">Name</span>
-                    <span class="font-bold truncate">{student.name || '—'}</span>
+                    <span class="text-[9px] font-bold uppercase text-base-content/40">Name:</span>
+                    <span class="font-bold">{student.name || '—'}</span>
                   </div>
                   <div class="flex flex-col gap-0.5 px-2 py-1 flex-1 min-w-0">
-                    <span class="text-[9px] font-bold uppercase text-base-content/40">English Name</span>
-                    <span class="font-bold truncate">{student.englishName || '—'}</span>
+                    <span class="text-[9px] font-bold uppercase text-base-content/40">English Name:</span>
+                    <span class="font-bold">{student.englishName || '—'}</span>
                   </div>
                   <div class="flex flex-col gap-0.5 px-2 py-1 flex-1 min-w-0">
-                    <span class="text-[9px] font-bold uppercase text-base-content/40">Date</span>
+                    <span class="text-[9px] font-bold uppercase text-base-content/40">Course:</span>
+                    <span class="font-bold">{student.course || '—'}</span>
+                  </div>
+                  <div class="flex flex-col gap-0.5 px-2 py-1 flex-1 min-w-0">
+                    <span class="text-[9px] font-bold uppercase text-base-content/40">Level:</span>
+                    <span class="font-bold">{student.level || '—'}</span>
+                  </div>
+                  <div class="flex flex-col gap-0.5 px-2 py-1 flex-1 min-w-0">
+                    <span class="text-[9px] font-bold uppercase text-base-content/40">Date:</span>
                     <span class="font-bold text-error">{formatDateShort(selectedDate)}</span>
                   </div>
                 </div>
@@ -636,14 +564,15 @@ td.muted { color: #777 !important; }
                         <th class="text-center">TEACHER</th>
                         <th class="text-center">ROOM</th>
                         <th class="text-center">SUBJECT</th>
-                        <th class="text-center">REMARKS</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {#each cachedTimeslots as ts, ti}
+                      {#each cachedTimeslots as ts}
                         {@const entries = studentSlots?.get(ts.id) || []}
-                        <tr class={ti % 2 === 0 ? 'bg-base-100' : 'bg-base-200'}>
-                          <td class="text-center font-extrabold border border-base-300 bg-base-200">{ti + 1}</td>
+                        <tr>
+                          <td class="text-center font-extrabold border border-base-300 bg-base-200">
+                            {periodNumberByTimeslotId.get(ts.id) ?? '—'}
+                          </td>
                           <td class="text-center font-semibold border border-base-300 whitespace-nowrap"
                             >{ts.start} – {ts.end}</td
                           >
@@ -662,12 +591,6 @@ td.muted { color: #777 !important; }
                           <td class="text-center border border-base-300">
                             {#if entries.length}{#each entries as e}<div class="font-semibold">
                                   {e.subject?.name || '—'}
-                                </div>{/each}
-                            {:else}<span class="text-base-content/20">—</span>{/if}
-                          </td>
-                          <td class="text-center border border-base-300">
-                            {#if entries.length}{#each entries as e}<div class="font-bold">
-                                  {e.remarks || '—'}
                                 </div>{/each}
                             {:else}<span class="text-base-content/20">—</span>{/if}
                           </td>
