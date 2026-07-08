@@ -1,6 +1,6 @@
 import PocketBase from 'pocketbase'
 
-export const domain = 'https://glc-forms.lemon-live.space'
+export const domain = 'https://glc-forms.studylive.online/'
 
 export const pb = new PocketBase(domain)
 
