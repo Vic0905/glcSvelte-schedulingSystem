@@ -165,9 +165,9 @@
         ),
         hasSub
           ? h('div', { class: 'flex items-center justify-center gap-1 mt-1' }, [
-              h('span', { class: 'badge badge-warning badge-sm font-bold' }, `⚡ ${first.sub.name}`),
+              h('span', { class: 'text text-sm font-semibold' }, `Sub: ${first.sub.name}`),
             ])
-          : h('span', { class: 'text text-xs text-warning mt-1' }, 'click to assign sub'),
+          : h('span', { class: 'text text-xs text-info opacity-70 mt-1' }, 'click to assign sub'),
       ]
     )
   }
@@ -460,8 +460,8 @@
   <div class="flex items-center justify-between mb-4 text-2xl font-bold">
     <div class="flex-1 flex items-center">
       {#if subCount > 0}
-        <span class="badge badge-warning badge-lg gap-2 font-bold text-sm">
-          ⚡ {subCount} sub{subCount === 1 ? '' : 's'} assigned
+        <span class="badge badge-info badge-lg gap-2 font-bold text-sm">
+          {subCount} sub{subCount === 1 ? '' : 's'} assigned
         </span>
       {:else}
         <span class="text-sm font-normal opacity-40">No subs assigned</span>

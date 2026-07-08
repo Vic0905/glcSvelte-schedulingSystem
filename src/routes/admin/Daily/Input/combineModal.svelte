@@ -339,7 +339,18 @@
     if (teacherBusy) {
       throw new Error(`Teacher is busy in ${teacherBusy.expand?.room?.name || 'another room'}.`)
     }
-    const roomTaken = records.find((s) => s.room === form.room.id && s.teacher !== form.teacher.id)
+
+    // ← NEW: teacher is already covering someone else's class as a sub
+    const teacherSubBusy = records.find((s) => s.sub === form.teacher.id)
+    if (teacherSubBusy) {
+      throw new Error(
+        `Teacher is already subbing for ${teacherSubBusy.expand?.teacher?.name || 'another teacher'} in ${teacherSubBusy.expand?.room?.name || 'another room'}.`
+      )
+    }
+
+    const roomTaken = records.find(
+      (s) => s.room === form.room.id && s.teacher !== form.teacher.id && s.sub !== form.teacher.id
+    )
     if (roomTaken) {
       throw new Error(`Room is occupied by another teacher.`)
     }
@@ -359,7 +370,7 @@
 
     const records = await pb.collection('dailySchedule').getFullList({
       filter: `timeslot = "${form.timeslot.id}" && date >= "${dateStartStr}" && date <= "${dateEndStr}"`,
-      expand: 'room,teacher,student',
+      expand: 'room,teacher,student,sub',
     })
 
     const others = filterEditModeRecords(records)

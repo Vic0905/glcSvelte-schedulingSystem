@@ -313,8 +313,8 @@
                   'div',
                   { class: 'flex gap-1 mt-1' },
                   [
-                    h('span', { class: 'text-[10px]' }, `MTM: ${mtmCount}`),
-                    h('span', { class: 'text-[10px]' }, `GRP: ${grpCount}`),
+                    h('span', { class: 'text-xs' }, `MTM: ${mtmCount}`),
+                    h('span', { class: 'text-xs' }, `GRP: ${grpCount}`),
                   ].filter(Boolean)
                 ),
               ]

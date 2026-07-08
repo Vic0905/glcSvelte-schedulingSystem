@@ -259,28 +259,28 @@
       <!-- Header -->
       <header class="mb-6 text-center">
         <h3 class="text-xl font-bold">Sub Class Assignment</h3>
-        <p class="text-xs opacity-60 uppercase tracking-widest">{displayDate}</p>
+        <p class="text-xs uppercase tracking-widest">{displayDate}</p>
       </header>
 
       <!-- Read-only schedule info card -->
       <div class="bg-base-200 rounded-xl p-4 mb-5">
-        <p class="text-[10px] font-bold uppercase opacity-40 tracking-widest mb-3">Existing Schedule</p>
+        <p class="text-xs font-bold uppercase tracking-widest mb-3">Existing Schedule</p>
 
         <div class="grid grid-cols-2 gap-3 text-sm mb-3">
           <div>
-            <p class="text-[10px] opacity-50 uppercase mb-0.5">Teacher</p>
+            <p class="text-[10px] opacity-80 uppercase mb-0.5">Teacher</p>
             <p class="font-bold">{displayTeacher?.name || '—'}</p>
           </div>
           <div>
-            <p class="text-[10px] opacity-50 uppercase mb-0.5">Subject</p>
+            <p class="text-[10px] opacity-80 uppercase mb-0.5">Subject</p>
             <p class="font-bold">{displaySubject?.name || '—'}</p>
           </div>
           <div>
-            <p class="text-[10px] opacity-50 uppercase mb-0.5">Room</p>
+            <p class="text-[10px] opacity-80 uppercase mb-0.5">Room</p>
             <p class="font-bold">{displayRoom?.name || '—'}</p>
           </div>
           <div>
-            <p class="text-[10px] opacity-50 uppercase mb-0.5">Timeslot</p>
+            <p class="text-[10px] opacity-80 uppercase mb-0.5">Timeslot</p>
             <p class="font-bold text-sm">
               {displayTimeslot ? `${displayTimeslot.start} – ${displayTimeslot.end}` : '—'}
             </p>
@@ -288,10 +288,10 @@
         </div>
 
         <div>
-          <p class="text-[10px] opacity-50 uppercase mb-1">Students ({displayStudents.length})</p>
+          <p class="text-[10px] opacity-80 uppercase mb-1">Students ({displayStudents.length})</p>
           <div class="flex flex-wrap gap-1">
             {#each displayStudents as s}
-              <span class="badge badge-ghost badge-sm">{s.name}</span>
+              <span class="font-bold text-sm">{s.name}</span>
             {:else}
               <span class="text-xs opacity-40">No students</span>
             {/each}
@@ -310,7 +310,7 @@
           <p class="text-[10px] font-bold uppercase opacity-40 tracking-widest mb-2">Yesterday's Sub</p>
           <div class="flex flex-wrap gap-1">
             {#each yesterdaySubs as name}
-              <span class="badge badge-warning badge-sm font-bold">⚡ {name}</span>
+              <span class="text text-sm font-bold">{name}</span>
             {/each}
           </div>
         </div>
@@ -320,13 +320,13 @@
       <div class="flex items-center justify-between p-4 bg-base-200 rounded-xl mb-4">
         <div>
           <p class="font-bold text-sm">Enable Sub Teacher</p>
-          <p class="text-xs opacity-50">
-            Auto-tags schedule as <span class="font-semibold text-warning">Sub Class</span>
+          <p class="text-xs opacity-80">
+            Auto-tags schedule as <strong>Sub Class</strong>
           </p>
         </div>
         <input
           type="checkbox"
-          class="toggle toggle-warning toggle-lg"
+          class="toggle toggle-lg"
           bind:checked={subEnabled}
           onchange={() => {
             if (!subEnabled) selectedSub = null
@@ -356,7 +356,7 @@
             {/each}
           </select>
           {#if !loading}
-            <p class="text-[10px] opacity-70 mt-1">
+            <p class="text-xs opacity-80 mt-1">
               Showing teachers free during {displayTimeslot
                 ? `${displayTimeslot.start} – ${displayTimeslot.end}`
                 : 'this timeslot'}{unavailableCount > 0 ? ` (${unavailableCount} already booked, hidden)` : ''}.
@@ -365,7 +365,7 @@
         </div>
 
         {#if subClassSchedule}
-          <div class="alert alert-warning alert-soft text-xs py-2 mb-2">
+          <div class="alert alert-soft text-xs py-2 mb-2">
             <span>
               ✓ Will auto-tag as <strong>{subClassSchedule.name}</strong> custom schedule.
             </span>
@@ -379,7 +379,7 @@
         {/if}
       {:else if existingSub}
         <!-- Warning when toggling OFF an existing sub -->
-        <div class="alert alert-warning alert-soft text-xs py-2 mb-2">
+        <div class="alert alert-info alert-soft text-xs py-2 mb-2">
           <span>
             Saving will remove <strong>{existingSub.name}</strong> as substitute and clear the Sub Class tag.
           </span>
@@ -390,7 +390,7 @@
       <div class="modal-action mt-4">
         <button class="btn btn-ghost btn-soft" onclick={close} disabled={loading}>Cancel</button>
         <button
-          class="btn btn-warning btn-soft min-w-[130px]"
+          class="btn btn-info btn-soft min-w-[130px]"
           onclick={save}
           disabled={loading || (subEnabled && (!selectedSub || !subClassSchedule))}
         >
