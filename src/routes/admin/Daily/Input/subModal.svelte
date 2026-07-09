@@ -228,9 +228,10 @@
       // ─── ACTIVITY LOG ───
       try {
         await pb.collection('activityLog').create({
-          action: 'update',
+          action: 'sub',
           performedBy: pb.authStore.record?.id,
           details: {
+            date: displayDate,
             timeslot: displayTimeslot ? `${displayTimeslot.start} - ${displayTimeslot.end}` : null,
             roomName: displayRoom?.name,
             teacherName: displayTeacher?.name,

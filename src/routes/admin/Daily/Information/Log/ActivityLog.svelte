@@ -52,20 +52,36 @@
       draft: 'badge-warning badge-soft',
       copy: 'badge-secondary badge-soft',
       clear: 'badge-error badge-soft',
+      sub: 'badge-info badge-soft',
     }
     return colors[action] || 'badge-ghost'
   }
 
   function formatDetails(log) {
     if (!log.details) return '—'
-    const { teacherName, roomName, timeslot, students, rangeStart, rangeEnd, roomType, count, sourceDate, date } =
-      log.details
+    const {
+      teacherName,
+      roomName,
+      timeslot,
+      students,
+      rangeStart,
+      rangeEnd,
+      roomType,
+      count,
+      sourceDate,
+      date,
+      subName,
+    } = log.details
 
     const studentList = Array.isArray(students) ? students.map((s) => s.name).join(', ') : 'No students'
 
     const range =
       rangeStart && rangeEnd ? (rangeStart === rangeEnd ? rangeStart : `${rangeStart} → ${rangeEnd}`) : (date ?? '?') // ← fall back to `date` if no range
 
+    if (log.action === 'sub')
+      return subName
+        ? `Date: ${range} | Timeslot: ${timeslot || '?'} | Room: ${roomName || '?'} | Teacher: ${teacherName || '?'} | Sub: ${subName}`
+        : `Date: ${range} | Timeslot: ${timeslot || '?'} | Room: ${roomName || '?'} | Teacher: ${teacherName || '?'} | Sub removed`
     if (log.action === 'show') return `Date: ${range} | Room type: ${roomType || 'all'} | Count: ${count}`
     if (log.action === 'draft') return `Date: ${range} | Room type: ${roomType || 'all'} | Count: ${count}`
     if (log.action === 'clear') return `Date: ${range} | Room type: ${roomType || 'all'} | Count: ${count}`
@@ -132,6 +148,7 @@
         <option value="">All Actions</option>
         <option value="add">Added</option>
         <option value="update">Updated</option>
+        <option value="sub">Sub Assigned</option>
         <option value="delete">Deleted</option>
       </select>
 
