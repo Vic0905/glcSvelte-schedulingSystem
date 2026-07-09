@@ -254,6 +254,9 @@ export const staffRoutes = {
   '/inventory/inventory': wrap({
     asyncComponent: () => import('../routes/Inventory/inventory.svelte'),
   }),
+  '/daily/views/checker': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/views/Checker.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),

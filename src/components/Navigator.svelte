@@ -82,6 +82,15 @@
   <!-- student routes -->
 {:else if current.user && current.user.role === 'staff'}
   <!-- staff routes -->
+  <li>
+    <details>
+      <summary>Input</summary>
+      <ul class="relative z-50 text-xs p-2">
+        <li><a href="/#/daily/input/subclass">SubClass Input</a></li>
+        <li><a href="/#/daily/views/checker">Checker</a></li>
+      </ul>
+    </details>
+  </li>
 {:else}
   <!-- public routes -->
 {/if}

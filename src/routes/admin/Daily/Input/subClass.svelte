@@ -600,4 +600,10 @@
   #sub-grid :global(.gridjs-table th) {
     outline: 1px solid #535252;
   }
+
+  @media (max-width: 640px) {
+    div#sub-grid {
+      zoom: 0.65 !important;
+    }
+  }
 </style>
