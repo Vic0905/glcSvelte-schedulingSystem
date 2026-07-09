@@ -248,35 +248,8 @@ export const staffRoutes = {
   '/': wrap({
     asyncComponent: () => import('../routes/admin/Dashboard/StaffDash.svelte'),
   }),
-  '/advance/mondayadvanceschedule': wrap({
-    asyncComponent: () => import('../routes/admin/Advance/MondayAdvanceSchedule.svelte'),
-  }),
-  '/advance/mondayadvancegroup': wrap({
-    asyncComponent: () => import('../routes/admin/Advance/MondayAdvanceGroup.svelte'),
-  }),
-  '/advance/mondaygrouptemplate': wrap({
-    asyncComponent: () => import('../routes/admin/Advance/MondayGroupTemplate.svelte'),
-  }),
-  '/advance/mondaystudentview': wrap({
-    asyncComponent: () => import('../routes/admin/Advance/MondayStudentView.svelte'),
-  }),
-  '/advance/mondayteacherview': wrap({
-    asyncComponent: () => import('../routes/admin/Advance/MondayTeacherView.svelte'),
-  }),
-  '/current/mondayscheduleinput': wrap({
-    asyncComponent: () => import('../routes/admin/Current/MondayScheduleInput.svelte'),
-  }),
-  '/current/mondaygrouptable': wrap({
-    asyncComponent: () => import('../routes/admin/Current/MondayGroupTable.svelte'),
-  }),
-  '/current/mondaystudentview': wrap({
-    asyncComponent: () => import('../routes/admin/Current/MondayStudentView.svelte'),
-  }),
-  '/current/mondayteacherview': wrap({
-    asyncComponent: () => import('../routes/admin/Current/MondayTeacherView.svelte'),
-  }),
-  '/current/mondaygroupview': wrap({
-    asyncComponent: () => import('../routes/admin/Current/MondayGroupView.svelte'),
+  '/daily/input/subclass': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Input/subClass.svelte'),
   }),
   '/inventory/inventory': wrap({
     asyncComponent: () => import('../routes/Inventory/inventory.svelte'),

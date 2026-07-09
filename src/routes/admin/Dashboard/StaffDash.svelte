@@ -1,5 +1,6 @@
 <script>
   import { pb } from '../../../lib/Pocketbase.svelte'
+  import { onMount } from 'svelte'
 
   // User Data
   const username = pb.authStore.model?.username || 'Guest'
@@ -10,6 +11,21 @@
   const year = now.getFullYear()
   const month = now.getMonth()
   const todayDate = now.getDate()
+
+  const messages = [
+    'Manage substitute teacher schedules and keep classes covered.',
+    'Assign available substitutes and avoid schedule conflicts.',
+    'Monitor sub assignments and ensure smooth class operations.',
+    'Coordinate teacher substitutions with accuracy and efficiency.',
+    'Track substitute bookings and maintain updated records.',
+    'Ensure every class has the right teacher assigned.',
+    'Review sub schedules and prevent double bookings.',
+    'Keep substitute teacher assignments organized and clear.',
+    'Handle teacher absences and arrange proper class coverage.',
+    'Support smooth coordination between teachers, students, and substitutes.',
+  ]
+
+  const randomMessage = messages[Math.floor(Math.random() * messages.length)]
 
   const monthNames = [
     'January',
@@ -34,10 +50,44 @@
     ...Array(firstDay).fill({ day: null }),
     ...Array.from({ length: daysInMonth }, (_, i) => ({ day: i + 1 })),
   ]
+
+  // Special Days
+  let specialDayMap = $state({}) // key: 'YYYY-MM-DD', value: Status string
+
+  onMount(async () => {
+    try {
+      const records = await pb.collection('holiday').getFullList()
+      const map = {}
+      for (const r of records) {
+        const key = r.date?.slice(0, 10)
+        if (key) map[key] = r.Status
+      }
+      specialDayMap = map
+    } catch (err) {
+      console.error('Failed to load special days:', err)
+    }
+  })
+
+  function getDateKey(day) {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+
+  function getDayClass(day) {
+    const status = specialDayMap[getDateKey(day)]
+    const isToday = day === todayDate
+
+    const todayRing = isToday ? ' ring-2 ring-sky-600 dark:ring-sky-400 ring-offset-1' : ''
+
+    if (status === 'No Class') return `bg-secondary text-secondary-content font-medium${todayRing}`
+    if (status === 'Special Class') return `bg-warning text-warning-content font-medium${todayRing}`
+    if (status === 'Weekend Activity') return `bg-success text-success-content font-medium${todayRing}`
+
+    if (isToday) return 'bg-sky-600 font-bold text-white dark:bg-sky-500'
+    return 'opacity-70 hover:bg-current/10'
+  }
 </script>
 
 <div class="relative min-h-screen overflow-hidden font-['DM_Sans'] transition-colors duration-300">
-  <!-- Updated Background Accents to match Info Theme -->
   <div
     class="pointer-events-none absolute -right-10 -top-10 h-[450px] w-[450px] rounded-full bg-sky-500/10 blur-[100px]"
     aria-hidden="true"
@@ -75,16 +125,15 @@
 
       <h1 class="mb-4 font-['Playfair_Display'] text-4xl font-normal leading-tight md:text-5xl lg:text-6xl">
         Good day,<br />
-        <!-- Swapped text color to info-blue -->
         <span class="font-semibold italic text-sky-600 dark:text-sky-400">{username}</span><br />
         Let's make the most of it.
       </h1>
 
-      <p class="mb-8 text-base font-light tracking-wide opacity-60">Plan smart, schedule better, and achieve more.</p>
-
-      <!-- Swapped button background to info-blue  -->
+      <p class="mb-8 text-base font-light tracking-wide opacity-80">
+        {randomMessage}
+      </p>
       <a
-        href="#/current/mondayscheduleinput"
+        href="#/daily/input/subclass"
         class="group flex w-fit items-center gap-2 rounded-2xl bg-sky-600 px-7 py-4 text-sm font-medium text-white transition-all hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400"
       >
         Get started
@@ -114,6 +163,19 @@
           <span class="text-lg font-semibold tracking-tight">{monthLabel}</span>
         </div>
 
+        <!-- Legend -->
+        <div class="mb-4 flex flex-wrap gap-x-3 gap-y-1 text-[10px] opacity-70">
+          <span class="flex items-center gap-1"
+            ><span class="inline-block h-2 w-2 rounded-full bg-secondary"></span>No Class</span
+          >
+          <span class="flex items-center gap-1"
+            ><span class="inline-block h-2 w-2 rounded-full bg-warning"></span>Special Class</span
+          >
+          <span class="flex items-center gap-1"
+            ><span class="inline-block h-2 w-2 rounded-full bg-success"></span>Weekend Activity</span
+          >
+        </div>
+
         <div class="mb-3 grid grid-cols-7 text-center">
           {#each ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as label}
             <span class="py-1 text-[10px] font-bold uppercase tracking-widest opacity-40">{label}</span>
@@ -122,15 +184,18 @@
 
         <div class="grid grid-cols-7 gap-1 text-center">
           {#each calCells as cell}
-            <span
-              class="flex aspect-square items-center justify-center rounded-lg text-xs transition-all
-              {cell.day === null ? 'invisible' : ''} 
-              {cell.day === todayDate
-                ? 'bg-sky-600 font-bold text-white dark:bg-sky-500'
-                : 'opacity-70 hover:bg-current/10'}"
-            >
-              {cell.day ?? ''}
-            </span>
+            {#if cell.day !== null}
+              <a
+                href="#/daily/input/subclass?date={getDateKey(cell.day)}"
+                class="flex aspect-square items-center justify-center rounded-lg text-xs transition-all cursor-pointer {getDayClass(
+                  cell.day
+                )}"
+              >
+                {cell.day}
+              </a>
+            {:else}
+              <span class="invisible flex aspect-square items-center justify-center rounded-lg text-xs"></span>
+            {/if}
           {/each}
         </div>
       </div>
