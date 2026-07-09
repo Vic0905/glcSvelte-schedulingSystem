@@ -457,8 +457,8 @@
 
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <!-- Header -->
-  <div class="flex items-center justify-between mb-4 text-2xl font-bold">
-    <div class="flex-1 flex items-center">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
+    <div class="order-2 sm:order-1 flex-1 flex items-center justify-center sm:justify-start">
       {#if subCount > 0}
         <span class="badge badge-info badge-lg gap-2 font-bold text-sm">
           {subCount} sub{subCount === 1 ? '' : 's'} assigned
@@ -468,9 +468,9 @@
       {/if}
     </div>
 
-    <h2 class="text-center flex-1">Daily SubClass Schedule</h2>
+    <h2 class="order-1 sm:order-2 text-center flex-1 text-xl sm:text-2xl font-bold">Daily SubClass Schedule</h2>
 
-    <div class="flex-1 flex justify-end">
+    <div class="order-3 flex-1 flex justify-center sm:justify-end">
       <div class="w-6 h-6 flex items-center justify-center">
         {#if isLoading}
           <div class="loading loading-spinner loading-sm"></div>
@@ -480,9 +480,9 @@
   </div>
 
   <!-- Date bar -->
-  <div class="mb-2 grid grid-cols-3 items-center">
-    <!-- Left: holiday badge -->
-    <div class="flex items-center">
+  <div class="mb-2 flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:items-center">
+    <!-- Holiday badge -->
+    <div class="order-3 sm:order-1 flex items-center justify-center sm:justify-start">
       {#if todayHoliday}
         <span
           class="flex items-center gap-2 text-yellow-700 border border-yellow-300 bg-yellow-50 rounded-lg px-3 py-1"
@@ -493,13 +493,13 @@
       {/if}
     </div>
 
-    <!-- Center: formatted date -->
-    <h3 class="text-xl font-semibold text-center">
+    <!-- Formatted date -->
+    <h3 class="order-1 sm:order-2 text-lg sm:text-xl font-semibold text-center">
       {formatDateDisplay(selectedDate)}
     </h3>
 
-    <!-- Right: navigation controls -->
-    <div class="flex items-center gap-2 justify-end">
+    <!-- Navigation controls -->
+    <div class="order-2 sm:order-3 flex items-center gap-1 sm:gap-2 justify-center sm:justify-end flex-wrap">
       <button
         class="btn btn-outline btn-sm"
         onclick={goToToday}
@@ -507,20 +507,25 @@
       >
         Today
       </button>
-      <button class="btn btn-outline btn-sm" onclick={() => changeDay(-1)} disabled={isLoading}>&larr;</button>
+      <button class="btn btn-outline btn-sm btn-square" onclick={() => changeDay(-1)} disabled={isLoading}
+        >&larr;</button
+      >
       <input
         type="date"
-        class="input input-bordered input-sm w-auto"
+        class="input input-bordered input-sm w-[150px] sm:w-auto"
         value={selectedDate}
         onchange={onDateChange}
         disabled={isLoading}
       />
-      <button class="btn btn-outline btn-sm" onclick={() => changeDay(1)} disabled={isLoading}>&rarr;</button>
+      <button class="btn btn-outline btn-sm btn-square" onclick={() => changeDay(1)} disabled={isLoading}>&rarr;</button
+      >
     </div>
   </div>
 
   <!-- Grid container — gridjs renders into this div -->
-  <div id="sub-grid" class="rounded-lg"></div>
+  <div class="overflow-x-auto rounded-lg">
+    <div id="sub-grid"></div>
+  </div>
 </div>
 
 <SubModal bind:this={subModal} onrefresh={refreshWithScroll} />
