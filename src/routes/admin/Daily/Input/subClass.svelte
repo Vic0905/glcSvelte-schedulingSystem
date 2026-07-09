@@ -536,7 +536,7 @@
 
   /* Hover only on cells that have a schedule */
   #sub-grid :global(.gridjs-table td:hover > .sub-cell-with-schedule) {
-    background-color: #fef3c7 !important;
+    background-color: #e0e4e9 !important;
     transition: background-color 0.15s ease;
     cursor: pointer;
   }
