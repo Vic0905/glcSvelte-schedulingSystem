@@ -203,10 +203,9 @@
                 <div class="text-sm text-info font-semibold">Sub: {group.sub.name}</div>
               {/if}
               {#if group.students.length}
-                <div class="flex flex-wrap gap-1 mt-2">
-                  {#each group.students as name}
-                    <span class="badge badge-ghost badge-sm">{name}</span>
-                  {/each}
+                <div class="flex flex-wrap gap-1">
+                  <span class="text text-xs opacity-60">Student{group.students.length > 1 ? 's' : ''}:</span>
+                  <span class="text text-xs">{group.students.join(', ')}</span>
                 </div>
               {/if}
             {/if}
