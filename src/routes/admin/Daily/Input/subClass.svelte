@@ -5,6 +5,7 @@
   import { toast } from 'svelte-sonner'
   import SubModal from './subModal.svelte'
   import { pb } from '../../../../lib/Pocketbase.svelte'
+  import MakeupModal from './makeupModal.svelte'
 
   // ─────────────────────────────────────────────
   // SECTION 1: Non-reactive module-level state
@@ -21,6 +22,7 @@
   // SECTION 2: Reactive state
   // ─────────────────────────────────────────────
   let subModal = $state()
+  let makeupModal = $state()
   let selectedDate = $state(getTodayDate())
   let todayHoliday = $state(null)
   let isLoading = $state(false)
@@ -118,7 +120,9 @@
     if (!cell?.schedules?.length) {
       return h(
         'div',
-        { class: `w-full h-full min-h-[55px] flex items-center justify-center text-gray-400 ${bgClass}` },
+        {
+          class: `w-full h-full min-h-[55px] flex items-center justify-center text-gray-400 sub-cell-empty ${bgClass}`,
+        },
         '—'
       )
     }
@@ -292,17 +296,30 @@
 
       gridInstance.on('cellClick', (_e, cell) => {
         const d = cell.data
-        // Ignore disabled/teacher/room columns and empty cells
-        if (!d?.schedules?.length) return
+        if (!d?.timeslot) return // ignore teacher/room columns
 
-        const room = d.schedules[0].room
-        if (!room) return
+        if (d.schedules?.length) {
+          const room = d.schedules[0].room
+          if (!room) return
 
-        subModal.open({
+          subModal.open({
+            room,
+            timeslot: d.timeslot,
+            date: selectedDate,
+            schedules: d.schedules,
+          })
+          return
+        }
+
+        // Empty cell — offer to create a Make-up Class
+        const room = cachedRooms.find((rt) => rt.expand?.teacher?.id === d.teacher?.id)
+        if (!room) return toast.error('No room assigned for this teacher')
+
+        makeupModal.open({
+          teacher: d.teacher,
           room,
           timeslot: d.timeslot,
           date: selectedDate,
-          schedules: d.schedules,
         })
       })
     }
@@ -468,7 +485,7 @@
       {/if}
     </div>
 
-    <h2 class="order-1 sm:order-2 text-center flex-1 text-xl sm:text-2xl font-bold">Daily SubClass Schedule</h2>
+    <h2 class="order-1 sm:order-2 text-center flex-1 text-xl sm:text-2xl font-bold">Daily Make-up/SubClass Schedule</h2>
 
     <div class="order-3 flex-1 flex justify-center sm:justify-end">
       <div class="w-6 h-6 flex items-center justify-center">
@@ -529,6 +546,7 @@
 </div>
 
 <SubModal bind:this={subModal} onrefresh={refreshWithScroll} />
+<MakeupModal bind:this={makeupModal} onrefresh={refreshWithScroll} />
 
 <!-- ─────────────────────────────────────────── -->
 <!-- STYLES                                      -->
@@ -540,7 +558,8 @@
   }
 
   /* Hover only on cells that have a schedule */
-  #sub-grid :global(.gridjs-table td:hover > .sub-cell-with-schedule) {
+  #sub-grid :global(.gridjs-table td:hover > .sub-cell-with-schedule),
+  #sub-grid :global(.gridjs-table td:hover > .sub-cell-empty) {
     background-color: #e0e4e9 !important;
     transition: background-color 0.15s ease;
     cursor: pointer;
