@@ -226,9 +226,13 @@
       await batch.send()
 
       // ─── ACTIVITY LOG ───
+      // 'sub' = brand-new assignment, 'sub_edit' = changing/reassigning an
+      // existing sub, 'sub_remove' = clearing one off the schedule.
+      const logAction = existingSub && !subEnabled ? 'sub_remove' : existingSub && subEnabled ? 'sub_edit' : 'sub'
+
       try {
         await pb.collection('activityLog').create({
-          action: 'sub',
+          action: logAction,
           performedBy: pb.authStore.record?.id,
           details: {
             date: displayDate,

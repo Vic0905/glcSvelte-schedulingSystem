@@ -136,7 +136,7 @@
     searchQuery = ''
     existingSchedules = []
     isEditMode = false
-    rawSchedules = [] // ADD
+    rawSchedules = []
   }
 
   // ═══════════════════════════════════
@@ -238,6 +238,8 @@
 
       await batch.send()
 
+      // ─── ACTIVITY LOG ───
+      // 'makeup' for new classes, 'makeup_edit' for changes to an existing one.
       try {
         await pb.collection('activityLog').create({
           action: isEditMode ? 'makeup_edit' : 'makeup',
@@ -257,6 +259,7 @@
       } catch (logErr) {
         console.error('Activity log failed:', logErr)
       }
+      // ─── END ACTIVITY LOG ───
 
       toast.success(
         isEditMode
@@ -292,6 +295,7 @@
       existingSchedules.forEach((s) => batch.collection('dailySchedule').delete(s.id))
       await batch.send()
 
+      // ─── ACTIVITY LOG ───
       try {
         await pb.collection('activityLog').create({
           action: 'makeup_delete',
@@ -301,11 +305,17 @@
             timeslot: displayTimeslot ? `${displayTimeslot.start} - ${displayTimeslot.end}` : null,
             roomName: effectiveRoom?.name,
             teacherName: displayTeacher?.name,
+            subjectName: selectedSubject?.name,
+            students: existingSchedules.map((s) => ({
+              id: s.studentId,
+              name: students.find((st) => st.id === s.studentId)?.englishName || s.studentId,
+            })),
           },
         })
       } catch (logErr) {
         console.error('Activity log failed:', logErr)
       }
+      // ─── END ACTIVITY LOG ───
 
       toast.success('Make-up class deleted')
       onrefresh?.()
