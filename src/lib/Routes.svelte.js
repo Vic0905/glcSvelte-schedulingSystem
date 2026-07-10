@@ -149,6 +149,9 @@ export const adminRoutes = {
   '/daily/information/custom/customsched': wrap({
     asyncComponent: () => import('../routes/admin/Daily/Information/Custom/customSched.svelte'),
   }),
+  '/daily/information/holiday/holidaypicker': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Information/Holiday/HolidayPicker.svelte'),
+  }),
   '/daily/information/print/printtable': wrap({
     asyncComponent: () => import('../routes/admin/Daily/Information/Print/printTable.svelte'),
   }),
