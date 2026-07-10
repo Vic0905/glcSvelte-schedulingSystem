@@ -151,7 +151,7 @@
     const roomName = first.roomName || 'No Room'
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
     const hasSub = !!first.sub
-
+    const isGrp = /^[GH]/i.test(roomName)
     return h(
       'div',
       {
@@ -165,7 +165,13 @@
         h(
           'div',
           { class: 'flex flex-wrap justify-center gap-1' },
-          allStudents.map((name) => h('span', { class: 'text-xs font-semibold whitespace-nowrap' }, name))
+          allStudents.map((name, i) =>
+            h(
+              'span',
+              { class: 'text-xs font-semibold whitespace-nowrap' },
+              isGrp && i < allStudents.length - 1 ? `${name},` : name
+            )
+          )
         ),
         hasSub
           ? h('div', { class: 'flex items-center justify-center gap-1 mt-1' }, [
@@ -299,8 +305,22 @@
         if (!d?.timeslot) return // ignore teacher/room columns
 
         if (d.schedules?.length) {
-          const room = d.schedules[0].room
+          const first = d.schedules[0]
+          const room = first.room
           if (!room) return
+
+          const isMakeup = (first.customSchedule || []).some((cs) => cs.name?.toLowerCase().trim() === 'make-up class')
+
+          if (isMakeup) {
+            makeupModal.open({
+              teacher: d.teacher,
+              room,
+              timeslot: d.timeslot,
+              date: selectedDate,
+              schedules: d.schedules, // pass existing records so the modal knows it's editing
+            })
+            return
+          }
 
           subModal.open({
             room,
@@ -312,8 +332,7 @@
         }
 
         // Empty cell — offer to create a Make-up Class
-        const room = cachedRooms.find((rt) => rt.expand?.teacher?.id === d.teacher?.id)
-        if (!room) return toast.error('No room assigned for this teacher')
+        const room = cachedRooms.find((rt) => rt.expand?.teacher?.id === d.teacher?.id) || null
 
         makeupModal.open({
           teacher: d.teacher,
@@ -397,7 +416,7 @@
       // room/status). Room-assigned teachers sort first by room; the rest
       // sort alphabetically after.
       const teachers = cachedTeachers
-        .filter((t) => teacherRoomMap.has(t.id) || bookedTeacherIds.has(t.id))
+        .filter((t) => t.status !== 'disabled' || bookedTeacherIds.has(t.id))
         .sort((a, b) => {
           const aRoom = teacherRoomMap.get(a.id)
           const bRoom = teacherRoomMap.get(b.id)
@@ -546,7 +565,7 @@
 </div>
 
 <SubModal bind:this={subModal} onrefresh={refreshWithScroll} />
-<MakeupModal bind:this={makeupModal} onrefresh={refreshWithScroll} />
+<MakeupModal bind:this={makeupModal} onrefresh={refreshWithScroll} onassignsub={(data) => subModal.open(data)} />
 
 <!-- ─────────────────────────────────────────── -->
 <!-- STYLES                                      -->

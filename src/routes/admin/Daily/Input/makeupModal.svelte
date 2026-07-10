@@ -2,7 +2,7 @@
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../../lib/Pocketbase.svelte'
 
-  let { onrefresh } = $props()
+  let { onrefresh, onassignsub } = $props()
 
   // ═══════════════════════════════════
   // STATE
@@ -18,6 +18,9 @@
   let displayDate = $state(null)
 
   // Dropdown data
+  let availableRooms = $state([])
+  let selectedRoom = $state(null)
+  let effectiveRoom = $derived(displayRoom || selectedRoom)
   let subjects = $state([])
   let students = $state([])
   let customSchedules = $state([])
@@ -27,6 +30,11 @@
   let selectedSubject = $state(null)
   let selectedStudents = $state([]) // array of student ids
 
+  // Edit Mode
+  let existingSchedules = $state([]) // [{id, studentId}] — populated when editing an existing make-up class
+  let isEditMode = $state(false)
+  let rawSchedules = $state([])
+
   // Student search
   let searchQuery = $state('')
 
@@ -34,9 +42,10 @@
   // DERIVED
   // ═══════════════════════════════════
 
-  let maxCapacity = $derived(displayRoom?.maxStudents || 0)
+  let maxCapacity = $derived(effectiveRoom?.maxStudents || 0)
   let currentCount = $derived(selectedStudents.length)
   let isOverCapacity = $derived(maxCapacity > 0 && currentCount > maxCapacity)
+  let existingSubName = $derived(rawSchedules[0]?.sub?.name || null)
 
   let filteredStudents = $derived.by(() => {
     const query = searchQuery.toLowerCase()
@@ -65,18 +74,20 @@
 
   async function loadData() {
     try {
-      const [subj, stu, cs] = await Promise.all([
+      const [subj, stu, cs, rooms] = await Promise.all([
         pb.collection('subject').getFullList({ sort: 'name' }),
         pb.collection('student').getFullList({
           sort: 'englishName',
           filter: `status != "graduated" && start <= "${displayDate} 23:59:59" && end >= "${displayDate} 00:00:00"`,
         }),
         pb.collection('customSchedule').getFullList({ sort: 'name' }),
+        displayRoom ? Promise.resolve([]) : pb.collection('roomType').getFullList({ sort: 'roomType,name' }),
       ])
       subjects = subj
       students = stu
       customSchedules = cs
       makeupSchedule = cs.find((c) => c.name.toLowerCase().trim() === 'make-up class') || null
+      if (!displayRoom) availableRooms = rooms
     } catch {
       toast.error('Failed to load dropdown data')
     }
@@ -95,11 +106,25 @@
     displayTimeslot = data.timeslot || null
     displayDate = data.date || null
 
+    rawSchedules = data.schedules || []
+    existingSchedules = rawSchedules
+      .map((s) => ({ id: s.id, studentId: s.students?.[0]?.id }))
+      .filter((s) => s.studentId)
+    isEditMode = existingSchedules.length > 0
+
+    const initialSubjectId = isEditMode ? rawSchedules[0]?.subject?.id : null
+
     selectedSubject = null
-    selectedStudents = []
+    selectedStudents = existingSchedules.map((s) => s.studentId)
+    selectedRoom = null
     searchQuery = ''
 
     await loadData()
+
+    if (initialSubjectId) {
+      selectedSubject = subjects.find((s) => s.id === initialSubjectId) || null
+    }
+
     loading = false
   }
 
@@ -109,6 +134,9 @@
     selectedSubject = null
     selectedStudents = []
     searchQuery = ''
+    existingSchedules = []
+    isEditMode = false
+    rawSchedules = [] // ADD
   }
 
   // ═══════════════════════════════════
@@ -134,6 +162,7 @@
   // ═══════════════════════════════════
 
   function validateForm() {
+    if (!effectiveRoom) return 'Please select a room'
     if (!selectedSubject) return 'Please select a subject'
     if (selectedStudents.length === 0) return 'Select at least one student'
     if (!makeupSchedule) return 'No "Make-up Class" custom schedule found'
@@ -145,18 +174,22 @@
   // ═══════════════════════════════════
 
   async function checkConflicts() {
+    const excludeIds = existingSchedules.map((s) => s.id)
+
     const records = await pb.collection('dailySchedule').getFullList({
       filter: `timeslot = "${displayTimeslot.id}" && date >= "${displayDate} 00:00:00" && date <= "${displayDate} 23:59:59"`,
       expand: 'room,teacher,student,sub',
     })
 
-    const teacherBusy = records.find((s) => s.teacher === displayTeacher.id || s.sub === displayTeacher.id)
+    const relevant = records.filter((r) => !excludeIds.includes(r.id))
+
+    const teacherBusy = relevant.find((s) => s.teacher === displayTeacher.id || s.sub === displayTeacher.id)
     if (teacherBusy) throw new Error('Teacher is no longer free for this timeslot.')
 
-    const roomTaken = records.find((s) => s.room === displayRoom.id)
+    const roomTaken = relevant.find((s) => s.room === effectiveRoom.id)
     if (roomTaken) throw new Error('Room is already occupied for this timeslot.')
 
-    const studentBusy = records.find((s) => {
+    const studentBusy = relevant.find((s) => {
       const sid = typeof s.student === 'object' ? s.student?.id : s.student
       return selectedStudents.includes(sid)
     })
@@ -177,11 +210,17 @@
     try {
       await checkConflicts()
 
+      const existingStudentIds = existingSchedules.map((s) => s.studentId)
+      const toCreate = selectedStudents.filter((id) => !existingStudentIds.includes(id))
+      const toDelete = existingSchedules.filter((s) => !selectedStudents.includes(s.studentId))
+      const toKeep = existingSchedules.filter((s) => selectedStudents.includes(s.studentId))
+
       const batch = pb.createBatch()
-      selectedStudents.forEach((studentId) => {
+
+      toCreate.forEach((studentId) => {
         batch.collection('dailySchedule').create({
           teacher: displayTeacher.id,
-          room: displayRoom.id,
+          room: effectiveRoom.id,
           timeslot: displayTimeslot.id,
           subject: selectedSubject.id,
           student: studentId,
@@ -190,17 +229,23 @@
           customSchedule: [makeupSchedule.id],
         })
       })
+
+      toDelete.forEach((s) => batch.collection('dailySchedule').delete(s.id))
+
+      toKeep.forEach((s) => {
+        batch.collection('dailySchedule').update(s.id, { subject: selectedSubject.id })
+      })
+
       await batch.send()
 
-      // ─── ACTIVITY LOG ───
       try {
         await pb.collection('activityLog').create({
-          action: 'makeup',
+          action: isEditMode ? 'makeup_edit' : 'makeup',
           performedBy: pb.authStore.record?.id,
           details: {
             date: displayDate,
             timeslot: displayTimeslot ? `${displayTimeslot.start} - ${displayTimeslot.end}` : null,
-            roomName: displayRoom?.name,
+            roomName: effectiveRoom?.name,
             teacherName: displayTeacher?.name,
             subjectName: selectedSubject?.name,
             students: selectedStudents.map((id) => ({
@@ -212,15 +257,61 @@
       } catch (logErr) {
         console.error('Activity log failed:', logErr)
       }
-      // ─── END ACTIVITY LOG ───
 
       toast.success(
-        `Make-up class created for ${selectedStudents.length} student${selectedStudents.length === 1 ? '' : 's'}`
+        isEditMode
+          ? 'Make-up class updated'
+          : `Make-up class created for ${selectedStudents.length} student${selectedStudents.length === 1 ? '' : 's'}`
       )
       onrefresh?.()
       close()
     } catch (e) {
       toast.error(e.message || 'Failed to save')
+    } finally {
+      loading = false
+    }
+  }
+
+  function assignSub() {
+    onassignsub?.({
+      room: effectiveRoom,
+      timeslot: displayTimeslot,
+      date: displayDate,
+      schedules: rawSchedules,
+    })
+    close()
+  }
+
+  async function deleteAll() {
+    if (!existingSchedules.length) return
+    if (!confirm('Delete this entire make-up class?')) return
+
+    loading = true
+    try {
+      const batch = pb.createBatch()
+      existingSchedules.forEach((s) => batch.collection('dailySchedule').delete(s.id))
+      await batch.send()
+
+      try {
+        await pb.collection('activityLog').create({
+          action: 'makeup_delete',
+          performedBy: pb.authStore.record?.id,
+          details: {
+            date: displayDate,
+            timeslot: displayTimeslot ? `${displayTimeslot.start} - ${displayTimeslot.end}` : null,
+            roomName: effectiveRoom?.name,
+            teacherName: displayTeacher?.name,
+          },
+        })
+      } catch (logErr) {
+        console.error('Activity log failed:', logErr)
+      }
+
+      toast.success('Make-up class deleted')
+      onrefresh?.()
+      close()
+    } catch (e) {
+      toast.error(e.message || 'Failed to delete')
     } finally {
       loading = false
     }
@@ -231,9 +322,14 @@
   <dialog class="modal modal-open">
     <div class="modal-box max-w-2xl border border-base-300 shadow-2xl">
       <header class="mb-6 text-center">
-        <h3 class="text-xl font-bold">Make-up Class</h3>
+        <h3 class="text-xl font-bold">{isEditMode ? 'Edit Make-up Class' : 'Make-up Class'}</h3>
         <p class="text-xs uppercase tracking-widest">{displayDate}</p>
       </header>
+      {#if isEditMode && existingSubName}
+        <div class="alert alert-info alert-soft text-xs py-2 mb-2">
+          <span>Currently subbed by <strong>{existingSubName}</strong>.</span>
+        </div>
+      {/if}
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <!-- Left Column: Schedule Info + Subject -->
@@ -247,7 +343,23 @@
               </div>
               <div>
                 <p class="text-[10px] opacity-80 uppercase mb-0.5">Room</p>
-                <p class="font-bold">{displayRoom?.name || '—'}</p>
+                {#if displayRoom}
+                  <p class="font-bold">{displayRoom.name}</p>
+                {:else}
+                  <select bind:value={selectedRoom} class="select select-bordered select-xs w-full" disabled={loading}>
+                    <option value={null}>Select Room</option>
+                    <optgroup label="MTM">
+                      {#each availableRooms.filter((r) => r.roomType === 'mtm') as r (r.id)}
+                        <option value={r}>{r.name}</option>
+                      {/each}
+                    </optgroup>
+                    <optgroup label="GRP">
+                      {#each availableRooms.filter((r) => r.roomType === 'grp') as r (r.id)}
+                        <option value={r}>{r.name}</option>
+                      {/each}
+                    </optgroup>
+                  </select>
+                {/if}
               </div>
               <div class="col-span-2">
                 <p class="text-[10px] opacity-80 uppercase mb-0.5">Timeslot</p>
@@ -337,22 +449,34 @@
         <!-- END Right Column -->
       </div>
 
-      <div class="modal-action mt-8">
-        <button class="btn btn-ghost btn-soft" onclick={close} disabled={loading}>Cancel</button>
-        <button
-          class="btn btn-info btn-soft min-w-[140px]"
-          onclick={save}
-          disabled={loading || isOverCapacity || !makeupSchedule}
-        >
-          {#if loading}
-            <span class="loading loading-spinner"></span>
-          {:else}
-            Create Make-up Class
+      <div class="modal-action mt-8 flex items-center justify-between w-full">
+        <div class="flex gap-2">
+          {#if isEditMode}
+            <button class="btn btn-error btn-soft btn-sm" onclick={deleteAll} disabled={loading}> Delete Class </button>
+            <button class="btn btn-outline btn-sm" onclick={assignSub} disabled={loading}>
+              {existingSubName ? 'Manage Sub' : 'Assign Sub'}
+            </button>
           {/if}
-        </button>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost btn-soft" onclick={close} disabled={loading}>Cancel</button>
+          <button
+            class="btn btn-info btn-soft min-w-[140px]"
+            onclick={save}
+            disabled={loading || isOverCapacity || !makeupSchedule || !effectiveRoom}
+          >
+            {#if loading}
+              <span class="loading loading-spinner"></span>
+            {:else if isEditMode}
+              Save Changes
+            {:else}
+              Create Make-up Class
+            {/if}
+          </button>
+        </div>
       </div>
-    </div>
 
-    <div class="modal-backdrop bg-black/40" role="presentation" onclick={close}></div>
+      <div class="modal-backdrop bg-black/40" role="presentation" onclick={close}></div>
+    </div>
   </dialog>
 {/if}
