@@ -155,6 +155,9 @@ export const adminRoutes = {
   '/daily/information/print/printtable': wrap({
     asyncComponent: () => import('../routes/admin/Daily/Information/Print/printTable.svelte'),
   }),
+  '/daily/information/absent/absentteacher': wrap({
+    asyncComponent: () => import('../routes/admin/Daily/Information/Absent/AbsentTeacher.svelte'),
+  }),
   '*': wrap({
     asyncComponent: () => import('../routes/PageNotFound/PageNotFound.svelte'),
   }),
