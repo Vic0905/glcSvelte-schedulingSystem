@@ -17,6 +17,7 @@
   let cachedRooms = []
   let cachedHolidays = []
   let teacherRoomMap = new Map()
+  let teacherRoomObjMap = new Map()
 
   // ─────────────────────────────────────────────
   // SECTION 2: Reactive state
@@ -121,9 +122,12 @@
       return h(
         'div',
         {
-          class: `w-full h-full min-h-[55px] flex items-center justify-center text-gray-400 sub-cell-empty ${bgClass}`,
+          class: `group w-full h-full min-h-[55px] flex items-center justify-center text-gray-400 sub-cell-empty cursor-pointer transition-colors hover:bg-info/10 ${bgClass}`,
+          title: 'Click to create a make-up class',
+          onClick: () => handleEmptyCellClick(cell),
         },
-        '—'
+        h('span', { class: 'group-hover:hidden' }, '—'),
+        h('span', { class: 'hidden group-hover:inline text-info font-bold text-lg' }, '+')
       )
     }
 
@@ -177,7 +181,7 @@
           ? h('div', { class: 'flex items-center justify-center gap-1 mt-1' }, [
               h('span', { class: 'text text-sm font-semibold' }, `Sub: ${first.sub.name}`),
             ])
-          : h('span', { class: 'text text-xs text-info opacity-70 mt-1' }, 'click to assign sub'),
+          : h('span', { class: 'text text-xs opacity-40 mt-1' }, 'No sub assigned'),
       ]
     )
   }
@@ -254,7 +258,7 @@
 
       for (const ts of timeslots) {
         const schedules = scheduleMap.get(`${teacher.id}-${ts.id}`) || []
-        row.push({ schedules, teacher, timeslot: ts, bgClass })
+        row.push({ schedules, teacher, timeslot: ts, room: teacherRoomObjMap.get(teacher.id) || null, bgClass })
       }
 
       return row
@@ -266,6 +270,10 @@
   // ─────────────────────────────────────────────
   // SECTION 7: Grid renderer
   // ─────────────────────────────────────────────
+  // NOTE: cells with a schedule stay display-only — assigning a sub still
+  // happens exclusively through the "Assign Sub" button in the header.
+  // Empty cells ARE clickable: formatSubCell attaches an onClick that
+  // opens MakeupModal (see handleEmptyCellClick, SECTION 10).
 
   async function renderGrid(columns, data, scroll) {
     await tick()
@@ -299,48 +307,6 @@
         },
         style: { table: { 'table-layout': 'fixed' } },
       }).render(document.getElementById('sub-grid'))
-
-      gridInstance.on('cellClick', (_e, cell) => {
-        const d = cell.data
-        if (!d?.timeslot) return // ignore teacher/room columns
-
-        if (d.schedules?.length) {
-          const first = d.schedules[0]
-          const room = first.room
-          if (!room) return
-
-          const isMakeup = (first.customSchedule || []).some((cs) => cs.name?.toLowerCase().trim() === 'make-up class')
-
-          if (isMakeup) {
-            makeupModal.open({
-              teacher: d.teacher,
-              room,
-              timeslot: d.timeslot,
-              date: selectedDate,
-              schedules: d.schedules, // pass existing records so the modal knows it's editing
-            })
-            return
-          }
-
-          subModal.open({
-            room,
-            timeslot: d.timeslot,
-            date: selectedDate,
-            schedules: d.schedules,
-          })
-          return
-        }
-
-        // Empty cell — offer to create a Make-up Class
-        const room = cachedRooms.find((rt) => rt.expand?.teacher?.id === d.teacher?.id) || null
-
-        makeupModal.open({
-          teacher: d.teacher,
-          room,
-          timeslot: d.timeslot,
-          date: selectedDate,
-        })
-      })
     }
   }
 
@@ -374,7 +340,9 @@
     if (!cachedTeachers.length) cachedTeachers = teachers
     if (!cachedRooms.length) {
       cachedRooms = rooms
-      teacherRoomMap = new Map(rooms.filter((rt) => rt.expand?.teacher).map((rt) => [rt.expand.teacher.id, rt.name]))
+      const roomsWithTeacher = rooms.filter((rt) => rt.expand?.teacher)
+      teacherRoomMap = new Map(roomsWithTeacher.map((rt) => [rt.expand.teacher.id, rt.name]))
+      teacherRoomObjMap = new Map(roomsWithTeacher.map((rt) => [rt.expand.teacher.id, rt]))
     }
 
     return { timeslots, teachers, rooms, schedules }
@@ -467,6 +435,28 @@
     await loadSchedules(saveScroll())
   }
 
+  function openSubModal() {
+    subModal.open({
+      date: selectedDate,
+      teachers: cachedTeachers,
+      timeslots: cachedTimeslots,
+    })
+  }
+
+  // Empty cell = no schedule for that teacher/timeslot today — open
+  // MakeupModal pre-filled with teacher/timeslot/date/room so a new
+  // make-up class can be created directly from the grid.
+  function handleEmptyCellClick(cell) {
+    if (!cell?.teacher || !cell?.timeslot) return
+    makeupModal.open({
+      teacher: cell.teacher,
+      room: cell.room || null, // null if teacher has no assigned MTM room — MakeupModal shows its own room picker in that case
+      timeslot: cell.timeslot,
+      date: selectedDate,
+      schedules: [], // empty → MakeupModal opens in create mode, not edit mode
+    })
+  }
+
   // ─────────────────────────────────────────────
   // SECTION 11: Lifecycle
   // ─────────────────────────────────────────────
@@ -495,6 +485,12 @@
   <!-- Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
     <div class="order-2 sm:order-1 flex-1 flex items-center justify-center sm:justify-start">
+      <button class="btn btn-info btn-sm" onclick={openSubModal}>+ Assign Sub</button>
+    </div>
+
+    <h2 class="order-1 sm:order-2 text-center flex-1 text-xl sm:text-2xl font-bold">Daily Make-up/SubClass Schedule</h2>
+
+    <div class="order-3 flex-1 flex items-center gap-3 justify-center sm:justify-end">
       {#if subCount > 0}
         <span class="badge badge-info badge-lg gap-2 font-bold text-sm">
           {subCount} sub{subCount === 1 ? '' : 's'} assigned
@@ -502,11 +498,6 @@
       {:else}
         <span class="text-sm font-normal opacity-40">No subs assigned</span>
       {/if}
-    </div>
-
-    <h2 class="order-1 sm:order-2 text-center flex-1 text-xl sm:text-2xl font-bold">Daily Make-up/SubClass Schedule</h2>
-
-    <div class="order-3 flex-1 flex justify-center sm:justify-end">
       <div class="w-6 h-6 flex items-center justify-center">
         {#if isLoading}
           <div class="loading loading-spinner loading-sm"></div>
@@ -558,14 +549,14 @@
     </div>
   </div>
 
-  <!-- Grid container — gridjs renders into this div -->
+  <!-- Grid container — gridjs renders into this div (display-only, no click interactivity) -->
   <div class="overflow-x-auto rounded-lg">
     <div id="sub-grid"></div>
   </div>
 </div>
 
 <SubModal bind:this={subModal} onrefresh={refreshWithScroll} />
-<MakeupModal bind:this={makeupModal} onrefresh={refreshWithScroll} onassignsub={(data) => subModal.open(data)} />
+<MakeupModal bind:this={makeupModal} onrefresh={refreshWithScroll} />
 
 <!-- ─────────────────────────────────────────── -->
 <!-- STYLES                                      -->
@@ -574,14 +565,6 @@
 <style>
   :global(html) {
     scrollbar-gutter: stable;
-  }
-
-  /* Hover only on cells that have a schedule */
-  #sub-grid :global(.gridjs-table td:hover > .sub-cell-with-schedule),
-  #sub-grid :global(.gridjs-table td:hover > .sub-cell-empty) {
-    background-color: #e0e4e9 !important;
-    transition: background-color 0.15s ease;
-    cursor: pointer;
   }
 
   /* Scrollable grid wrapper */

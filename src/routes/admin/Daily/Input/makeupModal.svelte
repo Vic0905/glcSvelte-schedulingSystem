@@ -2,7 +2,7 @@
   import { toast } from 'svelte-sonner'
   import { pb } from '../../../../lib/Pocketbase.svelte'
 
-  let { onrefresh, onassignsub } = $props()
+  let { onrefresh } = $props()
 
   // ═══════════════════════════════════
   // STATE
@@ -45,7 +45,6 @@
   let maxCapacity = $derived(effectiveRoom?.maxStudents || 0)
   let currentCount = $derived(selectedStudents.length)
   let isOverCapacity = $derived(maxCapacity > 0 && currentCount > maxCapacity)
-  let existingSubName = $derived(rawSchedules[0]?.sub?.name || null)
 
   let filteredStudents = $derived.by(() => {
     const query = searchQuery.toLowerCase()
@@ -275,16 +274,6 @@
     }
   }
 
-  function assignSub() {
-    onassignsub?.({
-      room: effectiveRoom,
-      timeslot: displayTimeslot,
-      date: displayDate,
-      schedules: rawSchedules,
-    })
-    close()
-  }
-
   async function deleteAll() {
     if (!existingSchedules.length) return
     if (!confirm('Delete this entire make-up class?')) return
@@ -335,11 +324,6 @@
         <h3 class="text-xl font-bold">{isEditMode ? 'Edit Make-up Class' : 'Make-up Class'}</h3>
         <p class="text-xs uppercase tracking-widest">{displayDate}</p>
       </header>
-      {#if isEditMode && existingSubName}
-        <div class="alert alert-info alert-soft text-xs py-2 mb-2">
-          <span>Currently subbed by <strong>{existingSubName}</strong>.</span>
-        </div>
-      {/if}
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <!-- Left Column: Schedule Info + Subject -->
@@ -463,9 +447,6 @@
         <div class="flex gap-2">
           {#if isEditMode}
             <button class="btn btn-error btn-soft btn-sm" onclick={deleteAll} disabled={loading}> Delete Class </button>
-            <button class="btn btn-outline btn-sm" onclick={assignSub} disabled={loading}>
-              {existingSubName ? 'Manage Sub' : 'Assign Sub'}
-            </button>
           {/if}
         </div>
         <div class="flex gap-2">
