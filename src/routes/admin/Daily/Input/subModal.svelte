@@ -72,6 +72,10 @@
     return list
   })
 
+  // Whether the current selection differs from what's actually saved —
+  // used to disable the Save button when there's nothing to save.
+  let hasChange = $derived((selectedSub?.id || null) !== (existingSub?.id || null))
+
   // ═══════════════════════════════════
   // HELPERS
   // ═══════════════════════════════════
@@ -249,11 +253,20 @@
   // SAVE (two-step: request → confirm)
   // ═══════════════════════════════════
 
-  // Triggered by the "Save Sub" / "Remove Sub" button — shows the
-  // confirmation banner instead of saving immediately.
+  // Triggered by the "Save Sub" button — shows the confirmation banner
+  // instead of saving immediately.
   function requestSave() {
     if (!recordIds.length) return toast.error('No schedule found for this teacher at this timeslot')
     if (selectedSub && isBreakSchedule) return toast.error('Cannot assign a sub to a break/lunch schedule')
+    confirmingSave = true
+  }
+
+  // Triggered by the dedicated "Remove Sub" quick-action button — clears
+  // the selection and jumps straight to the confirmation step, without
+  // requiring the user to pick "No substitute" in the list first.
+  function quickRemove() {
+    if (!recordIds.length) return toast.error('No schedule found for this teacher at this timeslot')
+    selectedSub = null
     confirmingSave = true
   }
 
@@ -554,22 +567,72 @@
       </div>
 
       <!-- Actions -->
-      {#if confirmingSave}
-        <!-- Confirmation step — nothing is saved until this is confirmed -->
-        <div class="alert alert-info alert-soft text-sm mt-4">
-          <span>
+      <div class="modal-action mt-4">
+        <button class="btn btn-ghost btn-soft" onclick={close} disabled={loading || confirmingSave}>Cancel</button>
+
+        {#if existingSub}
+          <!-- Quick-action: remove the current sub in one click, no need
+               to select "No substitute" in the list first. -->
+          <button
+            class="btn btn-error btn-soft"
+            onclick={quickRemove}
+            disabled={loading || scheduleLoading || confirmingSave || !recordIds.length}
+          >
+            Remove Sub
+          </button>
+        {/if}
+
+        <button
+          class="btn btn-info btn-soft min-w-[130px]"
+          onclick={requestSave}
+          disabled={loading ||
+            scheduleLoading ||
+            confirmingSave ||
+            !selectedTeacher ||
+            !selectedTimeslot ||
+            !recordIds.length ||
+            !hasChange ||
+            (selectedSub && isBreakSchedule) ||
+            (selectedSub && !subClassSchedule)}
+        >
+          Save Sub
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-backdrop bg-black/40" role="presentation" onclick={close}></div>
+  </dialog>
+
+  {#if confirmingSave}
+    <!-- Confirmation POPUP — a separate dialog stacked on top of the main
+         modal, with its own darker backdrop, so it reads as a distinct
+         "are you sure?" prompt rather than an inline banner. -->
+    <dialog class="modal modal-open">
+      <div class="modal-box max-w-sm border-2 shadow-2xl {selectedSub ? 'border-info' : 'border-error'}">
+        <div class="flex flex-col items-center text-center gap-2 py-2">
+          <span class="text-5xl leading-none">{selectedSub ? '✅' : '🛑'}</span>
+          <p class="font-extrabold text-base uppercase tracking-wide {selectedSub ? 'text-info' : 'text-error'}">
+            {selectedSub ? 'Confirm Sub Assignment' : 'Confirm Sub Removal'}
+          </p>
+          <p class="text-sm opacity-90 leading-snug">
             {#if selectedSub}
-              Assign <strong>{selectedSub.name}</strong> as substitute for <strong>{selectedTeacher.name}</strong>
+              Assign <strong>{selectedSub.name}</strong> as substitute for
+              <strong>{selectedTeacher.name}</strong>
               at {selectedTimeslot.start} - {selectedTimeslot.end}?
             {:else}
-              Remove the substitute for <strong>{selectedTeacher.name}</strong>
+              Remove <strong>{existingSub?.name}</strong> as substitute for
+              <strong>{selectedTeacher.name}</strong>
               at {selectedTimeslot.start} - {selectedTimeslot.end}?
             {/if}
-          </span>
+          </p>
         </div>
-        <div class="modal-action mt-4">
+        <div class="modal-action mt-4 justify-center">
           <button class="btn btn-ghost btn-soft" onclick={cancelConfirm} disabled={loading}>Go Back</button>
-          <button class="btn btn-info btn-soft min-w-[130px]" onclick={confirmSave} disabled={loading}>
+          <button
+            class="btn {selectedSub ? 'btn-info' : 'btn-error'} min-w-[130px]"
+            onclick={confirmSave}
+            disabled={loading}
+          >
             {#if loading}
               <span class="loading loading-spinner"></span>
             {:else}
@@ -577,30 +640,9 @@
             {/if}
           </button>
         </div>
-      {:else}
-        <div class="modal-action mt-4">
-          <button class="btn btn-ghost btn-soft" onclick={close} disabled={loading}>Cancel</button>
-          <button
-            class="btn btn-info btn-soft min-w-[130px]"
-            onclick={requestSave}
-            disabled={loading ||
-              scheduleLoading ||
-              !selectedTeacher ||
-              !selectedTimeslot ||
-              !recordIds.length ||
-              (selectedSub && isBreakSchedule) ||
-              (selectedSub && !subClassSchedule)}
-          >
-            {#if !selectedSub && existingSub}
-              Remove Sub
-            {:else}
-              Save Sub
-            {/if}
-          </button>
-        </div>
-      {/if}
-    </div>
+      </div>
 
-    <div class="modal-backdrop bg-black/40" role="presentation" onclick={close}></div>
-  </dialog>
+      <div class="modal-backdrop bg-black/60" role="presentation" onclick={cancelConfirm}></div>
+    </dialog>
+  {/if}
 {/if}
