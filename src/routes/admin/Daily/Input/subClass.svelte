@@ -93,17 +93,26 @@
   function formatTeacherCell(cell, row) {
     const bgClass = row.cells[0].data.bgClass
     const hasNewBadge = cell.status === 'new'
+    const subGivenCount = cell.subGivenCount || 0
 
-    return h('div', { class: `w-full h-full p-2 flex flex-col items-center justify-center text-center ${bgClass}` }, [
-      h(
-        'div',
-        { class: 'flex items-center gap-1' },
-        [
-          h('span', { class: 'font-bold text-neutral-700' }, cell.value),
-          hasNewBadge && h('span', { class: 'badge badge-success badge-xs ml-1' }, 'New'),
-        ].filter(Boolean)
-      ),
-    ])
+    return h(
+      'div',
+      { class: `w-full h-full p-2 flex flex-col items-center justify-center text-center ${bgClass}` },
+      [
+        h(
+          'div',
+          { class: 'flex items-center gap-1' },
+          [
+            h('span', { class: 'font-bold text-neutral-700' }, cell.value),
+            hasNewBadge && h('span', { class: 'badge badge-success badge-xs ml-1' }, 'New'),
+          ].filter(Boolean)
+        ),
+        subGivenCount > 0 &&
+          h('div', { class: 'flex gap-1 mt-1' }, [
+            h('span', { class: 'text-sm font-bold text-info' }, `Subs: ${subGivenCount}`),
+          ]),
+      ].filter(Boolean)
+    )
   }
 
   function formatRoomCell(cell, row) {
@@ -228,7 +237,7 @@
   // SECTION 6: Grid config builder
   // ─────────────────────────────────────────────
 
-  function buildGridConfig(teachers, timeslots, scheduleMap) {
+  function buildGridConfig(teachers, timeslots, scheduleMap, subCountMap) {
     const columns = [
       {
         name: 'Teacher',
@@ -252,7 +261,12 @@
       const bgClass = i % 2 === 0 ? 'bg-white text-neutral-800' : 'bg-neutral-100 text-neutral-800'
 
       const row = [
-        { value: teacher.name, status: teacher.status, bgClass },
+        {
+          value: teacher.name,
+          status: teacher.status,
+          bgClass,
+          subGivenCount: subCountMap.get(teacher.id) || 0,
+        },
         { value: teacherRoomMap.get(teacher.id) || '—', bgClass },
       ]
 
@@ -370,9 +384,13 @@
       // and track which teachers actually have a schedule today —
       // even if they have no default MTM room assigned.
       const subSet = new Set()
+      const subCountMap = new Map() // subTeacherId -> count of sub assignments today
       const bookedTeacherIds = new Set()
       for (const s of normalized) {
-        if (s.sub) subSet.add(`${s.teacherId}-${s.timeslotId}`)
+        if (s.sub) {
+          subSet.add(`${s.teacherId}-${s.timeslotId}`)
+          subCountMap.set(s.sub.id, (subCountMap.get(s.sub.id) || 0) + 1)
+        }
         if (s.teacherId) bookedTeacherIds.add(s.teacherId)
       }
       subCount = subSet.size
@@ -399,7 +417,7 @@
           return aKey.num - bKey.num
         })
 
-      const { columns, data } = buildGridConfig(teachers, timeslots, scheduleMap)
+      const { columns, data } = buildGridConfig(teachers, timeslots, scheduleMap, subCountMap)
       await renderGrid(columns, data, scroll)
     } catch (err) {
       console.error(err)
@@ -625,11 +643,5 @@
   #sub-grid :global(.gridjs-table td),
   #sub-grid :global(.gridjs-table th) {
     outline: 1px solid #535252;
-  }
-
-  @media (max-width: 640px) {
-    div#sub-grid {
-      zoom: 0.65 !important;
-    }
   }
 </style>
