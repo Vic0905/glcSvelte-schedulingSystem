@@ -610,7 +610,7 @@
     <dialog class="modal modal-open">
       <div class="modal-box max-w-sm border-2 shadow-2xl {selectedSub ? 'border-info' : 'border-error'}">
         <div class="flex flex-col items-center text-center gap-2 py-2">
-          <span class="text-5xl leading-none">{selectedSub ? '✅' : '🛑'}</span>
+          <span class="text-5xl leading-none">{selectedSub ? '' : ''}</span>
           <p class="font-extrabold text-base uppercase tracking-wide {selectedSub ? 'text-info' : 'text-error'}">
             {selectedSub ? 'Confirm Sub Assignment' : 'Confirm Sub Removal'}
           </p>
