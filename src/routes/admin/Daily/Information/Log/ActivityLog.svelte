@@ -15,7 +15,7 @@
   let currentPage = $state(1)
   let totalPages = $state(1)
   let totalItems = $state(0)
-  const PER_PAGE = 15
+  const PER_PAGE = 100
 
   const ACTION_LABELS = {
     add: 'Added',
@@ -348,55 +348,55 @@
       </p>
     </div>
   {:else if !error}
-    <div class="overflow-x-auto rounded-lg border border-base-300">
-      <table class="table table-zebra w-full text-sm">
-        <thead>
-          <tr class="bg-neutral text-neutral-content">
-            <th class="text-center w-12">#</th>
-            <th>User</th>
-            <th>Action</th>
-            <th>Date &amp; time</th>
-            <th>Details</th>
-          </tr>
-        </thead>
-        <tbody class={isLoading ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
-          {#each filteredLogs as log, i (log.id)}
-            <tr class="hover:bg-base-200/60">
-              <td class="text-center text-base-content/40 font-mono text-xs">
-                {totalItems - (currentPage - 1) * PER_PAGE - i}
-              </td>
-              <td>
-                <span class="font-medium">
-                  {log.expand?.performedBy?.name || log.expand?.performedBy?.username || 'System'}
-                </span>
-              </td>
-
-              <td>
-                <span class="badge badge-sm {getActionColor(log.action)} font-semibold text-xs">
-                  {ACTION_LABELS[log.action] || log.action}
-                </span>
-              </td>
-
-              <td class="tabular-nums text-base-content/80 whitespace-nowrap" title={formatDateTime(log.created)}>
-                {formatRelative(log.created)}
-              </td>
-
-              <td class="text-base-content/70">
-                <div class="flex flex-wrap gap-x-3 gap-y-1">
-                  {#each getDetailFields(log) as field}
-                    <span class="whitespace-nowrap">
-                      {#if field.label}<span class="text-base-content/40">{field.label}:</span>{/if}
-                      {field.value}
-                    </span>
-                  {/each}
-                </div>
-              </td>
+    <div class="rounded-lg border border-base-300">
+      <!-- Scrollable, fixed-height table area -->
+      <div class="overflow-auto" style="height: clamp(320px, 65dvh, 900px);">
+        <table class="table table-zebra w-full text-sm">
+          <thead class="sticky top-0 z-10">
+            <tr class="bg-neutral text-neutral-content">
+              <th class="text-center w-12">#</th>
+              <th>User</th>
+              <th>Action</th>
+              <th>Date &amp; time</th>
+              <th>Details</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody class={isLoading ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
+            {#each filteredLogs as log, i (log.id)}
+              <tr class="hover:bg-base-200/60">
+                <td class="text-center text-base-content/90 font-mono text-xs">
+                  {totalItems - (currentPage - 1) * PER_PAGE - i}
+                </td>
+                <td>
+                  <span class="font-medium">
+                    {log.expand?.performedBy?.name || log.expand?.performedBy?.username || 'System'}
+                  </span>
+                </td>
+                <td>
+                  <span class="badge badge-sm {getActionColor(log.action)} font-bold text-xs">
+                    {ACTION_LABELS[log.action] || log.action}
+                  </span>
+                </td>
+                <td class="tabular-nums text-base-content/80 whitespace-nowrap" title={formatDateTime(log.created)}>
+                  {formatRelative(log.created)}
+                </td>
+                <td class="text-base-content/90 font-bold">
+                  <div class="flex flex-col gap-0.5">
+                    {#each getDetailFields(log) as field}
+                      <div class="flex gap-1">
+                        {#if field.label}<span class="text-base-content/90">{field.label}:</span>{/if}
+                        <span>{field.value}</span>
+                      </div>
+                    {/each}
+                  </div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
 
-      <!-- Pagination footer -->
+      <!-- Pagination footer — now outside the scroll container -->
       <div
         class="flex flex-col gap-3 px-4 py-3 border-t border-base-300 text-sm text-base-content/60 sm:flex-row sm:items-center sm:justify-between"
       >

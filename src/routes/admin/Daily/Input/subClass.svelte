@@ -604,7 +604,7 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    background-color: #535252;
+    background-color: #000000;
     color: #ffffff;
   }
 
@@ -642,6 +642,6 @@
   /* Stronger table borders */
   #sub-grid :global(.gridjs-table td),
   #sub-grid :global(.gridjs-table th) {
-    outline: 1px solid #535252;
+    outline: 1px solid #000000;
   }
 </style>
