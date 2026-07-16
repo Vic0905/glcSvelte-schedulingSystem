@@ -7,6 +7,8 @@
   let specialDays = $state([])
   let isLoading = $state(false)
   let showModal = $state(false)
+  let deleteConfirm = $state({ show: false, item: null })
+  let clearConfirm = $state({ show: false, count: 0, dateStr: null, resolve: null })
   let currentMonth = $state(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
 
   let formData = $state({
@@ -113,11 +115,9 @@
 
       if (!records.length) return
 
-      const ok = confirm(
-        `${records.length} schedule${records.length === 1 ? '' : 's'} already exist on ${dateStr}. Delete ${
-          records.length === 1 ? 'it' : 'them'
-        } to make room for the new schedule?`
-      )
+      const ok = await new Promise((resolve) => {
+        clearConfirm = { show: true, count: records.length, dateStr, resolve }
+      })
       if (!ok) return
 
       const b = pb.createBatch()
@@ -145,6 +145,11 @@
       console.error('Failed to clear schedules for date:', err)
       toast.error('Failed to clear existing schedules for this date')
     }
+  }
+
+  function resolveClearConfirm(value) {
+    clearConfirm.resolve?.(value)
+    clearConfirm = { show: false, count: 0, dateStr: null, resolve: null }
   }
 
   // --- Save (Create/Update) ---
@@ -198,8 +203,14 @@
   }
 
   // --- Delete ---
-  async function deleteSpecialDay(item) {
-    if (!confirm(`Delete "${item.name}"?`)) return
+  function requestDelete(item) {
+    deleteConfirm = { show: true, item }
+  }
+
+  async function confirmDelete() {
+    const item = deleteConfirm.item
+    if (!item) return
+    deleteConfirm = { show: false, item: null }
 
     try {
       await pb.collection('holiday').delete(item.id)
@@ -370,8 +381,8 @@
           <button
             class="btn btn-error btn-soft"
             onclick={() => {
-              deleteSpecialDay({ id: formData.id, name: formData.name })
               showModal = false
+              requestDelete({ id: formData.id, name: formData.name })
             }}
           >
             Delete
@@ -385,6 +396,50 @@
             {formData.id ? 'Update' : 'Create'}
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if deleteConfirm.show}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="modal modal-open bg-black/50"
+    onclick={(e) => e.target === e.currentTarget && (deleteConfirm = { show: false, item: null })}
+  >
+    <div class="modal-box max-w-sm p-6">
+      <h3 class="text-lg font-bold tracking-tight">Delete special day?</h3>
+      <p class="text-sm text-base-content/60 mt-2">
+        This will permanently delete
+        <span class="font-semibold text-base-content">"{deleteConfirm.item?.name}"</span>. This can't be undone.
+      </p>
+      <div class="modal-action mt-6">
+        <button class="btn btn-ghost btn-soft" onclick={() => (deleteConfirm = { show: false, item: null })}>
+          Cancel
+        </button>
+        <button class="btn btn-error" onclick={confirmDelete}>Delete</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if clearConfirm.show}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="modal modal-open bg-black/50" onclick={(e) => e.target === e.currentTarget && resolveClearConfirm(false)}>
+    <div class="modal-box max-w-sm p-6">
+      <h3 class="text-lg font-bold tracking-tight">
+        Replace existing schedule{clearConfirm.count === 1 ? '' : 's'}?
+      </h3>
+      <p class="text-sm text-base-content/60 mt-2">
+        {clearConfirm.count} schedule{clearConfirm.count === 1 ? '' : 's'} already exist{clearConfirm.count === 1
+          ? 's'
+          : ''} on {clearConfirm.dateStr}. Delete {clearConfirm.count === 1 ? 'it' : 'them'} to make room for the new schedule?
+      </p>
+      <div class="modal-action mt-6">
+        <button class="btn btn-ghost btn-soft" onclick={() => resolveClearConfirm(false)}>Cancel</button>
+        <button class="btn btn-error" onclick={() => resolveClearConfirm(true)}>Delete</button>
       </div>
     </div>
   </div>
