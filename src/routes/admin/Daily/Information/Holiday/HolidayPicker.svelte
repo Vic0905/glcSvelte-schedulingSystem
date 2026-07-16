@@ -103,10 +103,55 @@
     }
   }
 
+  // --- Batch-delete existing dailySchedule records for a date (mirrors "Clear Day") ---
+  async function clearSchedulesForDate(dateStr) {
+    try {
+      const records = await pb.collection('dailySchedule').getFullList({
+        filter: `date >= "${dateStr} 00:00:00" && date <= "${dateStr} 23:59:59"`,
+        fields: 'id,date,room,timeslot',
+      })
+
+      if (!records.length) return
+
+      const ok = confirm(
+        `${records.length} schedule${records.length === 1 ? '' : 's'} already exist on ${dateStr}. Delete ${
+          records.length === 1 ? 'it' : 'them'
+        } to make room for the new schedule?`
+      )
+      if (!ok) return
+
+      const b = pb.createBatch()
+      records.forEach((r) => b.collection('dailySchedule').delete(r.id))
+      await b.send()
+
+      try {
+        await pb.collection('activityLog').create({
+          action: 'clear',
+          performedBy: pb.authStore.record?.id,
+          targetId: dateStr,
+          details: {
+            rangeStart: dateStr,
+            rangeEnd: dateStr,
+            roomType: 'all',
+            count: records.length,
+          },
+        })
+      } catch (err) {
+        console.error('Failed to write activity log:', err)
+      }
+
+      toast.success(`Cleared ${records.length} schedule${records.length === 1 ? '' : 's'} from ${dateStr}`)
+    } catch (err) {
+      console.error('Failed to clear schedules for date:', err)
+      toast.error('Failed to clear existing schedules for this date')
+    }
+  }
+
   // --- Save (Create/Update) ---
   async function saveSpecialDay() {
     const name = formData.name.trim()
     const date = formData.date
+    const status = formData.status // capture before formData resets below
 
     if (!name || !date) {
       toast.error('Please fill in all fields')
@@ -124,14 +169,14 @@
         await pb.collection('holiday').update(formData.id, {
           name,
           date,
-          Status: formData.status,
+          Status: status,
         })
         toast.success('Updated')
       } else {
         await pb.collection('holiday').create({
           name,
           date,
-          Status: formData.status,
+          Status: status,
         })
         toast.success('Created')
       }
@@ -143,6 +188,8 @@
         date: '',
         status: 'No Class',
       }
+
+      await clearSchedulesForDate(date)
       await loadSpecialDays()
     } catch (err) {
       console.error('Save failed:', err)
