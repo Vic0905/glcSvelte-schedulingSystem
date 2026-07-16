@@ -384,7 +384,7 @@
           },
           height: 'calc(100vh - 220px)',
           className: {
-            table: 'w-full border text-xs !border-collapse',
+            table: 'w-full text-xs',
             th: 'text-center',
             td: 'text-center',
           },
@@ -510,6 +510,7 @@
   #teacher-grid :global(td) {
     padding: 0 !important;
     vertical-align: stretch;
+    position: relative;
   }
 
   #teacher-grid :global(th) {

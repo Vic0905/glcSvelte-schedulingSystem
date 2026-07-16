@@ -315,7 +315,7 @@
         },
         height: 'calc(100vh - 220px)',
         className: {
-          table: 'w-full border text-xs !border-collapse',
+          table: 'w-full text-xs',
           th: 'text-center',
           td: 'text-center',
         },
@@ -568,9 +568,7 @@
   </div>
 
   <!-- Grid container — gridjs renders into this div (display-only, no click interactivity) -->
-  <div class="overflow-x-auto rounded-lg">
-    <div id="sub-grid"></div>
-  </div>
+  <div id="sub-grid" class="rounded-lg"></div>
 </div>
 
 <SubModal bind:this={subModal} onrefresh={refreshWithScroll} />
@@ -597,6 +595,7 @@
   #sub-grid :global(td) {
     padding: 0 !important;
     vertical-align: stretch;
+    position: relative;
   }
 
   /* Sticky header row */
@@ -604,7 +603,7 @@
     position: sticky;
     top: 0;
     z-index: 20;
-    background-color: #000000;
+    background-color: #535252;
     color: #ffffff;
   }
 
@@ -642,6 +641,6 @@
   /* Stronger table borders */
   #sub-grid :global(.gridjs-table td),
   #sub-grid :global(.gridjs-table th) {
-    outline: 1px solid #000000;
+    outline: 1px solid #535252;
   }
 </style>
