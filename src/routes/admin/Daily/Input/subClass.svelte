@@ -186,6 +186,11 @@
             class: 'absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-secondary ring-1 ring-white/70',
             title: 'Make-up Class',
           }),
+        hasSub &&
+          h('span', {
+            class: 'absolute top-1.5 left-1.5 w-2.5 h-2.5 rounded-full bg-info ring-1 ring-white/70',
+            title: 'Sub Assigned',
+          }),
         h('div', { class: 'font-bold border-b border-neutral-500 mb-1 pb-1 w-full' }, [
           h('div', {}, subjectName),
           h('div', { class: 'text-xs uppercase mt-1' }, roomName),
