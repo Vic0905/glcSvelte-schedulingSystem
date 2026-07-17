@@ -28,12 +28,14 @@
   let todayHoliday = $state(null)
   let isLoading = $state(false)
   let subCount = $state(0) // unique teacher-timeslot cells that have a sub assigned
+  let makeupCount = $state(0) // unique teacher-timeslot cells that have a make-up class assigned
 
   // ─────────────────────────────────────────────
   // SECTION 3: Pure helper functions
   // ─────────────────────────────────────────────
 
   const BREAK_SCHEDULES = ['lunch break', 'break time', 'other task']
+  const MAKEUP_SCHEDULE_NAME = 'make-up class'
 
   function getTodayDate() {
     return new Date().toISOString().split('T')[0]
@@ -94,6 +96,7 @@
     const bgClass = row.cells[0].data.bgClass
     const hasNewBadge = cell.status === 'new'
     const subGivenCount = cell.subGivenCount || 0
+    const makeupGivenCount = cell.makeupGivenCount || 0
 
     return h(
       'div',
@@ -107,10 +110,17 @@
             hasNewBadge && h('span', { class: 'badge badge-success badge-xs ml-1' }, 'New'),
           ].filter(Boolean)
         ),
-        subGivenCount > 0 &&
-          h('div', { class: 'flex gap-1 mt-1' }, [
-            h('span', { class: 'text-sm font-bold text-info' }, `Subs: ${subGivenCount}`),
-          ]),
+        (subGivenCount > 0 || makeupGivenCount > 0) &&
+          h(
+            'div',
+            { class: 'flex gap-1 mt-1 flex-wrap justify-center' },
+            [
+              subGivenCount > 0 &&
+                h('span', { class: 'badge badge-sm font-bold badge-info' }, `Subs: ${subGivenCount}`),
+              makeupGivenCount > 0 &&
+                h('span', { class: 'badge badge-sm font-bold badge-secondary' }, `Makeup: ${makeupGivenCount}`),
+            ].filter(Boolean)
+          ),
       ].filter(Boolean)
     )
   }
@@ -130,13 +140,8 @@
     if (!cell?.schedules?.length) {
       return h(
         'div',
-        {
-          class: `group w-full h-full min-h-[55px] flex items-center justify-center text-gray-400 sub-cell-empty cursor-pointer transition-colors hover:bg-info/10 ${bgClass}`,
-          title: 'Click to create a make-up class',
-          onClick: () => handleEmptyCellClick(cell),
-        },
-        h('span', { class: 'group-hover:hidden' }, '—'),
-        h('span', { class: 'hidden group-hover:inline text-info font-bold text-lg' }, '+')
+        { class: `w-full h-full min-h-[55px] flex items-center justify-center text-gray-400 ${bgClass}` },
+        '—'
       )
     }
 
@@ -165,12 +170,22 @@
     const allStudents = schedules.flatMap((s) => s.students.map((std) => std.name))
     const hasSub = !!first.sub
     const isGrp = /^[GH]/i.test(roomName)
+
+    // Same tag used to build makeupCountMap/makeupCount in loadSchedules —
+    // reused here so the cell-level dot always matches the header badge.
+    const isMakeup = customSchedules.some((cs) => cs.name?.toLowerCase().trim() === MAKEUP_SCHEDULE_NAME)
+
     return h(
       'div',
       {
-        class: `flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full sub-cell-with-schedule ${bgClass}`,
+        class: `relative flex flex-col gap-1 p-2 items-center justify-center text-center w-full h-full sub-cell-with-schedule ${bgClass}`,
       },
       [
+        isMakeup &&
+          h('span', {
+            class: 'absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-secondary ring-1 ring-white/70',
+            title: 'Make-up Class',
+          }),
         h('div', { class: 'font-bold border-b border-neutral-500 mb-1 pb-1 w-full' }, [
           h('div', {}, subjectName),
           h('div', { class: 'text-xs uppercase mt-1' }, roomName),
@@ -191,7 +206,7 @@
               h('span', { class: 'text text-sm font-semibold' }, `Sub: ${first.sub.name}`),
             ])
           : h('span', { class: 'text text-xs opacity-40 mt-1' }, 'No sub assigned'),
-      ]
+      ].filter(Boolean)
     )
   }
 
@@ -237,7 +252,7 @@
   // SECTION 6: Grid config builder
   // ─────────────────────────────────────────────
 
-  function buildGridConfig(teachers, timeslots, scheduleMap, subCountMap) {
+  function buildGridConfig(teachers, timeslots, scheduleMap, subCountMap, makeupCountMap) {
     const columns = [
       {
         name: 'Teacher',
@@ -266,13 +281,14 @@
           status: teacher.status,
           bgClass,
           subGivenCount: subCountMap.get(teacher.id) || 0,
+          makeupGivenCount: makeupCountMap.get(teacher.id) || 0,
         },
         { value: teacherRoomMap.get(teacher.id) || '—', bgClass },
       ]
 
       for (const ts of timeslots) {
         const schedules = scheduleMap.get(`${teacher.id}-${ts.id}`) || []
-        row.push({ schedules, teacher, timeslot: ts, room: teacherRoomObjMap.get(teacher.id) || null, bgClass })
+        row.push({ schedules, bgClass })
       }
 
       return row
@@ -284,10 +300,10 @@
   // ─────────────────────────────────────────────
   // SECTION 7: Grid renderer
   // ─────────────────────────────────────────────
-  // NOTE: cells with a schedule stay display-only — assigning a sub still
-  // happens exclusively through the "Assign Sub" button in the header.
-  // Empty cells ARE clickable: formatSubCell attaches an onClick that
-  // opens MakeupModal (see handleEmptyCellClick, SECTION 10).
+  // NOTE: all cells are display-only. Assigning a sub happens exclusively
+  // through the "Assign Sub" button, and make-up classes are created
+  // exclusively through the "+ Make-up Class" button (openMakeupModalPicker,
+  // SECTION 10).
 
   async function renderGrid(columns, data, scroll) {
     await tick()
@@ -385,6 +401,8 @@
       // even if they have no default MTM room assigned.
       const subSet = new Set()
       const subCountMap = new Map() // subTeacherId -> count of sub assignments today
+      const makeupSet = new Set() // unique teacher-timeslot cells tagged as make-up
+      const makeupCountMap = new Map() // teacherId -> count of make-up class records today
       const bookedTeacherIds = new Set()
       for (const s of normalized) {
         if (s.sub) {
@@ -392,8 +410,15 @@
           subCountMap.set(s.sub.id, (subCountMap.get(s.sub.id) || 0) + 1)
         }
         if (s.teacherId) bookedTeacherIds.add(s.teacherId)
+
+        const isMakeup = s.customSchedule?.some((cs) => cs.name?.toLowerCase().trim() === MAKEUP_SCHEDULE_NAME)
+        if (isMakeup) {
+          makeupSet.add(`${s.teacherId}-${s.timeslotId}`)
+          if (s.teacherId) makeupCountMap.set(s.teacherId, (makeupCountMap.get(s.teacherId) || 0) + 1)
+        }
       }
       subCount = subSet.size
+      makeupCount = makeupSet.size
 
       const scheduleMap = buildScheduleMap(normalized)
 
@@ -417,7 +442,7 @@
           return aKey.num - bKey.num
         })
 
-      const { columns, data } = buildGridConfig(teachers, timeslots, scheduleMap, subCountMap)
+      const { columns, data } = buildGridConfig(teachers, timeslots, scheduleMap, subCountMap, makeupCountMap)
       await renderGrid(columns, data, scroll)
     } catch (err) {
       console.error(err)
@@ -460,18 +485,12 @@
       timeslots: cachedTimeslots,
     })
   }
-
-  // Empty cell = no schedule for that teacher/timeslot today — open
-  // MakeupModal pre-filled with teacher/timeslot/date/room so a new
-  // make-up class can be created directly from the grid.
-  function handleEmptyCellClick(cell) {
-    if (!cell?.teacher || !cell?.timeslot) return
+  function openMakeupModalPicker() {
     makeupModal.open({
-      teacher: cell.teacher,
-      room: cell.room || null, // null if teacher has no assigned MTM room — MakeupModal shows its own room picker in that case
-      timeslot: cell.timeslot,
       date: selectedDate,
-      schedules: [], // empty → MakeupModal opens in create mode, not edit mode
+      teachers: cachedTeachers,
+      timeslots: cachedTimeslots,
+      teacherRoomMap: teacherRoomObjMap, // used to prefill a teacher's default room in create mode
     })
   }
 
@@ -502,8 +521,11 @@
 <div class="p-2 sm:p-4 md:p-6 bg-base-100">
   <!-- Header -->
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
-    <div class="order-2 sm:order-1 flex-1 flex items-center justify-center sm:justify-start">
+    <div class="order-2 sm:order-1 flex-1 flex items-center gap-2 justify-center sm:justify-start">
       <button class="btn btn-info btn-sm" onclick={openSubModal}>+ Assign Sub</button>
+      <button class="btn btn-secondary btn-sm" onclick={openMakeupModalPicker} disabled={isLoading}>
+        + Make-up Class
+      </button>
     </div>
 
     <h2 class="order-1 sm:order-2 text-center flex-1 text-xl sm:text-2xl font-bold">Daily Make-up/SubClass Schedule</h2>
@@ -516,6 +538,13 @@
       {:else}
         <span class="text-sm font-normal opacity-40">No subs assigned</span>
       {/if}
+
+      {#if makeupCount > 0}
+        <span class="badge badge-secondary badge-lg gap-2 font-bold text-sm">
+          {makeupCount} makeup{makeupCount === 1 ? '' : 's'}
+        </span>
+      {/if}
+
       <div class="w-6 h-6 flex items-center justify-center">
         {#if isLoading}
           <div class="loading loading-spinner loading-sm"></div>
